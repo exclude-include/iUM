@@ -10,7 +10,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from utils.vector_store import get_retriever
-from utils.opik_config import trace
+from utils.opik_config import trace, get_opik_tracer, track
 
 # Feynman Tutor System Prompt
 FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to explain concepts clearly and intuitively in the style of Richard Feynman.
@@ -163,7 +163,7 @@ def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional
         return response_text, None
 
 
-@trace
+@track(name="create_rag_chain", tags=["rag", "tutor"])
 def create_rag_chain(
     collection_name: str = "user_knowledge",
     model_name: str = "models/gemini-2.5-flash",
@@ -182,7 +182,7 @@ def create_rag_chain(
         folder_id: Optional folder ID to filter documents by
         
     Returns:
-        LangChain chain for RAG-based chat
+        Tuple of (LangChain chain, OpikTracer or None)
     """
     # Get retriever with optional folder filter
     retriever = get_retriever(
@@ -209,10 +209,13 @@ def create_rag_chain(
         | StrOutputParser()
     )
     
-    return chain
+    # Get Opik tracer for LangChain callback integration
+    tracer = get_opik_tracer(tags=["ium-tutor", "rag", f"model:{model_name}"])
+    
+    return chain, tracer
 
 
-@trace
+@track(name="query_rag_chain", tags=["rag", "query"])
 async def query_rag_chain(
     question: str,
     collection_name: str = "user_knowledge",
@@ -233,7 +236,8 @@ async def query_rag_chain(
     Returns:
         Dictionary with answer and sources
     """
-    chain = create_rag_chain(
+    # Create RAG chain with Opik tracer
+    chain, tracer = create_rag_chain(
         collection_name=collection_name,
         model_name=model_name,
         k=k,
@@ -245,8 +249,9 @@ async def query_rag_chain(
     # Use invoke for LangChain retrievers (LCEL)
     relevant_docs = retriever.invoke(question) if hasattr(retriever, 'invoke') else retriever.get_relevant_documents(question)
     
-    # Invoke the chain
-    raw_answer = chain.invoke(question)
+    # Invoke the chain with Opik tracer callback (if available)
+    invoke_config = {"callbacks": [tracer]} if tracer else {}
+    raw_answer = chain.invoke(question, config=invoke_config)
     
     # Parse learning unit from response
     answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
