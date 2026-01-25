@@ -236,3 +236,36 @@ export const initializeSocialReels = (folders: Array<{ id: string; name: string 
     showAllFolders: true,
   });
 };
+
+// Helper function to fetch reels from Supabase
+export const fetchReelsFromSupabase = async (supabase: any) => {
+  try {
+    const { data, error } = await supabase
+      .from("reels")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error fetching reels:", error);
+      return [];
+    }
+
+    // Transform Supabase data to ReelItem format
+    return (data || []).map((reel: any) => ({
+      id: reel.id,
+      title: reel.title,
+      description: reel.description || "",
+      videoUrl: reel.video_url,
+      color: undefined, // Real videos don't need gradient colors
+      likes: reel.likes_count || 0,
+      comments: reel.comments_count || 0,
+      folderId: reel.folder_id || "",
+      folderName: reel.folder_name || "General",
+      author: "User", // You can fetch user data if needed
+      authorAvatar: undefined,
+    }));
+  } catch (error) {
+    console.error("Error fetching reels:", error);
+    return [];
+  }
+};
