@@ -28,10 +28,11 @@ async def chat_with_agent(request: ChatRequest):
     if not request.message:
         raise HTTPException(status_code=400, detail="Message cannot be empty")
     
-    # [수정 포인트 2] Google API Key 체크로 변경 (이미 잘 적용되어 있습니다!)
-    if not os.getenv("GOOGLE_API_KEY"):
+    # Check for Gemini API Key (supports both new and legacy key names)
+    gemini_key = os.getenv("GOOGLE_GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not gemini_key:
         return ChatResponse(
-            message="[System] Google API Key가 설정되지 않았습니다. .env 파일에 GOOGLE_API_KEY가 있는지 확인해주세요.",
+            message="[System] Google Gemini API Key가 설정되지 않았습니다. .env 파일에 GOOGLE_GEMINI_API_KEY가 있는지 확인해주세요.",
             conversation_id=request.conversation_id or "conv-1",
             sources=[],
             reasoning_chain=["API Key Missing"]

@@ -1,17 +1,24 @@
 """
 Document ingestion endpoint for uploading and processing PDFs/Text files
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Depends
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader
 from utils.vector_store import add_documents_to_vector_store
 from utils.opik_config import trace
+from utils.supabase_client import get_supabase
+from supabase import Client
+from db.services import FileService
 import os
 import tempfile
 
 router = APIRouter()
+
+
+def get_file_service(db: Client = Depends(get_supabase)) -> FileService:
+    return FileService(db)
 
 
 @trace
@@ -72,13 +79,17 @@ async def process_text_file(content: str, filename: str, folder_id: Optional[str
 async def ingest_document(
     file: UploadFile = File(...),
     collection_name: str = Form("user_knowledge"),
-    folder_id: Optional[str] = Form(None)
+    folder_id: Optional[str] = Form(None),
+    account_id: Optional[str] = Form(None),
+    file_service: FileService = Depends(get_file_service)
 ):
     """
-    Ingest a document (PDF or Text) into the VectorDB.
+    Ingest a document (PDF or Text) into the VectorDB and save metadata to Supabase.
     
     - **file**: PDF or text file to upload
     - **collection_name**: ChromaDB collection name (default: user_knowledge)
+    - **folder_id**: Optional folder ID to associate the file with
+    - **account_id**: Account ID for file ownership
     
     Returns:
         JSON response with ingestion status and document IDs
@@ -137,15 +148,38 @@ async def ingest_document(
             collection_name=collection_name
         )
         
+        # Save file metadata to Supabase (if account_id provided)
+        file_record = None
+        if account_id:
+            try:
+                file_content = await file.read()
+                file_record = file_service.create(
+                    account_id=account_id,
+                    name=original_filename,
+                    content_type=file.content_type or "application/octet-stream",
+                    size=len(file_content),
+                    storage_path=f"vectors/{collection_name}/{original_filename}",
+                    folder_id=folder_id
+                )
+                # Mark as vectorized
+                file_service.mark_vectorized(file_record.id)
+            except Exception as e:
+                print(f"Error saving file metadata to Supabase: {e}")
+        
+        response_data = {
+            "message": "Document ingested successfully",
+            "filename": file.filename,
+            "chunks_created": len(document_ids),
+            "document_ids": document_ids[:10],  # Return first 10 IDs
+            "collection": collection_name
+        }
+        
+        if file_record:
+            response_data["file_id"] = file_record.id
+        
         return JSONResponse(
             status_code=200,
-            content={
-                "message": "Document ingested successfully",
-                "filename": file.filename,
-                "chunks_created": len(document_ids),
-                "document_ids": document_ids[:10],  # Return first 10 IDs
-                "collection": collection_name
-            }
+            content=response_data
         )
         
     except Exception as e:
