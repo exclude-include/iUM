@@ -9,6 +9,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
 import chromadb
 from chromadb.config import Settings
+from utils.opik_config import track
 
 # Initialize Google Gemini Embeddings
 embeddings = GoogleGenerativeAIEmbeddings(
@@ -25,6 +26,7 @@ text_splitter = RecursiveCharacterTextSplitter(
 )
 
 
+@track(name="get_chroma_client", type="tool", tags=["chromadb", "init"])
 def get_chroma_client(persist_directory: str = "./chroma_db") -> chromadb.ClientAPI:
     """
     Initialize and return a persistent ChromaDB client.
@@ -49,6 +51,7 @@ def get_chroma_client(persist_directory: str = "./chroma_db") -> chromadb.Client
     return client
 
 
+@track(name="get_vector_store", type="tool", tags=["chromadb", "vectorstore"])
 def get_vector_store(
     collection_name: str = "user_knowledge",
     persist_directory: str = "./chroma_db"
@@ -75,6 +78,7 @@ def get_vector_store(
     return vector_store
 
 
+@track(name="add_documents_to_vector_store", type="tool", tags=["chromadb", "ingest"])
 def add_documents_to_vector_store(
     documents: list[Document],
     collection_name: str = "user_knowledge",
@@ -104,6 +108,7 @@ def add_documents_to_vector_store(
     return document_ids
 
 
+@track(name="get_retriever", type="tool", tags=["chromadb", "retriever"])
 def get_retriever(
     collection_name: str = "user_knowledge",
     persist_directory: str = "./chroma_db",

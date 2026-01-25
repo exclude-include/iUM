@@ -12,6 +12,17 @@ from langchain_core.output_parsers import StrOutputParser
 from utils.vector_store import get_retriever
 from utils.opik_config import track
 
+# Opik context manager for spans (lazy import)
+def get_opik_context():
+    """Get opik context manager for creating spans."""
+    try:
+        import opik
+        if os.getenv("OPIK_API_KEY"):
+            return opik
+        return None
+    except ImportError:
+        return None
+
 # Feynman Tutor System Prompt
 FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to explain concepts clearly and intuitively in the style of Richard Feynman.
 
@@ -163,6 +174,82 @@ def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional
         return response_text, None
 
 
+def _process_sources(answer: str, relevant_docs: list) -> tuple[list, bool]:
+    """
+    Process and filter source documents from retrieval results.
+
+    Args:
+        answer: The LLM's answer text
+        relevant_docs: List of retrieved documents
+
+    Returns:
+        Tuple of (sources list, using_general_knowledge flag)
+    """
+    # Check if answer indicates general knowledge usage
+    general_knowledge_indicators = [
+        "i don't have information",
+        "i don't have enough information",
+        "not in the provided context",
+        "not in the context",
+        "context doesn't contain",
+        "context is empty",
+        "no information in",
+        "based on my general knowledge",
+        "using my knowledge",
+        "from my training",
+        "general knowledge"
+    ]
+    answer_lower = answer.lower()
+    using_general_knowledge = any(indicator in answer_lower for indicator in general_knowledge_indicators)
+
+    # Format and clean sources
+    # Step 1: Collect all source documents with their metadata
+    source_map = {}  # Map filename -> best document (first occurrence)
+
+    for doc in relevant_docs:
+        # Extract source filename, handling both full paths and just filenames
+        raw_source = doc.metadata.get("source", "Unknown")
+
+        # Filter out temporary files (check both raw path and filename)
+        if not raw_source or raw_source == "Unknown":
+            continue
+
+        # Check if raw source path contains temp directory indicators
+        if "/tmp" in raw_source or raw_source.startswith("tmp"):
+            continue
+
+        source_filename = os.path.basename(raw_source)
+
+        # Clean up: remove any leading/trailing whitespace
+        source_filename = source_filename.strip()
+
+        # Filter out temporary filenames (after basename extraction)
+        if source_filename.startswith("tmp"):
+            continue
+
+        # Skip empty or invalid filenames
+        if not source_filename or source_filename == "Unknown":
+            continue
+
+        # Deduplicate: only keep the first occurrence of each unique filename
+        if source_filename not in source_map:
+            source_map[source_filename] = {
+                "id": doc.metadata.get("id", ""),
+                "title": source_filename,
+                "content": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
+                "relevance_score": 1.0  # ChromaDB doesn't provide scores by default
+            }
+
+    # Step 2: Convert map to list
+    sources = list(source_map.values())
+
+    # Step 3: If using general knowledge or no valid sources, return empty sources list
+    if using_general_knowledge or not sources or len(relevant_docs) == 0:
+        sources = []
+
+    return sources, using_general_knowledge
+
+
 @track(name="create_rag_chain", type="general", tags=["rag", "chain"])
 def create_rag_chain(
     collection_name: str = "user_knowledge",
@@ -222,99 +309,65 @@ async def query_rag_chain(
 ) -> dict:
     """
     Query the RAG chain with a user question.
-    
+
     Args:
         question: User's question
         collection_name: Name of the ChromaDB collection
         model_name: Google Gemini model to use
         k: Number of documents to retrieve
         folder_id: Optional folder ID to filter documents by
-        
+
     Returns:
         Dictionary with answer and sources
     """
-    chain = create_rag_chain(
-        collection_name=collection_name,
-        model_name=model_name,
-        k=k,
-        folder_id=folder_id
-    )
+    opik = get_opik_context()
+
+    # Tool 1: Create RAG Chain (includes LLM initialization)
+    if opik:
+        with opik.span(name="create_rag_chain", type="tool", metadata={"model": model_name, "k": k}):
+            chain = create_rag_chain(
+                collection_name=collection_name,
+                model_name=model_name,
+                k=k,
+                folder_id=folder_id
+            )
+    else:
+        chain = create_rag_chain(
+            collection_name=collection_name,
+            model_name=model_name,
+            k=k,
+            folder_id=folder_id
+        )
+
+    # Tool 2: Vector DB Retrieval
+    if opik:
+        with opik.span(name="vector_db_retrieval", type="tool", metadata={"collection": collection_name, "k": k, "folder_id": folder_id}):
+            retriever = get_retriever(collection_name=collection_name, k=k, folder_id=folder_id)
+            relevant_docs = retriever.invoke(question) if hasattr(retriever, 'invoke') else retriever.get_relevant_documents(question)
+    else:
+        retriever = get_retriever(collection_name=collection_name, k=k, folder_id=folder_id)
+        relevant_docs = retriever.invoke(question) if hasattr(retriever, 'invoke') else retriever.get_relevant_documents(question)
+
+    # Tool 3: LLM Chain Invocation (Gemini)
+    if opik:
+        with opik.span(name="llm_chain_invoke", type="llm", metadata={"model": model_name, "question_length": len(question)}):
+            raw_answer = chain.invoke(question)
+    else:
+        raw_answer = chain.invoke(question)
     
-    # Get relevant documents for source attribution (with folder filter)
-    retriever = get_retriever(collection_name=collection_name, k=k, folder_id=folder_id)
-    # Use invoke for LangChain retrievers (LCEL)
-    relevant_docs = retriever.invoke(question) if hasattr(retriever, 'invoke') else retriever.get_relevant_documents(question)
+    # Tool 4: Parse Learning Unit from Response
+    if opik:
+        with opik.span(name="parse_learning_unit", type="tool", metadata={"response_length": len(raw_answer)}):
+            answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
+    else:
+        answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
     
-    # Invoke the chain
-    raw_answer = chain.invoke(question)
-    
-    # Parse learning unit from response
-    answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
-    
-    # Check if answer indicates general knowledge usage
-    # If the answer mentions context is missing/insufficient, we should not cite sources
-    general_knowledge_indicators = [
-        "i don't have information",
-        "i don't have enough information",
-        "not in the provided context",
-        "not in the context",
-        "context doesn't contain",
-        "context is empty",
-        "no information in",
-        "based on my general knowledge",
-        "using my knowledge",
-        "from my training",
-        "general knowledge"
-    ]
-    answer_lower = answer.lower()
-    using_general_knowledge = any(indicator in answer_lower for indicator in general_knowledge_indicators)
-    
-    # Format and clean sources
-    # Step 1: Collect all source documents with their metadata
-    source_map = {}  # Map filename -> best document (first occurrence)
-    
-    for doc in relevant_docs:
-        # Extract source filename, handling both full paths and just filenames
-        raw_source = doc.metadata.get("source", "Unknown")
-        
-        # Filter out temporary files (check both raw path and filename)
-        if not raw_source or raw_source == "Unknown":
-            continue
-        
-        # Check if raw source path contains temp directory indicators
-        if "/tmp" in raw_source or raw_source.startswith("tmp"):
-            continue
-        
-        source_filename = os.path.basename(raw_source)
-        
-        # Clean up: remove any leading/trailing whitespace
-        source_filename = source_filename.strip()
-        
-        # Filter out temporary filenames (after basename extraction)
-        if source_filename.startswith("tmp"):
-            continue
-        
-        # Skip empty or invalid filenames
-        if not source_filename or source_filename == "Unknown":
-            continue
-        
-        # Deduplicate: only keep the first occurrence of each unique filename
-        if source_filename not in source_map:
-            source_map[source_filename] = {
-                "id": doc.metadata.get("id", ""),
-                "title": source_filename,
-                "content": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
-                "relevance_score": 1.0  # ChromaDB doesn't provide scores by default
-            }
-    
-    # Step 2: Convert map to list
-    sources = list(source_map.values())
-    
-    # Step 3: If using general knowledge or no valid sources, return empty sources list
-    # This ensures we don't cite irrelevant documents when answering from general knowledge
-    # Also check if we have no valid sources after filtering (indicates empty/irrelevant context)
-    if using_general_knowledge or not sources or len(relevant_docs) == 0:
-        sources = []
+    # Tool 5: Source Processing and Filtering
+    if opik:
+        with opik.span(name="source_processing", type="tool", metadata={"num_retrieved_docs": len(relevant_docs)}):
+            sources, using_general_knowledge = _process_sources(answer, relevant_docs)
+    else:
+        sources, using_general_knowledge = _process_sources(answer, relevant_docs)
     
     # Build reasoning chain
     reasoning_chain = []
