@@ -191,11 +191,12 @@ def create_rag_chain(
         folder_id=folder_id
     )
     
-    # Initialize LLM
+    # Initialize LLM (Priority: GOOGLE_GEMINI_API_KEY > GOOGLE_API_KEY)
+    gemini_api_key = os.getenv("GOOGLE_GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     llm = ChatGoogleGenerativeAI(
         model=model_name,
         temperature=temperature,
-        google_api_key=os.getenv("GOOGLE_API_KEY")
+        google_api_key=gemini_api_key
     )
     
     # Create the chain: Retriever -> Prompt -> LLM
@@ -371,11 +372,12 @@ Return ONLY valid JSON in this exact format:
 Do not include any other text, explanations, or markdown formatting. Only return the JSON object."""
 
     try:
-        # Use a lightweight model for speed
+        # Use a lightweight model for speed (Priority: GOOGLE_GEMINI_API_KEY > GOOGLE_API_KEY)
+        gemini_api_key = os.getenv("GOOGLE_GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         llm = ChatGoogleGenerativeAI(
             model="models/gemini-2.5-flash",
             temperature=0.3,  # Lower temperature for more consistent summaries
-            google_api_key=os.getenv("GOOGLE_API_KEY")
+            google_api_key=gemini_api_key
         )
         
         # Generate summary

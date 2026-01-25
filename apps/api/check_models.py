@@ -13,15 +13,15 @@ def check_available_models():
     """
     Check and list all available Google Gemini models that support generateContent.
     """
-    # Get API key from environment
-    api_key = os.getenv("GOOGLE_API_KEY")
+    # Get API key from environment (Priority: GOOGLE_GEMINI_API_KEY > GOOGLE_API_KEY)
+    api_key = os.getenv("GOOGLE_GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     
     if not api_key:
-        print("❌ ERROR: GOOGLE_API_KEY not found in .env file")
-        print("   Please ensure GOOGLE_API_KEY is set in apps/api/.env")
+        print("❌ ERROR: GOOGLE_GEMINI_API_KEY not found in .env file")
+        print("   Please ensure GOOGLE_GEMINI_API_KEY is set in apps/api/.env")
         return
     
-    print(f"🔑 Using API Key: {api_key[:10]}...{api_key[-4:]}")
+    print(f"🔑 Using Gemini API Key: {api_key[:10]}...{api_key[-4:]}")
     print("=" * 60)
     
     try:

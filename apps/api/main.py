@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # 2. 환경 변수가 로드된 후에 라우터 import
-from routers import feed, workspace, agent, ingest
+from routers import feed, workspace, agent, ingest, accounts, google_drive
 import os
 
 app = FastAPI(
@@ -39,15 +39,23 @@ app.include_router(feed.router, prefix="/api/feed", tags=["feed"])
 app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
 app.include_router(agent.router, prefix="/api/agent", tags=["agent"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
+app.include_router(accounts.router, prefix="/api/accounts", tags=["accounts"])
+app.include_router(google_drive.router, prefix="/api/google-drive", tags=["google-drive"])
 
 
 @app.get("/")
 async def root():
-    # API 키 설정 상태 확인용 (보안상 앞 3글자만 노출하거나 확인 메시지만 출력)
-    api_key_status = "Set" if os.getenv("GOOGLE_API_KEY") else "Missing"
+    # API 키 설정 상태 확인용
+    gemini_key = os.getenv("GOOGLE_GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    drive_key = os.getenv("GOOGLE_DRIVE_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    supabase_status = "Set" if (os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_KEY")) else "Missing"
+    
     return {
         "message": "iUM API is running",
-        "google_api_key": api_key_status
+        "google_gemini_api_key": "Set" if gemini_key else "Missing",
+        "google_drive_api_key": "Set" if drive_key else "Missing",
+        "supabase": supabase_status,
+        "version": "0.1.0"
     }
 
 
