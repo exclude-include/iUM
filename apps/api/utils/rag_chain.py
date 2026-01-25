@@ -14,7 +14,7 @@ from utils.opik_config import track
 
 # Opik context manager for spans (lazy import)
 def get_opik_context():
-    """Get opik context manager for creating spans."""
+    """Get opik module for creating spans using start_as_current_span."""
     try:
         import opik
         if os.getenv("OPIK_API_KEY"):
@@ -324,7 +324,7 @@ async def query_rag_chain(
 
     # Tool 1: Create RAG Chain (includes LLM initialization)
     if opik:
-        with opik.span(name="create_rag_chain", type="tool", metadata={"model": model_name, "k": k}):
+        with opik.start_as_current_span(name="create_rag_chain", type="tool", metadata={"model": model_name, "k": k}):
             chain = create_rag_chain(
                 collection_name=collection_name,
                 model_name=model_name,
@@ -341,7 +341,7 @@ async def query_rag_chain(
 
     # Tool 2: Vector DB Retrieval
     if opik:
-        with opik.span(name="vector_db_retrieval", type="tool", metadata={"collection": collection_name, "k": k, "folder_id": folder_id}):
+        with opik.start_as_current_span(name="vector_db_retrieval", type="tool", metadata={"collection": collection_name, "k": k, "folder_id": folder_id}):
             retriever = get_retriever(collection_name=collection_name, k=k, folder_id=folder_id)
             relevant_docs = retriever.invoke(question) if hasattr(retriever, 'invoke') else retriever.get_relevant_documents(question)
     else:
@@ -350,21 +350,21 @@ async def query_rag_chain(
 
     # Tool 3: LLM Chain Invocation (Gemini)
     if opik:
-        with opik.span(name="llm_chain_invoke", type="llm", metadata={"model": model_name, "question_length": len(question)}):
+        with opik.start_as_current_span(name="llm_chain_invoke", type="llm", metadata={"model": model_name, "question_length": len(question)}):
             raw_answer = chain.invoke(question)
     else:
         raw_answer = chain.invoke(question)
     
     # Tool 4: Parse Learning Unit from Response
     if opik:
-        with opik.span(name="parse_learning_unit", type="tool", metadata={"response_length": len(raw_answer)}):
+        with opik.start_as_current_span(name="parse_learning_unit", type="tool", metadata={"response_length": len(raw_answer)}):
             answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
     else:
         answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
-    
+
     # Tool 5: Source Processing and Filtering
     if opik:
-        with opik.span(name="source_processing", type="tool", metadata={"num_retrieved_docs": len(relevant_docs)}):
+        with opik.start_as_current_span(name="source_processing", type="tool", metadata={"num_retrieved_docs": len(relevant_docs)}):
             sources, using_general_knowledge = _process_sources(answer, relevant_docs)
     else:
         sources, using_general_knowledge = _process_sources(answer, relevant_docs)

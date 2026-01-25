@@ -127,7 +127,7 @@ export function ChatSidebar() {
     }
 
     const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       role: "user",
       content: input.trim(),
       timestamp: new Date().toISOString(),
@@ -165,7 +165,7 @@ export function ChatSidebar() {
 
       // Add assistant response
       const assistantMessage: ChatMessage = {
-        id: `assistant-${Date.now()}`,
+        id: `assistant-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         role: "assistant",
         content: response.message,
         timestamp: new Date().toISOString(),
@@ -173,10 +173,9 @@ export function ChatSidebar() {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
-      
-      // Save messages to active folder's chat history
+
+      // Save assistant message to active folder's chat history
       if (activeFolderId) {
-        addMessageToFolder(activeFolderId, userMessage);
         addMessageToFolder(activeFolderId, assistantMessage);
       }
       
@@ -195,7 +194,7 @@ export function ChatSidebar() {
 
       // Handle error
       const errorMessage: ChatMessage = {
-        id: `error-${Date.now()}`,
+        id: `error-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
         role: "assistant",
         content: error instanceof Error 
           ? `Sorry, I encountered an error: ${error.message}. Please make sure the backend is running and documents are ingested.`
