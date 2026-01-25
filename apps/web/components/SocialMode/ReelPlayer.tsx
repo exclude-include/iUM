@@ -10,6 +10,7 @@ import {
   MoreVertical,
   ChevronUp,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -29,6 +30,8 @@ export function ReelPlayer() {
     toggleLike,
     toggleBookmark,
     setActiveTab,
+    isLoading,
+    error,
   } = store;
   
   const currentReel = store.getCurrentReel();
@@ -58,6 +61,18 @@ export function ReelPlayer() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [nextReel, prevReel]);
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-muted/30">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+          <p className="text-muted-foreground mt-4">Loading reels...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentReel) {
     return (

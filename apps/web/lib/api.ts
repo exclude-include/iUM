@@ -11,6 +11,7 @@ import type {
   IngestStatusResponse,
   FeedResponse,
   Workspace,
+  HistoryItem,
   ApiError,
 } from "@/types/api";
 
@@ -214,6 +215,51 @@ export const workspaceApi = {
       `/api/workspace/${workspaceId}/folders`
     );
   },
+
+  /**
+   * Get history for a workspace
+   */
+  async getHistory(
+    workspaceId: string = "default",
+    accountId: string,
+    options?: {
+      folderId?: string;
+      historyType?: string;
+      limit?: number;
+    }
+  ): Promise<HistoryItem[]> {
+    const params = new URLSearchParams();
+    params.append("account_id", accountId);
+    if (options?.folderId) params.append("folder_id", options.folderId);
+    if (options?.historyType) params.append("history_type", options.historyType);
+    if (options?.limit) params.append("limit", options.limit.toString());
+
+    return fetchApi<HistoryItem[]>(
+      `/api/workspace/${workspaceId}/history?${params.toString()}`
+    );
+  },
+
+  /**
+   * Create a history item
+   */
+  async createHistory(
+    workspaceId: string = "default",
+    history: {
+      account_id: string;
+      folder_id?: string;
+      title: string;
+      history_type: string;
+      content?: Record<string, unknown>;
+    }
+  ): Promise<{ id: string; message: string }> {
+    return fetchApi<{ id: string; message: string }>(
+      `/api/workspace/${workspaceId}/history`,
+      {
+        method: "POST",
+        body: JSON.stringify(history),
+      }
+    );
+  },
 };
 
 /**
@@ -223,12 +269,148 @@ export async function checkHealth(): Promise<{ status: string }> {
   return fetchApi<{ status: string }>("/api/health");
 }
 
+/**
+ * Account API Functions
+ */
+export interface Account {
+  id?: string;
+  email: string;
+  name?: string;
+  avatar_url?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const accountApi = {
+  /**
+   * Create a new account
+   */
+  async create(account: Omit<Account, "id" | "created_at" | "updated_at">): Promise<Account> {
+    return fetchApi<Account>("/api/accounts", {
+      method: "POST",
+      body: JSON.stringify(account),
+    });
+  },
+
+  /**
+   * Get account by ID
+   */
+  async getById(accountId: string): Promise<Account> {
+    return fetchApi<Account>(`/api/accounts/${accountId}`);
+  },
+
+  /**
+   * Get account by email
+   */
+  async getByEmail(email: string): Promise<Account> {
+    return fetchApi<Account>(`/api/accounts/email/${encodeURIComponent(email)}`);
+  },
+
+  /**
+   * Update account
+   */
+  async update(accountId: string, account: Partial<Account>): Promise<Account> {
+    return fetchApi<Account>(`/api/accounts/${accountId}`, {
+      method: "PUT",
+      body: JSON.stringify(account),
+    });
+  },
+
+  /**
+   * Delete account
+   */
+  async delete(accountId: string): Promise<{ message: string }> {
+    return fetchApi<{ message: string }>(`/api/accounts/${accountId}`, {
+      method: "DELETE",
+    });
+  },
+};
+
+/**
+ * Google Drive API Functions
+ */
+export const googleDriveApi = {
+  /**
+   * Save Google OAuth tokens
+   */
+  async saveAuth(auth: {
+    account_id: string;
+    access_token: string;
+    refresh_token?: string;
+    scope?: string;
+  }): Promise<{ message: string; account_id: string }> {
+    return fetchApi<{ message: string; account_id: string }>("/api/google-drive/auth", {
+      method: "POST",
+      body: JSON.stringify(auth),
+    });
+  },
+
+  /**
+   * Get Google integration status
+   */
+  async getAuthStatus(accountId: string): Promise<{
+    account_id: string;
+    has_access_token: boolean;
+    has_refresh_token: boolean;
+    scope?: string;
+    created_at?: string;
+  }> {
+    return fetchApi(`/api/google-drive/auth/${accountId}`);
+  },
+
+  /**
+   * Revoke Google integration
+   */
+  async revokeAuth(accountId: string): Promise<{ message: string }> {
+    return fetchApi<{ message: string }>(`/api/google-drive/auth/${accountId}`, {
+      method: "DELETE",
+    });
+  },
+
+  /**
+   * Sync files from Google Drive
+   */
+  async syncFiles(data: {
+    account_id: string;
+    files: Array<{
+      drive_file_id: string;
+      name: string;
+      mime_type?: string;
+      folder_id?: string;
+    }>;
+  }): Promise<{ synced: number; files: string[] }> {
+    return fetchApi<{ synced: number; files: string[] }>("/api/google-drive/files/sync", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Get synced Drive files for an account
+   */
+  async getFiles(accountId: string, folderId?: string): Promise<Array<{
+    id: string;
+    drive_file_id: string;
+    name: string;
+    mime_type?: string;
+    synced_at?: string;
+  }>> {
+    const params = new URLSearchParams();
+    params.append("account_id", accountId);
+    if (folderId) params.append("folder_id", folderId);
+    
+    return fetchApi(`/api/google-drive/files?${params.toString()}`);
+  },
+};
+
 // Export all APIs as a single object for convenience
 export const api = {
   chat: chatApi,
   ingest: ingestApi,
   feed: feedApi,
   workspace: workspaceApi,
+  account: accountApi,
+  googleDrive: googleDriveApi,
   health: checkHealth,
 };
 

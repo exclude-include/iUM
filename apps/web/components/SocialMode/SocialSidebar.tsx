@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Home, Search, Compass, Video, MessageCircle, Bell, RefreshCw } from "lucide-react";
+import { Home, Search, Compass, Video, MessageCircle, Bell, RefreshCw, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -18,13 +18,21 @@ export function SocialSidebar() {
     toggleFolder,
     setShowAllFolders,
     refreshFeed,
+    isLoading,
+    error,
   } = useSocialStore();
+  const [isInitializing, setIsInitializing] = useState(false);
 
   // Initialize reels when folders are available
   useEffect(() => {
-    if (knowledgeFolders.length > 0) {
-      initializeSocialReels(knowledgeFolders);
-    }
+    const initReels = async () => {
+      if (knowledgeFolders.length > 0) {
+        setIsInitializing(true);
+        await initializeSocialReels(knowledgeFolders);
+        setIsInitializing(false);
+      }
+    };
+    initReels();
   }, [knowledgeFolders]);
 
   const navItems = [
@@ -80,10 +88,22 @@ export function SocialSidebar() {
               className="h-8 w-8"
               onClick={refreshFeed}
               title="Refresh Feed"
+              disabled={isLoading || isInitializing}
             >
-              <RefreshCw className="h-4 w-4" />
+              {isLoading || isInitializing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
             </Button>
           </div>
+
+          {/* Error Message */}
+          {error && (
+            <p className="text-xs text-destructive bg-destructive/10 rounded p-2">
+              {error}
+            </p>
+          )}
 
           {/* All Toggle */}
           <div className="flex items-center justify-between rounded-lg border p-3">

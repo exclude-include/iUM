@@ -1,6 +1,8 @@
 "use client";
 
 import { create } from "zustand";
+import { feedApi } from "@/lib/api";
+import type { LearningUnit } from "@/types";
 
 export interface ReelItem {
   id: string;
@@ -14,11 +16,22 @@ export interface ReelItem {
   folderName: string;
   author: string;
   authorAvatar?: string;
+  // Backend API fields
+  contentUrl?: string;
+  thumbnailUrl?: string;
+  durationSeconds?: number;
+  quizContent?: {
+    title: string;
+    explanation: string;
+  };
+  tags?: string[];
 }
 
 interface SocialState {
   // Reels data
   reels: ReelItem[];
+  isLoading: boolean;
+  error: string | null;
   
   // Filter state
   activeFolderIds: string[];
@@ -41,13 +54,50 @@ interface SocialState {
   toggleBookmark: (reelId: string) => void;
   setActiveTab: (tab: "reels" | "quiz" | "discuss") => void;
   refreshFeed: () => void;
+  fetchReelsFromBackend: (limit?: number, offset?: number, category?: string) => Promise<void>;
   
   // Computed getters
   getFilteredReels: () => ReelItem[];
   getCurrentReel: () => ReelItem | null;
 }
 
-// Mock data generator
+// Helper function to convert backend LearningUnit to ReelItem
+const convertToReelItem = (unit: LearningUnit, fallbackFolderId: string = "default"): ReelItem => {
+  const colors = [
+    "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+    "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+    "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
+    "linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)",
+    "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
+    "linear-gradient(135deg, #30cfd0 0%, #330867 100%)",
+  ];
+  
+  // Generate color based on id hash
+  const hashCode = unit.id.split("").reduce((a, b) => {
+    a = ((a << 5) - a) + b.charCodeAt(0);
+    return a & a;
+  }, 0);
+  
+  return {
+    id: unit.id,
+    title: unit.title,
+    description: unit.description,
+    videoUrl: unit.content_url,
+    color: colors[Math.abs(hashCode) % colors.length],
+    likes: Math.floor(Math.random() * 1000) + 50, // Random for now, could be stored in backend
+    comments: Math.floor(Math.random() * 100) + 5,
+    folderId: fallbackFolderId,
+    folderName: unit.tags?.[0] || "General",
+    author: unit.author,
+    contentUrl: unit.content_url,
+    thumbnailUrl: unit.thumbnail_url,
+    durationSeconds: unit.duration_seconds,
+    quizContent: unit.quiz_content,
+    tags: unit.tags,
+  };
+};
+
+// Mock data generator (fallback when backend is unavailable)
 const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelItem[] => {
   const colors = [
     "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
@@ -110,6 +160,8 @@ const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelIt
 export const useSocialStore = create<SocialState>((set, get) => ({
   // Initialize with empty reels - will be populated when folders are available
   reels: [],
+  isLoading: false,
+  error: null,
   activeFolderIds: [],
   showAllFolders: true,
   currentReelIndex: 0,
@@ -209,6 +261,32 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   
   refreshFeed: () => {
     set({ currentReelIndex: 0 });
+    // Trigger a backend fetch
+    get().fetchReelsFromBackend();
+  },
+
+  fetchReelsFromBackend: async (limit = 20, offset = 0, category?: string) => {
+    set({ isLoading: true, error: null });
+    
+    try {
+      const response = await feedApi.getFeed({ limit, offset, category });
+      
+      // Convert backend LearningUnits to ReelItems
+      const reelItems = response.items.map((unit) => convertToReelItem(unit));
+      
+      set({ 
+        reels: reelItems,
+        isLoading: false,
+        error: null,
+      });
+    } catch (error) {
+      console.error("Failed to fetch reels from backend:", error);
+      set({ 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : "Failed to fetch feed",
+      });
+      // Keep existing reels if fetch fails (fallback to mock data if empty)
+    }
   },
   
   // Computed getters
@@ -227,12 +305,38 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   },
 }));
 
-// Helper function to initialize reels from folders
-export const initializeSocialReels = (folders: Array<{ id: string; name: string }>) => {
-  const reels = generateMockReels(folders);
-  useSocialStore.setState({ 
-    reels,
-    activeFolderIds: folders.map((f) => f.id),
-    showAllFolders: true,
-  });
+// Helper function to initialize reels from folders - tries backend first, falls back to mock
+export const initializeSocialReels = async (folders: Array<{ id: string; name: string }>) => {
+  const store = useSocialStore.getState();
+  
+  // Try fetching from backend first
+  try {
+    await store.fetchReelsFromBackend();
+    
+    // If backend returned empty, use mock data
+    const { reels } = useSocialStore.getState();
+    if (reels.length === 0 && folders.length > 0) {
+      console.log("Backend returned empty feed, using mock data");
+      const mockReels = generateMockReels(folders);
+      useSocialStore.setState({ 
+        reels: mockReels,
+        activeFolderIds: folders.map((f) => f.id),
+        showAllFolders: true,
+      });
+    } else {
+      useSocialStore.setState({ 
+        activeFolderIds: folders.map((f) => f.id),
+        showAllFolders: true,
+      });
+    }
+  } catch (error) {
+    console.log("Backend unavailable, using mock data:", error);
+    // Fallback to mock data
+    const mockReels = generateMockReels(folders);
+    useSocialStore.setState({ 
+      reels: mockReels,
+      activeFolderIds: folders.map((f) => f.id),
+      showAllFolders: true,
+    });
+  }
 };
