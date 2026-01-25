@@ -84,13 +84,13 @@ The application will be available at `http://localhost:3000`
 - ✅ Shadcn/ui components
 - ✅ Global layout with navigation dock
 - ✅ Zustand state management
-- 🚧 Hard-Basic View implementation
+- ✅ Hard-Basic View implementation
 - 🚧 Soft View implementation
-- 🚧 Backend API setup
-- 🚧 RAG pipeline
+- ✅ Backend API setup
+- ✅ RAG pipeline
 - 🚧 Agentic tutor
 
 ## License
 
-Private project
+Private project for Hackathon
 
