@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # 2. 환경 변수가 로드된 후에 라우터 import
-from routers import feed, workspace, agent, ingest
+from routers import feed, workspace, agent, ingest, feedback
 from utils.opik_config import opik_service
 import os
 
@@ -53,6 +53,7 @@ app.include_router(feed.router, prefix="/api/feed", tags=["feed"])
 app.include_router(workspace.router, prefix="/api/workspace", tags=["workspace"])
 app.include_router(agent.router, prefix="/api/agent", tags=["agent"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
+app.include_router(feedback.router, prefix="/api/feedback", tags=["feedback"])
 
 
 @app.get("/")
