@@ -21,3 +21,6 @@ opik>=0.1.0
 
 # Google Generative AI SDK (for model checking)
 google-generativeai>=0.3.0
+
+# Supabase
+supabase>=2.0.0
