@@ -1,0 +1,137 @@
+"use client";
+
+import { Flame, MessageSquare, Bell, Settings, Smile } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+import { useAppStore } from "@/lib/store";
+
+export function GlobalNavDock() {
+  const { viewMode, setViewMode } = useAppStore();
+
+  return (
+    <TooltipProvider>
+      <div className="flex h-full w-16 flex-col items-center border-r bg-background py-4">
+        {/* Top Section */}
+        <div className="flex flex-col items-center gap-3">
+          {/* iUM Logo */}
+          <div className="mb-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 rounded-lg font-semibold text-lg"
+                >
+                  iUM
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                <p>iUM</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+
+          {/* Fire (Streak) - Hard View */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setViewMode("hard")}
+                className={cn(
+                  "h-9 w-9 rounded-lg hover:bg-accent transition-colors",
+                  viewMode === "hard" && "bg-accent"
+                )}
+              >
+                <Flame className="h-5 w-5 text-orange-500" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>Hard-Basic View (Workspace)</p>
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Message - Soft View (Reels) */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setViewMode("soft")}
+                className={cn(
+                  "h-9 w-9 rounded-lg hover:bg-accent transition-colors",
+                  viewMode === "soft" && "bg-accent"
+                )}
+              >
+                <MessageSquare className="h-5 w-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>Soft View (Reels)</p>
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Notification */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-lg hover:bg-accent relative"
+              >
+                <Bell className="h-5 w-5" />
+                {/* Notification badge could go here */}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>Notifications</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Bottom Section */}
+        <div className="flex flex-col items-center gap-3">
+          <Separator className="w-8" />
+
+          {/* Profile (Smile icon as placeholder for emoji) */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-lg hover:bg-accent"
+              >
+                <Smile className="h-5 w-5 text-yellow-500" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>Profile</p>
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Settings */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 rounded-lg hover:bg-accent"
+              >
+                <Settings className="h-5 w-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              <p>Settings</p>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+    </TooltipProvider>
+  );
+}
+

@@ -1,0 +1,15 @@
+{
+  "name": "ium-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "cd apps/web && npm run dev",
+    "dev:api": "cd apps/api && uvicorn main:app --reload",
+    "build:web": "cd apps/web && npm run build",
+    "build:api": "cd apps/api && echo 'Backend build script'"
+  }
+}
+
