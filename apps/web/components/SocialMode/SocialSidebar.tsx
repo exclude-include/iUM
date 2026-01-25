@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Home, Search, Compass, Video, MessageCircle, Bell, RefreshCw } from "lucide-react";
+import { Home, Search, Compass, Video, MessageCircle, Bell, RefreshCw, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import { useSocialStore, initializeSocialReels } from "./useSocialStore";
+import { UploadModal } from "./UploadModal";
 
 export function SocialSidebar() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export function SocialSidebar() {
     setShowAllFolders,
     refreshFeed,
   } = useSocialStore();
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   // Initialize reels when folders are available
   useEffect(() => {
@@ -74,16 +76,28 @@ export function SocialSidebar() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Filters</h3>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={refreshFeed}
-              title="Refresh Feed"
-            >
-              <RefreshCw className="h-4 w-4" />
-            </Button>
+            <div className="flex gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={refreshFeed}
+                title="Refresh Feed"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
+
+          {/* New Post Button */}
+          <Button
+            onClick={() => setIsUploadModalOpen(true)}
+            className="w-full"
+            size="sm"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            New Post
+          </Button>
 
           {/* All Toggle */}
           <div className="flex items-center justify-between rounded-lg border p-3">
@@ -130,6 +144,12 @@ export function SocialSidebar() {
           </div>
         </div>
       </div>
+
+      {/* Upload Modal */}
+      <UploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+      />
     </div>
   );
 }
