@@ -396,6 +396,66 @@ async def query_rag_chain(
     return result
 
 
+@track(name="query_rag_chain_sync", type="llm", tags=["rag", "chat", "gemini", "sync"])
+def query_rag_chain_sync(
+    question: str,
+    collection_name: str = "user_knowledge",
+    model_name: str = "models/gemini-2.5-flash",
+    k: int = 4,
+    folder_id: Optional[str] = None
+) -> dict:
+    """
+    Synchronous version of query_rag_chain for Opik evaluation.
+    """
+    opik = get_opik_context()
+
+    # Tool 1: Create RAG Chain
+    chain = create_rag_chain(
+        collection_name=collection_name,
+        model_name=model_name,
+        k=k,
+        folder_id=folder_id
+    )
+
+    # Tool 2: Vector DB Retrieval
+    retriever = get_retriever(collection_name=collection_name, k=k, folder_id=folder_id)
+    relevant_docs = retriever.invoke(question) if hasattr(retriever, 'invoke') else retriever.get_relevant_documents(question)
+
+    # Tool 3: LLM Chain Invocation
+    raw_answer = chain.invoke(question)
+    
+    # Tool 4: Parse Learning Unit
+    answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
+    
+    # Tool 5: Source Processing
+    sources, using_general_knowledge = _process_sources(answer, relevant_docs)
+    
+    # Build reasoning chain
+    reasoning_chain = []
+    if len(relevant_docs) > 0:
+        reasoning_chain.append("Retrieved relevant documents from VectorDB")
+    else:
+        reasoning_chain.append("No documents found in VectorDB - using general knowledge")
+    
+    reasoning_chain.append("Applied Feynman Technique prompt")
+    
+    if using_general_knowledge or not sources:
+        reasoning_chain.append("Generated response using general knowledge (no context available)")
+    else:
+        reasoning_chain.append("Generated response using Gemini with RAG context")
+    
+    result = {
+        "answer": answer,
+        "sources": sources,
+        "reasoning_chain": reasoning_chain
+    }
+    
+    if learning_unit_dict:
+        result["learning_unit"] = learning_unit_dict
+    
+    return result
+
+
 @track(name="generate_study_summary", type="llm", tags=["summary", "gemini"])
 async def generate_study_summary(messages: list) -> dict:
     """
