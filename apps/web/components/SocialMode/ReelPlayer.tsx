@@ -10,14 +10,17 @@ import {
   MoreVertical,
   ChevronUp,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { useSocialStore } from "./useSocialStore";
+import { useSocialStore, fetchReelsFromSupabase } from "./useSocialStore";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 export function ReelPlayer() {
   const { toast } = useToast();
+  const supabase = createClient();
   const store = useSocialStore();
   const {
     currentReelIndex,
@@ -33,6 +36,28 @@ export function ReelPlayer() {
   
   const currentReel = store.getCurrentReel();
   const filteredReels = store.getFilteredReels();
+  const [isLoadingReels, setIsLoadingReels] = useState(false);
+
+  // Fetch reels from Supabase on mount and when needed
+  useEffect(() => {
+    const loadReels = async () => {
+      setIsLoadingReels(true);
+      try {
+        const supabaseReels = await fetchReelsFromSupabase(supabase);
+        
+        // Merge with existing reels (or replace if you want only Supabase data)
+        if (supabaseReels.length > 0) {
+          useSocialStore.setState({ reels: supabaseReels });
+        }
+      } catch (error) {
+        console.error("Failed to load reels:", error);
+      } finally {
+        setIsLoadingReels(false);
+      }
+    };
+
+    loadReels();
+  }, [supabase]);
 
   const [isLiked, setIsLiked] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
@@ -59,13 +84,24 @@ export function ReelPlayer() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [nextReel, prevReel]);
 
+  if (isLoadingReels) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-muted/30">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-muted-foreground" />
+          <p className="text-muted-foreground">Loading reels...</p>
+        </div>
+      </div>
+    );
+  }
+
   if (!currentReel) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-muted/30">
         <div className="text-center">
           <p className="text-muted-foreground">No reels available</p>
           <p className="text-sm text-muted-foreground mt-2">
-            Create folders in Hard Mode to see content
+            Click "New Post" to upload your first reel
           </p>
         </div>
       </div>
@@ -135,20 +171,31 @@ export function ReelPlayer() {
       {/* Main Container (Mobile Frame) */}
       <div className="relative h-[90vh] max-h-[800px] w-full max-w-[400px] rounded-2xl bg-background shadow-2xl overflow-hidden">
         {/* Video/Content Background */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: currentReel.color || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
-          }}
-        >
-          {/* Placeholder content */}
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center text-white/80">
-              <p className="text-2xl font-bold mb-2">{currentReel.title}</p>
-              <p className="text-sm">{currentReel.description}</p>
+        {currentReel.videoUrl ? (
+          <video
+            src={currentReel.videoUrl}
+            className="absolute inset-0 h-full w-full object-cover"
+            autoPlay
+            loop
+            muted
+            playsInline
+          />
+        ) : (
+          <div
+            className="absolute inset-0"
+            style={{
+              background: currentReel.color || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+            }}
+          >
+            {/* Placeholder content */}
+            <div className="flex h-full items-center justify-center">
+              <div className="text-center text-white/80">
+                <p className="text-2xl font-bold mb-2">{currentReel.title}</p>
+                <p className="text-sm">{currentReel.description}</p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Navigation Arrows */}
         {currentReelIndex > 0 && (
