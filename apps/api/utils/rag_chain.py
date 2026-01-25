@@ -10,7 +10,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from utils.vector_store import get_retriever
-from utils.opik_config import trace
+from utils.opik_config import track
 
 # Feynman Tutor System Prompt
 FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to explain concepts clearly and intuitively in the style of Richard Feynman.
@@ -163,7 +163,7 @@ def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional
         return response_text, None
 
 
-@trace
+@track(name="create_rag_chain", type="general", tags=["rag", "chain"])
 def create_rag_chain(
     collection_name: str = "user_knowledge",
     model_name: str = "models/gemini-2.5-flash",
@@ -212,7 +212,7 @@ def create_rag_chain(
     return chain
 
 
-@trace
+@track(name="query_rag_chain", type="llm", tags=["rag", "chat", "gemini"])
 async def query_rag_chain(
     question: str,
     collection_name: str = "user_knowledge",
@@ -343,6 +343,7 @@ async def query_rag_chain(
     return result
 
 
+@track(name="generate_study_summary", type="llm", tags=["summary", "gemini"])
 async def generate_study_summary(messages: list) -> dict:
     """
     Analyze conversation history to generate a concise study topic summary.
