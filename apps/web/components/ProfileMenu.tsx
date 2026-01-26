@@ -70,10 +70,16 @@ export function ProfileMenu({ onUploadClick }: ProfileMenuProps) {
     router.push("/login");
   };
 
+  const getUserDisplayName = () => {
+    if (!user) return "User";
+    return user.user_metadata?.display_name || user.user_metadata?.full_name || user.email?.split("@")[0] || "User";
+  };
+
   const getUserInitials = () => {
     if (!user) return "?";
-    if (user.user_metadata?.full_name) {
-      return user.user_metadata.full_name
+    const displayName = getUserDisplayName();
+    if (displayName !== "User") {
+      return displayName
         .split(" ")
         .map((n: string) => n[0])
         .join("")
@@ -121,12 +127,12 @@ export function ProfileMenu({ onUploadClick }: ProfileMenuProps) {
               {/* User Info */}
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
                 <Avatar className="h-12 w-12">
-                  <AvatarImage src={user.user_metadata?.avatar_url} />
+                  <AvatarImage src={user.user_metadata?.avatar_url} alt={getUserDisplayName()} />
                   <AvatarFallback>{getUserInitials()}</AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <p className="font-medium truncate">
-                    {user.user_metadata?.full_name || "User"}
+                    {getUserDisplayName()}
                   </p>
                   <p className="text-sm text-muted-foreground truncate">
                     {user.email}

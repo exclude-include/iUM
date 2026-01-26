@@ -69,9 +69,12 @@ CREATE TABLE reels (
 CREATE INDEX idx_reels_tags ON reels USING GIN(tags);
 CREATE INDEX idx_reels_folder_name ON reels(folder_name);
 
--- Storage bucket for video uploads
+-- Storage buckets for uploads
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('reels', 'reels', true);
+
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('avatars', 'avatars', true);
 
 -- Storage policy for authenticated users to upload
 CREATE POLICY "Users can upload reels"
@@ -84,6 +87,30 @@ CREATE POLICY "Public can view reels"
 ON storage.objects FOR SELECT
 TO public
 USING (bucket_id = 'reels');
+
+-- Avatars storage policies
+CREATE POLICY "Users can upload their own avatar"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'avatars' 
+  AND (storage.foldername(name))[1] = 'avatars'
+);
+
+CREATE POLICY "Users can update their own avatar"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (bucket_id = 'avatars');
+
+CREATE POLICY "Users can delete their own avatar"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (bucket_id = 'avatars');
+
+CREATE POLICY "Public can view avatars"
+ON storage.objects FOR SELECT
+TO public
+USING (bucket_id = 'avatars');
 
 -- Row Level Security policies
 ALTER TABLE reels ENABLE ROW LEVEL SECURITY;

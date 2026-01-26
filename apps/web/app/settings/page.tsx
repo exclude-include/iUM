@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -9,15 +9,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, User, Bell, Lock, Palette, Trash2, Loader2 } from "lucide-react";
+import { ArrowLeft, User, Bell, Lock, Palette, Trash2, Loader2, Camera, Save } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 export default function SettingsPage() {
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [displayName, setDisplayName] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { toast } = useToast();
 
@@ -28,6 +34,8 @@ export default function SettingsPage() {
         router.push("/login");
       } else {
         setUser(session.user);
+        setDisplayName(session.user.user_metadata?.display_name || session.user.user_metadata?.full_name || "");
+        setAvatarUrl(session.user.user_metadata?.avatar_url || "");
         setLoading(false);
       }
     });
@@ -40,11 +48,115 @@ export default function SettingsPage() {
         router.push("/login");
       } else {
         setUser(session.user);
+        setDisplayName(session.user.user_metadata?.display_name || session.user.user_metadata?.full_name || "");
+        setAvatarUrl(session.user.user_metadata?.avatar_url || "");
       }
     });
 
     return () => subscription.unsubscribe();
   }, [router]);
+
+  const handleAvatarClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Invalid file",
+        description: "Please select an image file",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please select an image under 5MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploadingAvatar(true);
+
+    try {
+      // Upload to Supabase Storage
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `avatars/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("avatars").getPublicUrl(filePath);
+
+      // Update user metadata
+      const { error: updateError } = await supabase.auth.updateUser({
+        data: {
+          avatar_url: publicUrl,
+        },
+      });
+
+      if (updateError) throw updateError;
+
+      setAvatarUrl(publicUrl);
+
+      toast({
+        title: "Success!",
+        description: "Profile picture updated successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Upload failed",
+        description: error.message || "Failed to upload profile picture",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!user) return;
+
+    setIsSavingProfile(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          display_name: displayName.trim(),
+        },
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Success!",
+        description: "Profile updated successfully.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Update failed",
+        description: error.message || "Failed to update profile",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   const handleSignOut = async () => {
     try {
@@ -110,18 +222,92 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Account Settings */}
+        {/* Profile Settings */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <User className="h-5 w-5" />
-              Account
+              Profile
             </CardTitle>
             <CardDescription>
-              Your account information and authentication
+              Customize your public profile
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-6">
+            {/* Profile Picture */}
+            <div className="flex items-center gap-6">
+              <div className="relative">
+                <Avatar className="h-24 w-24">
+                  <AvatarImage src={avatarUrl} alt={displayName || "User"} />
+                  <AvatarFallback className="text-2xl">
+                    {displayName ? displayName.charAt(0).toUpperCase() : user.email?.charAt(0).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="absolute -bottom-2 -right-2 h-8 w-8 rounded-full shadow-lg"
+                  onClick={handleAvatarClick}
+                  disabled={isUploadingAvatar}
+                >
+                  {isUploadingAvatar ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Camera className="h-4 w-4" />
+                  )}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  className="hidden"
+                />
+              </div>
+              <div className="flex-1">
+                <Label className="text-base font-semibold">Profile Picture</Label>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Click the camera icon to upload a new profile picture
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Recommended: Square image, max 5MB
+                </p>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Display Name */}
+            <div className="space-y-2">
+              <Label htmlFor="display-name">Display Name</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="display-name"
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Enter your display name"
+                  maxLength={50}
+                />
+                <Button
+                  onClick={handleSaveProfile}
+                  disabled={isSavingProfile || !displayName.trim()}
+                >
+                  {isSavingProfile ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                This is how others will see you on iUM
+              </p>
+            </div>
+
+            <Separator />
+
+            {/* Account Info */}
             <div className="space-y-2">
               <Label>Email</Label>
               <Input 
@@ -132,20 +318,6 @@ export default function SettingsPage() {
               />
               <p className="text-sm text-muted-foreground">
                 Email cannot be changed
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Full Name</Label>
-              <Input 
-                type="text" 
-                value={user.user_metadata?.full_name || ""} 
-                placeholder="Enter your full name"
-                disabled
-                className="bg-muted"
-              />
-              <p className="text-sm text-muted-foreground">
-                Name is managed through your OAuth provider
               </p>
             </div>
 
