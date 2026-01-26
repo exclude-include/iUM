@@ -21,3 +21,13 @@ opik>=0.1.0
 
 # Google Generative AI SDK (for model checking)
 google-generativeai>=0.3.0
+
+# Google OAuth & Drive Integration
+google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.108.0
+google-auth>=2.25.0
+
+# Supabase Integration
+supabase>=2.3.0
+postgrest>=0.13.0
+storage3>=0.7.0
