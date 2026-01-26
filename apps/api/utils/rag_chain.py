@@ -44,6 +44,7 @@ Format your response as follows:
 {{
   "title": "Concept Title",
   "type": "concept|math|code|summary|quiz",
+  "description": "Brief description of the learning unit (optional)",
   "content": "Markdown formatted explanation. For diagrams, use mermaid code blocks: ```mermaid\\ngraph TD\\n  A[Start] --> B[Process]\\n```",
   "equations": ["LaTeX equation 1", "LaTeX equation 2"],
   "diagram_description": "Optional description (deprecated - use mermaid in content instead)",
@@ -61,6 +62,8 @@ Format your response as follows:
   ]
 }}
 </LEARNING_UNIT>
+
+**Note:** The "id", "description", and "author" fields are optional. The system will automatically generate IDs and set default values if not provided.
 
 **Type Guidelines:**
 - Use "math" type for mathematical concepts with equations

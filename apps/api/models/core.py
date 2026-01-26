@@ -6,11 +6,11 @@ from datetime import datetime
 # Learning Unit Types
 class LearningUnit(BaseModel):
     """Represents a learning unit that can be displayed as a Reel or Document"""
-    id: str
+    id: Optional[str] = None  # Made optional with default None
     title: str
-    description: str
-    type: Literal["reel", "document", "quiz", "discussion"]
-    author: str
+    description: Optional[str] = None  # Made optional with default None
+    type: Literal["reel", "document", "quiz", "discussion", "concept"]  # Added "concept"
+    author: Optional[str] = "AI Tutor"  # Made optional with default value
     tags: List[str] = []
     content_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
