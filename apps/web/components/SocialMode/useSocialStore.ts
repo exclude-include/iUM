@@ -31,6 +31,10 @@ interface SocialState {
   bookmarkedReels: Set<string>;
   activeTab: "reels" | "quiz" | "discuss";
   
+  // View state
+  currentView: "feed" | "profile" | "search" | "explore";
+  searchQuery: string;
+  
   // Actions
   setActiveFolderIds: (ids: string[]) => void;
   toggleFolder: (folderId: string) => void;
@@ -41,11 +45,15 @@ interface SocialState {
   toggleLike: (reelId: string) => void;
   toggleBookmark: (reelId: string) => void;
   setActiveTab: (tab: "reels" | "quiz" | "discuss") => void;
+  setCurrentView: (view: "feed" | "profile" | "search" | "explore") => void;
+  setSearchQuery: (query: string) => void;
   refreshFeed: () => void;
   
   // Computed getters
   getFilteredReels: () => ReelItem[];
   getCurrentReel: () => ReelItem | null;
+  getMyReels: () => ReelItem[];
+  getSearchResults: () => ReelItem[];
 }
 
 // Mock data generator
@@ -136,6 +144,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   likedReels: new Set(),
   bookmarkedReels: new Set(),
   activeTab: "reels",
+  currentView: "feed",
+  searchQuery: "",
   
   setActiveFolderIds: (ids) => set({ activeFolderIds: ids }),
   
@@ -227,6 +237,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   
   setActiveTab: (tab) => set({ activeTab: tab }),
   
+  setCurrentView: (view) => set({ currentView: view, currentReelIndex: 0 }),
+  
+  setSearchQuery: (query) => set({ searchQuery: query }),
+  
   refreshFeed: () => {
     set({ currentReelIndex: 0 });
   },
@@ -244,6 +258,27 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     const filteredReels = get().getFilteredReels();
     const { currentReelIndex } = get();
     return filteredReels[currentReelIndex] || null;
+  },
+  
+  getMyReels: () => {
+    const { reels } = get();
+    // TODO: Filter by current user ID
+    // For now, return all reels as if they're the user's
+    return reels;
+  },
+  
+  getSearchResults: () => {
+    const { reels, searchQuery } = get();
+    if (!searchQuery.trim()) return reels;
+    
+    const query = searchQuery.toLowerCase();
+    return reels.filter((reel) =>
+      reel.title.toLowerCase().includes(query) ||
+      reel.description.toLowerCase().includes(query) ||
+      reel.tags?.some((tag) => tag.toLowerCase().includes(query)) ||
+      reel.folderName.toLowerCase().includes(query) ||
+      reel.author.toLowerCase().includes(query)
+    );
   },
 }));
 

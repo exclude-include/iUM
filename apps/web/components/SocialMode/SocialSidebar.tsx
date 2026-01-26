@@ -18,6 +18,8 @@ export function SocialSidebar() {
     toggleFolder,
     setShowAllFolders,
     refreshFeed,
+    currentView,
+    setCurrentView,
   } = useSocialStore();
 
   // Initialize reels when folders are available
@@ -28,12 +30,40 @@ export function SocialSidebar() {
   }, [knowledgeFolders]);
 
   const navItems = [
-    { icon: Home, label: "Home", action: () => router.push("/") },
-    { icon: Search, label: "Search", action: () => {} },
-    { icon: Compass, label: "Explore", action: () => {} },
-    { icon: Video, label: "Reels", action: () => {} },
-    { icon: MessageCircle, label: "Message", action: () => router.push("/") },
-    { icon: Bell, label: "Notification", action: () => {} },
+    { 
+      icon: Home, 
+      label: "Home", 
+      action: () => setCurrentView("profile"),
+      view: "profile" as const
+    },
+    { 
+      icon: Search, 
+      label: "Search", 
+      action: () => setCurrentView("search"),
+      view: "search" as const
+    },
+    { 
+      icon: Compass, 
+      label: "Explore", 
+      action: () => setCurrentView("explore"),
+      view: "explore" as const
+    },
+    { 
+      icon: Video, 
+      label: "Reels", 
+      action: () => setCurrentView("feed"),
+      view: "feed" as const
+    },
+    { 
+      icon: MessageCircle, 
+      label: "Message", 
+      action: () => router.push("/")
+    },
+    { 
+      icon: Bell, 
+      label: "Notification", 
+      action: () => {}
+    },
   ];
 
   const handleAllToggle = (checked: boolean) => {
@@ -51,14 +81,17 @@ export function SocialSidebar() {
         <nav className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
+            const isActive = item.view ? currentView === item.view : false;
             return (
               <button
                 key={item.label}
                 onClick={item.action}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
+                  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                   "hover:bg-accent hover:text-accent-foreground",
-                  "text-muted-foreground"
+                  isActive 
+                    ? "bg-accent text-accent-foreground" 
+                    : "text-muted-foreground"
                 )}
               >
                 <Icon className="h-5 w-5" />
