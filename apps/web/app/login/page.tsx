@@ -50,7 +50,7 @@ export default function LoginPage() {
           description: "Successfully signed in.",
         });
         
-        router.push("/social");
+        router.push("/");
         router.refresh();
       }
     } catch (error: any) {
