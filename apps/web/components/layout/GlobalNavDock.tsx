@@ -1,14 +1,18 @@
 "use client";
 
-import { Flame, MessageSquare, Bell, Settings, Smile } from "lucide-react";
+import { useState } from "react";
+import { Flame, MessageSquare, Bell, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
+import { ProfileMenu } from "@/components/ProfileMenu";
+import { UploadReelDialog } from "@/components/UploadReelDialog";
 
 export function GlobalNavDock() {
   const { viewMode, setViewMode } = useAppStore();
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
 
   return (
     <TooltipProvider>
@@ -98,16 +102,12 @@ export function GlobalNavDock() {
         <div className="flex flex-col items-center gap-3">
           <Separator className="w-8" />
 
-          {/* Profile (Smile icon as placeholder for emoji) */}
+          {/* Profile Menu */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-lg hover:bg-accent"
-              >
-                <Smile className="h-5 w-5 text-yellow-500" />
-              </Button>
+              <div>
+                <ProfileMenu onUploadClick={() => setIsUploadDialogOpen(true)} />
+              </div>
             </TooltipTrigger>
             <TooltipContent side="right">
               <p>Profile</p>
@@ -131,6 +131,12 @@ export function GlobalNavDock() {
           </Tooltip>
         </div>
       </div>
+
+      {/* Upload Reel Dialog */}
+      <UploadReelDialog
+        isOpen={isUploadDialogOpen}
+        onClose={() => setIsUploadDialogOpen(false)}
+      />
     </TooltipProvider>
   );
 }
