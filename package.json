@@ -10,6 +10,8 @@
     "dev:api": "cd apps/api && uvicorn main:app --reload",
     "build:web": "cd apps/web && npm run build",
     "build:api": "cd apps/api && echo 'Backend build script'"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.8.0"
   }
 }
-
