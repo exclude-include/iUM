@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { supabase } from "@/lib/supabase/client";
 import {
   Sheet,
   SheetContent,
@@ -28,7 +28,6 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMode, setUploadMode] = useState<"file" | "url" | "drive">("url");
   const { toast } = useToast();
-  const supabase = createClient();
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
