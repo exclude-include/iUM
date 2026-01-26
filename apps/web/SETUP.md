@@ -57,11 +57,17 @@ CREATE TABLE reels (
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   author_name TEXT,
   folder_id TEXT,
+  folder_name TEXT,
+  tags TEXT[] DEFAULT '{}',
   likes INTEGER DEFAULT 0,
   comments INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Create index for hashtag search (for future recommendation algorithm)
+CREATE INDEX idx_reels_tags ON reels USING GIN(tags);
+CREATE INDEX idx_reels_folder_name ON reels(folder_name);
 
 -- Storage bucket for video uploads
 INSERT INTO storage.buckets (id, name, public)

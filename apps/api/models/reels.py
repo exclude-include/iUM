@@ -18,6 +18,8 @@ class Reel(BaseModel):
     duration: Optional[float] = Field(None, description="Duration in seconds")
     views: int = Field(default=0)
     likes: int = Field(default=0)
+    tags: list[str] = Field(default_factory=list, description="Hashtags for categorization and recommendation")
+    folder_name: Optional[str] = Field(None, description="Folder name for auto-tagging")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

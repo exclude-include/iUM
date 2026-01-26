@@ -14,6 +14,7 @@ export interface ReelItem {
   folderName: string;
   author: string;
   authorAvatar?: string;
+  tags?: string[]; // Hashtags for categorization and recommendation
 }
 
 interface SocialState {
@@ -86,9 +87,27 @@ const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelIt
   
   const reels: ReelItem[] = [];
   
+  const hashtagPool = [
+    "physics", "math", "calculus", "quantum", "programming",
+    "algorithms", "neuralnetworks", "ai", "machinelearning", "science",
+    "education", "learning", "tutorial", "explained", "theory"
+  ];
+
   folders.forEach((folder, folderIndex) => {
     for (let i = 0; i < 3; i++) {
       const topicIndex = (folderIndex * 3 + i) % topics.length;
+      
+      // Generate hashtags: folder name + 2-3 random tags
+      const folderTag = folder.name.toLowerCase().replace(/\s+/g, "_");
+      const numRandomTags = Math.floor(Math.random() * 2) + 2;
+      const randomTags = [];
+      for (let j = 0; j < numRandomTags; j++) {
+        const randomTag = hashtagPool[Math.floor(Math.random() * hashtagPool.length)];
+        if (!randomTags.includes(randomTag)) {
+          randomTags.push(randomTag);
+        }
+      }
+      
       reels.push({
         id: `reel-${folder.id}-${i}`,
         title: topics[topicIndex],
@@ -100,6 +119,7 @@ const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelIt
         folderName: folder.name,
         author: "MathTutor",
         authorAvatar: undefined,
+        tags: [folderTag, ...randomTags],
       });
     }
   });

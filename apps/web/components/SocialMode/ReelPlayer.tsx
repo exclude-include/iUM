@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart,
@@ -10,6 +10,8 @@ import {
   MoreVertical,
   ChevronUp,
   ChevronDown,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -36,6 +38,9 @@ export function ReelPlayer() {
 
   const [isLiked, setIsLiked] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   // Update like/bookmark state when reel changes
   useEffect(() => {
@@ -44,6 +49,18 @@ export function ReelPlayer() {
       setIsBookmarked(bookmarkedReels.has(currentReel.id));
     }
   }, [currentReel, likedReels, bookmarkedReels]);
+
+  // Auto-play video when reel changes
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.load();
+      videoRef.current.play().catch((err) => {
+        console.error("Auto-play failed:", err);
+        setIsPlaying(false);
+      });
+      setIsPlaying(true);
+    }
+  }, [currentReel]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -57,6 +74,44 @@ export function ReelPlayer() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [nextReel, prevReel]);
+
+  // Mouse wheel scroll navigation
+  useEffect(() => {
+    let scrollTimeout: NodeJS.Timeout;
+    let isScrolling = false;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      
+      if (isScrolling) return;
+      
+      const delta = e.deltaY;
+      
+      if (Math.abs(delta) > 50) {
+        isScrolling = true;
+        
+        if (delta > 0) {
+          // Scroll down - next reel
+          nextReel();
+        } else {
+          // Scroll up - previous reel
+          prevReel();
+        }
+        
+        // Reset scrolling flag after animation
+        scrollTimeout = setTimeout(() => {
+          isScrolling = false;
+        }, 500);
+      }
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: false });
+    
+    return () => {
+      window.removeEventListener("wheel", handleWheel);
+      clearTimeout(scrollTimeout);
+    };
   }, [nextReel, prevReel]);
 
   if (!currentReel) {
@@ -112,6 +167,24 @@ export function ReelPlayer() {
     });
   };
 
+  const handleVideoClick = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
+
   return (
     <div className="relative flex h-full w-full flex-col items-center justify-center bg-muted/30">
       {/* Tabs */}
@@ -135,20 +208,51 @@ export function ReelPlayer() {
       {/* Main Container (Mobile Frame) */}
       <div className="relative h-[90vh] max-h-[800px] w-full max-w-[400px] rounded-2xl bg-background shadow-2xl overflow-hidden">
         {/* Video/Content Background */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background: currentReel.color || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        <div className="absolute inset-0 bg-black" onClick={handleVideoClick}>
+          {currentReel.videoUrl ? (
+            <video
+              ref={videoRef}
+              src={currentReel.videoUrl}
+              className="h-full w-full object-cover"
+              loop
+              playsInline
+              muted={isMuted}
+              preload="auto"
+            />
+          ) : (
+            <div
+              className="h-full w-full"
+              style={{
+                background: currentReel.color || "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              }}
+            >
+              {/* Placeholder content */}
+              <div className="flex h-full items-center justify-center">
+                <div className="text-center text-white/80">
+                  <p className="text-2xl font-bold mb-2">{currentReel.title}</p>
+                  <p className="text-sm">{currentReel.description}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Mute/Unmute Button */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute top-20 left-4 z-20 h-10 w-10 rounded-full bg-background/50 backdrop-blur-sm hover:bg-background/80"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleMute();
           }}
         >
-          {/* Placeholder content */}
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center text-white/80">
-              <p className="text-2xl font-bold mb-2">{currentReel.title}</p>
-              <p className="text-sm">{currentReel.description}</p>
-            </div>
-          </div>
-        </div>
+          {isMuted ? (
+            <VolumeX className="h-5 w-5 text-white" />
+          ) : (
+            <Volume2 className="h-5 w-5 text-white" />
+          )}
+        </Button>
 
         {/* Navigation Arrows */}
         {currentReelIndex > 0 && (
@@ -174,7 +278,7 @@ export function ReelPlayer() {
         )}
 
         {/* Bottom Left: Author Info */}
-        <div className="absolute bottom-20 left-4 z-20 text-white">
+        <div className="absolute bottom-20 left-4 z-20 text-white max-w-[60%]">
           <div className="flex items-center gap-2 mb-2">
             <div className="h-8 w-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
               <span className="text-xs font-bold">
@@ -187,7 +291,21 @@ export function ReelPlayer() {
             </div>
           </div>
           <p className="text-sm font-medium mb-1">{currentReel.title}</p>
-          <p className="text-xs text-white/70 line-clamp-2">{currentReel.description}</p>
+          <p className="text-xs text-white/70 line-clamp-2 mb-2">{currentReel.description}</p>
+          
+          {/* Hashtags */}
+          {currentReel.tags && currentReel.tags.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {currentReel.tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="text-xs font-medium text-white/90 hover:text-white cursor-pointer"
+                >
+                  #{tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Bottom Right: Action Bar */}

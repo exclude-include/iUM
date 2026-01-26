@@ -27,6 +27,9 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMode, setUploadMode] = useState<"file" | "url" | "drive">("url");
+  const [folderName, setFolderName] = useState("");
+  const [hashtags, setHashtags] = useState<string[]>([]);
+  const [hashtagInput, setHashtagInput] = useState("");
   const { toast } = useToast();
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -67,6 +70,38 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
     // 1. Google OAuth authentication (already set up in login)
     // 2. Google Picker API integration
     // 3. File download and upload to Supabase storage
+  };
+
+  const addHashtag = (tag: string) => {
+    const cleanTag = tag.trim().toLowerCase().replace(/^#/, "");
+    if (cleanTag && !hashtags.includes(cleanTag)) {
+      setHashtags([...hashtags, cleanTag]);
+    }
+  };
+
+  const removeHashtag = (tag: string) => {
+    setHashtags(hashtags.filter((t) => t !== tag));
+  };
+
+  const handleHashtagInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" || e.key === "," || e.key === " ") {
+      e.preventDefault();
+      if (hashtagInput.trim()) {
+        addHashtag(hashtagInput);
+        setHashtagInput("");
+      }
+    }
+  };
+
+  // Auto-add folder name as hashtag when it changes
+  const handleFolderNameChange = (value: string) => {
+    setFolderName(value);
+    if (value.trim()) {
+      const folderTag = value.trim().toLowerCase().replace(/\s+/g, "_");
+      if (!hashtags.includes(folderTag)) {
+        addHashtag(folderTag);
+      }
+    }
   };
 
   const handleUpload = async () => {
@@ -112,7 +147,7 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
 
       // Create reel record in database
       // TODO: Create a 'reels' table in Supabase with columns:
-      // - id, title, description, video_url, user_id, folder_id, created_at, likes, comments
+      // - id, title, description, video_url, user_id, folder_id, created_at, likes, comments, tags, folder_name
       
       const { error: insertError } = await supabase.from("reels").insert({
         title: title.trim(),
@@ -120,6 +155,8 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
         video_url: finalVideoUrl,
         user_id: user.id,
         author_name: user.user_metadata?.full_name || user.email,
+        folder_name: folderName.trim() || null,
+        tags: hashtags,
         likes: 0,
         comments: 0,
       });
@@ -138,9 +175,10 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
           color: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
           likes: 0,
           comments: 0,
-          folderId: "default",
-          folderName: "My Reels",
+          folderId: folderName.trim() || "default",
+          folderName: folderName.trim() || "My Reels",
           author: user.user_metadata?.full_name || user.email || "User",
+          tags: hashtags,
         };
         
         useSocialStore.setState({ reels: [...reels, newReel] });
@@ -156,6 +194,9 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
       setDescription("");
       setVideoUrl("");
       setFile(null);
+      setFolderName("");
+      setHashtags([]);
+      setHashtagInput("");
       onClose();
     } catch (error: any) {
       toast({
@@ -234,6 +275,58 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
               disabled={isUploading}
               rows={3}
             />
+          </div>
+
+          {/* Folder Name Input */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Folder/Category</label>
+            <Input
+              placeholder="e.g., Math, Physics, Programming"
+              value={folderName}
+              onChange={(e) => handleFolderNameChange(e.target.value)}
+              disabled={isUploading}
+            />
+            <p className="text-xs text-muted-foreground">
+              Auto-generates hashtag for recommendations
+            </p>
+          </div>
+
+          {/* Hashtags Input */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Hashtags</label>
+            <div className="space-y-2">
+              {/* Tag Pills */}
+              {hashtags.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {hashtags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium"
+                    >
+                      #{tag}
+                      <button
+                        type="button"
+                        onClick={() => removeHashtag(tag)}
+                        className="hover:text-primary/70"
+                        disabled={isUploading}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <Input
+                placeholder="Add hashtags (press Enter or comma)"
+                value={hashtagInput}
+                onChange={(e) => setHashtagInput(e.target.value)}
+                onKeyDown={handleHashtagInputKeyDown}
+                disabled={isUploading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Press Enter, comma, or space to add hashtags
+              </p>
+            </div>
           </div>
 
           {/* Conditional Upload Input */}
