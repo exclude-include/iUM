@@ -169,10 +169,8 @@ export function ProfileMenu({ onUploadClick }: ProfileMenuProps) {
                   variant="ghost"
                   className="w-full justify-start"
                   onClick={() => {
-                    toast({
-                      title: "Settings",
-                      description: "Settings page coming soon!",
-                    });
+                    setIsOpen(false);
+                    router.push("/settings");
                   }}
                 >
                   <Settings className="mr-2 h-4 w-4" />

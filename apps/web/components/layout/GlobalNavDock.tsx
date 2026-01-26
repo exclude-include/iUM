@@ -121,6 +121,7 @@ export function GlobalNavDock() {
                 variant="ghost"
                 size="icon"
                 className="h-9 w-9 rounded-lg hover:bg-accent"
+                onClick={() => window.location.href = "/settings"}
               >
                 <Settings className="h-5 w-5" />
               </Button>
