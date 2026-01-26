@@ -13,12 +13,12 @@ import { useRouter } from "next/navigation";
 export function MyProfileView() {
   const { user } = useAuth();
   const router = useRouter();
-  const { getMyReels, likedReels, bookmarkedReels, setCurrentView, setCurrentReelIndex } = useSocialStore();
+  const { getMyReels, likedReels, bookmarkedReels, setCurrentView, setCurrentReelIndex, reels } = useSocialStore();
   const [activeTab, setActiveTab] = useState("posts");
   
-  const myReels = getMyReels();
-  const likedReelsList = myReels.filter((reel) => likedReels.has(reel.id));
-  const bookmarkedReelsList = myReels.filter((reel) => bookmarkedReels.has(reel.id));
+  const myReels = getMyReels(user?.id);
+  const likedReelsList = reels.filter((reel) => likedReels.has(reel.id));
+  const bookmarkedReelsList = reels.filter((reel) => bookmarkedReels.has(reel.id));
 
   const getDisplayName = () => {
     if (!user) return "User";

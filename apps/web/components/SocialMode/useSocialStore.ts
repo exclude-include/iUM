@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { supabase } from "@/lib/supabase/client";
 
 export interface ReelItem {
   id: string;
@@ -14,6 +15,7 @@ export interface ReelItem {
   folderName: string;
   author: string;
   authorAvatar?: string;
+  authorUserId?: string; // User ID of the author
   tags?: string[]; // Hashtags for categorization and recommendation
 }
 
@@ -48,11 +50,12 @@ interface SocialState {
   setCurrentView: (view: "feed" | "profile" | "search" | "explore") => void;
   setSearchQuery: (query: string) => void;
   refreshFeed: () => void;
+  loadReelsFromSupabase: () => Promise<void>;
   
   // Computed getters
   getFilteredReels: () => ReelItem[];
   getCurrentReel: () => ReelItem | null;
-  getMyReels: () => ReelItem[];
+  getMyReels: (userId?: string) => ReelItem[];
   getSearchResults: () => ReelItem[];
 }
 
@@ -241,8 +244,57 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   
   setSearchQuery: (query) => set({ searchQuery: query }),
   
-  refreshFeed: () => {
+  refreshFeed: async () => {
     set({ currentReelIndex: 0 });
+    await get().loadReelsFromSupabase();
+  },
+  
+  loadReelsFromSupabase: async () => {
+    try {
+      const { data: reelsData, error } = await supabase
+        .from("reels")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) {
+        console.error("Error loading reels:", error);
+        return;
+      }
+
+      if (!reelsData || reelsData.length === 0) {
+        return;
+      }
+
+      // Transform Supabase data to ReelItem format
+      const colors = [
+        "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+        "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
+        "linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)",
+        "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
+        "linear-gradient(135deg, #30cfd0 0%, #330867 100%)",
+      ];
+
+      const transformedReels: ReelItem[] = reelsData.map((reel, index) => ({
+        id: reel.id,
+        title: reel.title,
+        description: reel.description || "",
+        videoUrl: reel.video_url,
+        color: colors[index % colors.length],
+        likes: reel.likes || 0,
+        comments: reel.comments || 0,
+        folderId: reel.folder_name || "default",
+        folderName: reel.folder_name || "My Reels",
+        author: reel.author_name || "User",
+        authorUserId: reel.user_id,
+        authorAvatar: undefined,
+        tags: reel.tags || [],
+      }));
+
+      set({ reels: transformedReels });
+    } catch (error) {
+      console.error("Failed to load reels:", error);
+    }
   },
   
   // Computed getters
@@ -260,11 +312,10 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     return filteredReels[currentReelIndex] || null;
   },
   
-  getMyReels: () => {
+  getMyReels: (userId?: string) => {
     const { reels } = get();
-    // TODO: Filter by current user ID
-    // For now, return all reels as if they're the user's
-    return reels;
+    if (!userId) return reels;
+    return reels.filter((reel) => reel.authorUserId === userId);
   },
   
   getSearchResults: () => {

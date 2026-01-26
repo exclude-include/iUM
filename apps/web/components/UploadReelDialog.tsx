@@ -154,7 +154,7 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
         description: description.trim(),
         video_url: finalVideoUrl,
         user_id: user.id,
-        author_name: user.user_metadata?.full_name || user.email,
+        author_name: user.user_metadata?.display_name || user.user_metadata?.full_name || user.email,
         folder_name: folderName.trim() || null,
         tags: hashtags,
         likes: 0,
@@ -177,11 +177,15 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
           comments: 0,
           folderId: folderName.trim() || "default",
           folderName: folderName.trim() || "My Reels",
-          author: user.user_metadata?.full_name || user.email || "User",
+          author: user.user_metadata?.display_name || user.user_metadata?.full_name || user.email || "User",
+          authorUserId: user.id,
           tags: hashtags,
         };
         
         useSocialStore.setState({ reels: [...reels, newReel] });
+      } else {
+        // Refresh reels from Supabase after successful upload
+        await useSocialStore.getState().loadReelsFromSupabase();
       }
 
       toast({

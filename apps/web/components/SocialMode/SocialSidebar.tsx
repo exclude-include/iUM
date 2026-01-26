@@ -22,11 +22,18 @@ export function SocialSidebar() {
     setCurrentView,
   } = useSocialStore();
 
-  // Initialize reels when folders are available
+  // Load reels from Supabase on mount
   useEffect(() => {
-    if (knowledgeFolders.length > 0) {
-      initializeSocialReels(knowledgeFolders);
-    }
+    const loadReels = async () => {
+      await useSocialStore.getState().loadReelsFromSupabase();
+      
+      // If no reels from Supabase and folders are available, initialize with mock data
+      if (useSocialStore.getState().reels.length === 0 && knowledgeFolders.length > 0) {
+        initializeSocialReels(knowledgeFolders);
+      }
+    };
+    
+    loadReels();
   }, [knowledgeFolders]);
 
   const navItems = [
