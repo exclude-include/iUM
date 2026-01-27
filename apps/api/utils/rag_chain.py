@@ -36,34 +36,34 @@ Your teaching philosophy:
 **Learning Unit Generation (CRITICAL):**
 When the user asks about a complex concept (e.g., mathematical equations, scientific principles, code examples, detailed explanations, or requests a quiz), generate a structured Learning Unit alongside your conversational reply.
 
-**IMPORTANT:** The Learning Unit's "content" field MUST contain a comprehensive, detailed explanation in Markdown format. Do NOT leave it empty! The content should include your full explanation with proper formatting, examples, and diagrams if applicable.
+**CONTENT FIELD REQUIREMENTS (MANDATORY - READ CAREFULLY):**
+1. The "content" field is THE MOST IMPORTANT field in the Learning Unit
+2. You MUST fill the "content" field with your COMPLETE, DETAILED explanation
+3. The "content" should be a LONG, comprehensive Markdown text (minimum 200 words)
+4. DO NOT leave "content" empty, blank, or with placeholder text like "REQUIRED - NEVER LEAVE EMPTY!"
+5. The "content" should be DIFFERENT from your conversational reply - make it more structured and detailed
+6. Include Markdown formatting: headings (##, ###), lists, bold, code blocks
+7. For process explanations, include Mermaid diagrams in code blocks: ```mermaid\\ngraph TD\\n  A[Step 1] --> B[Step 2]\\n```
+8. For math concepts, include LaTeX equations in the "equations" array separately
+
+**Example of GOOD content field:**
+"content": "## What is a Bipolar Junction Transistor?\\n\\nA Bipolar Junction Transistor (BJT) is a semiconductor device that can amplify or switch electrical signals.\\n\\n### Structure\\nA BJT consists of three layers...\\n\\n### How It Works\\n1. **Emitter**: Injects charge carriers\\n2. **Base**: Controls the flow\\n3. **Collector**: Collects charge carriers\\n\\n```mermaid\\ngraph LR\\n  E[Emitter] --> B[Base]\\n  B --> C[Collector]\\n```\\n\\n### Applications\\n- Amplifiers\\n- Switches\\n- Logic gates"
 
 Format your response as follows:
-1. First, provide your conversational reply (as usual).
+1. First, provide your conversational reply (casual, friendly explanation).
 2. Then, ALWAYS add a structured Learning Unit in JSON format at the end, wrapped in <LEARNING_UNIT> tags:
 
 <LEARNING_UNIT>
 {{
-  "title": "Concept Title (e.g., 'What is a Transistor?')",
+  "title": "What is a Bipolar Junction Transistor?",
   "type": "concept",
-  "content": "**REQUIRED - NEVER LEAVE EMPTY!**\\n\\nProvide your full, detailed explanation here in Markdown format.\\n\\n## Introduction\\nStart with a clear introduction...\\n\\n## Key Concepts\\n- Point 1\\n- Point 2\\n\\n## Examples\\nProvide real-world examples...\\n\\n## Summary\\nConclude with a brief summary...",
-  "equations": ["E = mc^2", "F = ma"],
-  "quiz_data": [
-    {{
-      "id": "q1",
-      "question_text": "Question text here?",
-      "options": [
-        {{"id": "A", "text": "Option A text", "is_correct": true}},
-        {{"id": "B", "text": "Option B text", "is_correct": false}},
-        {{"id": "C", "text": "Option C text", "is_correct": false}}
-      ],
-      "explanation": "Explanation of why the correct answer is correct"
-    }}
-  ]
+  "content": "## Introduction\\n\\nA Bipolar Junction Transistor (BJT) is a fundamental semiconductor device...\\n\\n[WRITE YOUR FULL EXPLANATION HERE - AT LEAST 200 WORDS WITH MARKDOWN FORMATTING]\\n\\n### Key Concepts\\n1. **Three-layer structure**: Emitter, Base, Collector\\n2. **Current amplification**: Small base current controls large collector current\\n\\n```mermaid\\ngraph TD\\n  A[Input Signal] --> B[Base]\\n  B --> C[Amplified Output]\\n```",
+  "equations": ["I_C = \\\\beta \\\\cdot I_B", "V_{BE} \\\\approx 0.7V"],
+  "quiz_data": []
 }}
 </LEARNING_UNIT>
 
-**CRITICAL REMINDER:** The "content" field in Learning Unit JSON MUST ALWAYS contain your complete, detailed explanation in Markdown format. NEVER leave it empty or use placeholder text!
+**FINAL WARNING:** If you send a Learning Unit with an empty or placeholder "content" field, the system will fail and students won't see your explanation. ALWAYS fill the "content" field with your complete, detailed explanation!
 
 **Type Guidelines:**
 - Use "math" type for mathematical concepts with equations
@@ -155,19 +155,51 @@ def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional
         # Remove the learning unit section from the conversational message
         conversational_message = re.sub(pattern, '', response_text, flags=re.DOTALL).strip()
         
+        # Debug logging
+        print(f"🔍 DEBUG: Found <LEARNING_UNIT> tag")
+        print(f"🔍 DEBUG: Conversational message length: {len(conversational_message)}")
+        print(f"🔍 DEBUG: JSON string preview: {json_str[:300]}...")
+        
         try:
             learning_unit_dict = json.loads(json_str)
             
-            # CRITICAL FIX: If content field is missing or empty, use conversational message
-            if not learning_unit_dict.get("content") or learning_unit_dict.get("content").strip() == "":
-                learning_unit_dict["content"] = conversational_message
+            # Debug: Check original content
+            original_content = learning_unit_dict.get("content", "")
+            print(f"🔍 DEBUG: Original content length: {len(original_content)}")
+            print(f"🔍 DEBUG: Original content preview: {original_content[:200] if original_content else 'EMPTY!'}")
+            
+            # CRITICAL FIX: Multi-layer fallback for content field
+            if not original_content or original_content.strip() == "" or original_content.strip() == "**REQUIRED - NEVER LEAVE EMPTY!**":
+                print("⚠️  WARNING: Content field is empty! Applying fallback...")
+                
+                # Try multiple fallback sources in order of preference:
+                # 1. Use the conversational message (best option)
+                if conversational_message and len(conversational_message) > 50:
+                    learning_unit_dict["content"] = conversational_message
+                    print(f"✅ Applied fallback: conversational_message ({len(conversational_message)} chars)")
+                
+                # 2. If conversational message is too short, use the full response
+                elif len(response_text) > 100:
+                    learning_unit_dict["content"] = response_text
+                    print(f"✅ Applied fallback: full response_text ({len(response_text)} chars)")
+                
+                # 3. Last resort: create a minimal content
+                else:
+                    learning_unit_dict["content"] = f"# {learning_unit_dict.get('title', 'Concept Explanation')}\n\nContent not available. Please try again."
+                    print("⚠️  Applied fallback: minimal placeholder content")
+            
+            # Final validation
+            final_content_length = len(learning_unit_dict.get("content", ""))
+            print(f"✅ Final content length: {final_content_length}")
             
             return conversational_message, learning_unit_dict
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             # If JSON parsing fails, return the full response as conversational message
+            print(f"❌ ERROR: JSON parsing failed: {e}")
             return response_text, None
     else:
         # No learning unit found, return full response as conversational message
+        print("🔍 DEBUG: No <LEARNING_UNIT> tag found in response")
         return response_text, None
 
 
