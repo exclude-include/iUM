@@ -1,16 +1,23 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Loader2, MessageCircle } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Send, Loader2, MessageCircle, LogOut, User, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { ChatMessage } from "@/types/api";
 import { useAppStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
+import { createClient } from "@/lib/supabase/client";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -26,7 +33,9 @@ export function ChatSidebar() {
     addMessageToFolder,
   } = useAppStore();
 
+  const router = useRouter();
   const { toast } = useToast();
+  const supabase = createClient();
   const activeFolder = knowledgeFolders.find((f) => f.id === activeFolderId);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -35,8 +44,57 @@ export function ChatSidebar() {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [lastSavedMessageId, setLastSavedMessageId] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userMessageCountRef = useRef(0);
+
+  // Fetch user and listen for auth changes
+  useEffect(() => {
+    const getUser = async () => {
+      try {
+        const {
+          data: { user: currentUser },
+        } = await supabase.auth.getUser();
+        setUser(currentUser);
+      } catch (error) {
+        console.error("Error fetching user:", error);
+        setUser(null);
+      }
+    };
+
+    getUser();
+
+    // Listen for auth state changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [supabase]);
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      toast({
+        title: "Signed out",
+        description: "You have been signed out successfully.",
+      });
+      router.push("/login");
+      router.refresh();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to sign out",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getInitials = (email: string) => {
+    return email.charAt(0).toUpperCase();
+  };
 
   // Load messages from active folder's chat history
   useEffect(() => {
@@ -160,18 +218,7 @@ export function ChatSidebar() {
 
       // Check for learning unit and add as a new tab
       if (response.learning_unit) {
-        console.log("🔍 DEBUG: Received learning_unit:", response.learning_unit);
-        console.log("🔍 DEBUG: learning_unit.content length:", response.learning_unit.content?.length || 0);
-        console.log("🔍 DEBUG: learning_unit.content preview:", response.learning_unit.content?.substring(0, 200));
-        
-        // CRITICAL FIX: If content is empty, use the conversational message as fallback
-        const learningUnitToAdd = {
-          ...response.learning_unit,
-          content: response.learning_unit.content?.trim() || response.message || "No content available",
-        };
-        
-        console.log("✅ DEBUG: Final content length:", learningUnitToAdd.content.length);
-        addLearningTab(learningUnitToAdd);
+        addLearningTab(response.learning_unit);
       }
 
       // Add assistant response
@@ -444,6 +491,86 @@ export function ChatSidebar() {
         </div>
       </div>
 
+      {/* Profile Section (Bottom Left) */}
+      <div className="border-t p-2">
+        {user ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="ghost"
+                className="w-full justify-start gap-2 h-auto p-2 hover:bg-accent"
+              >
+                <Avatar className="h-8 w-8">
+                  {user.user_metadata?.avatar_url ? (
+                    <AvatarImage
+                      src={user.user_metadata.avatar_url}
+                      alt={user.email || "User"}
+                    />
+                  ) : null}
+                  <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                    {getInitials(user.email || "U")}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-xs text-muted-foreground truncate flex-1 text-left">
+                  {user.email}
+                </span>
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent side="right" className="w-64 p-3 z-[100]">
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 pb-2 border-b">
+                  <Avatar className="h-10 w-10">
+                    {user.user_metadata?.avatar_url ? (
+                      <AvatarImage
+                        src={user.user_metadata.avatar_url}
+                        alt={user.email || "User"}
+                      />
+                    ) : null}
+                    <AvatarFallback className="bg-primary text-primary-foreground">
+                      {getInitials(user.email || "U")}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{user.email}</p>
+                    <p className="text-xs text-muted-foreground">Signed in</p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => {
+                    // Placeholder for settings - can be updated later
+                    toast({
+                      title: "Settings",
+                      description: "Settings page coming soon.",
+                    });
+                  }}
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={handleSignOut}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sign Out
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        ) : (
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-2 h-auto p-2 hover:bg-accent"
+            onClick={() => router.push("/login")}
+          >
+            <User className="h-8 w-8 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Log In</span>
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
