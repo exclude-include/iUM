@@ -179,56 +179,79 @@ async def query_rag_chain(
 ) -> dict:
     """
     Query the RAG chain with a user question.
+    Includes fallback to general knowledge if retrieval fails.
     """
-    chain = create_rag_chain(
-        collection_name=collection_name,
-        model_name=model_name,
-        k=k,
-        folder_id=folder_id
-    )
     
-    retriever = get_retriever(collection_name=collection_name, k=k, folder_id=folder_id)
-    relevant_docs = retriever.invoke(question) if hasattr(retriever, 'invoke') else retriever.get_relevant_documents(question)
-    
-    raw_answer = chain.invoke(question)
+    # 1. 문서 검색 시도 (에러 나면 무시하고 빈 리스트 처리)
+    relevant_docs = []
+    try:
+        retriever = get_retriever(collection_name=collection_name, k=k, folder_id=folder_id)
+        if hasattr(retriever, 'invoke'):
+            relevant_docs = retriever.invoke(question)
+        else:
+            relevant_docs = retriever.get_relevant_documents(question)
+    except Exception as e:
+        print(f"⚠️ Vector Store Retrieval Failed: {e}")
+        # 검색 실패해도 멈추지 않고 계속 진행합니다!
+        relevant_docs = []
+
+    # 2. RAG 체인 실행 (검색된 문서가 없으면 일반 지식 활용)
+    try:
+        # 체인을 매번 새로 생성하는 대신, 직접 LLM을 호출하여 유연하게 처리
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=0,
+            google_api_key=os.getenv("GOOGLE_API_KEY")
+        )
+        
+        # 검색된 문서가 있으면 합치고, 없으면 비움
+        context_text = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else ""
+        
+        # 프롬프트에 주입
+        final_prompt = prompt_template.format(context=context_text, question=question)
+        
+        # LLM 답변 생성
+        response_msg = llm.invoke(final_prompt)
+        raw_answer = response_msg.content if hasattr(response_msg, 'content') else str(response_msg)
+        
+    except Exception as e:
+        return {
+            "answer": f"Sorry, I encountered an error while processing your request: {str(e)}",
+            "sources": [],
+            "reasoning_chain": ["Error occurred during generation"]
+        }
+
+    # 3. 답변 파싱 (JSON 추출)
     answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
     
-    general_knowledge_indicators = [
-        "i don't have information", "not in the provided context", "context is empty",
-        "based on my general knowledge", "general knowledge"
-    ]
-    answer_lower = answer.lower()
-    using_general_knowledge = any(indicator in answer_lower for indicator in general_knowledge_indicators)
-    
+    # 4. 출처 정리
     source_map = {}
-    for doc in relevant_docs:
-        raw_source = doc.metadata.get("source", "Unknown")
-        if not raw_source or "tmp" in raw_source: continue
-        
-        source_filename = os.path.basename(raw_source).strip()
-        if not source_filename or source_filename == "Unknown" or source_filename.startswith("tmp"): continue
-        
-        if source_filename not in source_map:
-            source_map[source_filename] = {
-                "id": doc.metadata.get("id", ""),
-                "title": source_filename,
-                "content": doc.page_content[:200] + "...",
-                "relevance_score": 1.0
-            }
+    if relevant_docs:
+        for doc in relevant_docs:
+            raw_source = doc.metadata.get("source", "Unknown")
+            if not raw_source or "tmp" in raw_source: continue
+            
+            source_filename = os.path.basename(raw_source).strip()
+            if not source_filename or source_filename == "Unknown" or source_filename.startswith("tmp"): continue
+            
+            if source_filename not in source_map:
+                source_map[source_filename] = {
+                    "id": doc.metadata.get("id", ""),
+                    "title": source_filename,
+                    "content": doc.page_content[:200] + "...",
+                    "relevance_score": 1.0
+                }
     
     sources = list(source_map.values())
     
-    if using_general_knowledge or not sources:
-        sources = []
-    
+    # 5. 추론 과정 기록
     reasoning_chain = []
-    if len(relevant_docs) > 0:
-        reasoning_chain.append("Retrieved relevant documents from VectorDB")
+    if relevant_docs:
+        reasoning_chain.append(f"Retrieved {len(relevant_docs)} documents from VectorDB")
     else:
-        reasoning_chain.append("No documents found in VectorDB - using general knowledge")
+        reasoning_chain.append("Retrieval failed or no documents found - using General Knowledge")
     
-    reasoning_chain.append("Applied Feynman Technique prompt")
-    reasoning_chain.append("Generated response using Gemini with RAG context")
+    reasoning_chain.append("Generated response using Gemini")
     
     result = {
         "answer": answer,
