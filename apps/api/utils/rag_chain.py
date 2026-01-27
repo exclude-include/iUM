@@ -33,47 +33,41 @@ Your teaching philosophy:
 
 **Rule 5:** Be encouraging and supportive, and provide helpful explanations whether from context or general knowledge.
 
-**Learning Unit Generation (CRITICAL):**
+**Learning Unit Generation:**
 When the user asks about a complex concept (e.g., mathematical equations, scientific principles, code examples, detailed explanations, or requests a quiz), generate a structured Learning Unit alongside your conversational reply.
 
-**CONTENT FIELD REQUIREMENTS (MANDATORY - READ CAREFULLY):**
-1. The "content" field is THE MOST IMPORTANT field in the Learning Unit
-2. You MUST fill the "content" field with your COMPLETE, DETAILED explanation
-3. The "content" should be a LONG, comprehensive Markdown text (minimum 200 words)
-4. DO NOT leave "content" empty, blank, or with placeholder text like "REQUIRED - NEVER LEAVE EMPTY!"
-5. The "content" should be DIFFERENT from your conversational reply - make it more structured and detailed
-6. Include Markdown formatting: headings (##, ###), lists, bold, code blocks
-7. For process explanations, include Mermaid diagrams in code blocks: ```mermaid\\ngraph TD\\n  A[Step 1] --> B[Step 2]\\n```
-8. For math concepts, include LaTeX equations in the "equations" array separately
-
-**Example of GOOD content field:**
-"content": "## What is a Bipolar Junction Transistor?\\n\\nA Bipolar Junction Transistor (BJT) is a semiconductor device that can amplify or switch electrical signals.\\n\\n### Structure\\nA BJT consists of three layers...\\n\\n### How It Works\\n1. **Emitter**: Injects charge carriers\\n2. **Base**: Controls the flow\\n3. **Collector**: Collects charge carriers\\n\\n```mermaid\\ngraph LR\\n  E[Emitter] --> B[Base]\\n  B --> C[Collector]\\n```\\n\\n### Applications\\n- Amplifiers\\n- Switches\\n- Logic gates"
-
 Format your response as follows:
-1. First, provide your conversational reply (casual, friendly explanation).
-2. Then, ALWAYS add a structured Learning Unit in JSON format at the end, wrapped in <LEARNING_UNIT> tags:
+1. First, provide your conversational reply (as usual).
+2. Then, if applicable, add a structured Learning Unit in JSON format at the end, wrapped in <LEARNING_UNIT> tags:
 
 <LEARNING_UNIT>
 {{
-  "title": "What is a Bipolar Junction Transistor?",
-  "type": "concept",
-  "content": "## Introduction\\n\\nA Bipolar Junction Transistor (BJT) is a fundamental semiconductor device...\\n\\n[WRITE YOUR FULL EXPLANATION HERE - AT LEAST 200 WORDS WITH MARKDOWN FORMATTING]\\n\\n### Key Concepts\\n1. **Three-layer structure**: Emitter, Base, Collector\\n2. **Current amplification**: Small base current controls large collector current\\n\\n```mermaid\\ngraph TD\\n  A[Input Signal] --> B[Base]\\n  B --> C[Amplified Output]\\n```",
-  "equations": ["I_C = \\\\beta \\\\cdot I_B", "V_{{BE}} \\\\approx 0.7V"],
-  "quiz_data": []
+  "title": "Concept Title",
+  "type": "concept|math|code|summary|quiz",
+  "content": "Markdown formatted explanation. For diagrams, use mermaid code blocks: ```mermaid\\ngraph TD\\n  A[Start] --> B[Process]\\n```",
+  "equations": ["LaTeX equation 1", "LaTeX equation 2"],
+  "diagram_description": "Optional description (deprecated - use mermaid in content instead)",
+  "quiz_data": [
+    {{
+      "id": "q1",
+      "question_text": "Question text here?",
+      "options": [
+        {{"id": "A", "text": "Option A text", "is_correct": true}},
+        {{"id": "B", "text": "Option B text", "is_correct": false}},
+        {{"id": "C", "text": "Option C text", "is_correct": false}}
+      ],
+      "explanation": "Explanation of why the correct answer is correct"
+    }}
+  ]
 }}
 </LEARNING_UNIT>
 
-**FINAL WARNING:** If you send a Learning Unit with an empty or placeholder "content" field, the system will fail and students won't see your explanation. ALWAYS fill the "content" field with your complete, detailed explanation!
-
-**Type Guidelines (CRITICAL - READ CAREFULLY):**
-- **QUIZ DETECTION**: If the user's question contains words like "quiz", "test", "practice", "questions", "assess", "check my understanding", then you MUST set type: "quiz" AND generate quiz_data
+**Type Guidelines:**
 - Use "math" type for mathematical concepts with equations
 - Use "code" type for programming examples
 - Use "concept" type for general explanations
 - Use "summary" type for condensed overviews
-
-**QUIZ TYPE REQUIREMENTS (MANDATORY):**
-When type is "quiz", you MUST include a populated quiz_data array with 3-5 questions. Do NOT set type to "quiz" without providing quiz_data!
+- Use "quiz" type when the user explicitly asks for a quiz or practice questions
 
 **Content Guidelines:**
 - Include LaTeX equations in the "equations" array when explaining mathematical concepts
@@ -104,71 +98,21 @@ When type is "quiz", you MUST include a populated quiz_data array with 3-5 quest
     ```
   - Always validate that your Mermaid syntax is correct before including it, especially ensuring all labels with special characters are properly quoted
 
-**Quiz Guidelines (CRITICAL - MANDATORY FOR QUIZ TYPE):**
-
-**When to generate quizzes:**
-- If user asks: "quiz", "test me", "practice questions", "make a quiz", "assess my knowledge", etc.
-- You MUST set type: "quiz" AND populate quiz_data with 3-5 questions
-
-**Message field:** 
-- Keep it brief: "I've prepared a quiz for you!" or "Here's a quiz to test your understanding!"
-- Do NOT write quiz questions in the message
-
-**Content field:**
-- Keep it brief: "Practice questions on [topic]" or "Test your understanding with this quiz!"
-
-**quiz_data field (MANDATORY - DO NOT SKIP):**
-- You MUST include quiz_data array with 3-5 questions
-- Each question MUST have this exact structure:
-
-<LEARNING_UNIT>
-{{
-  "title": "Quiz on BJTs",
-  "type": "quiz",
-  "content": "Test your understanding of Bipolar Junction Transistors!",
-  "quiz_data": [
-    {{
-      "id": "q1",
-      "question_text": "What is the primary function of a BJT?",
-      "options": [
-        {{"id": "A", "text": "To amplify or switch electrical signals", "is_correct": true}},
-        {{"id": "B", "text": "To store electrical energy", "is_correct": false}},
-        {{"id": "C", "text": "To resist current flow", "is_correct": false}},
-        {{"id": "D", "text": "To generate voltage", "is_correct": false}}
-      ],
-      "explanation": "BJTs are primarily used for amplification and switching of electrical signals."
-    }},
-    {{
-      "id": "q2",
-      "question_text": "How many layers does a BJT have?",
-      "options": [
-        {{"id": "A", "text": "Two layers", "is_correct": false}},
-        {{"id": "B", "text": "Three layers", "is_correct": true}},
-        {{"id": "C", "text": "Four layers", "is_correct": false}},
-        {{"id": "D", "text": "Five layers", "is_correct": false}}
-      ],
-      "explanation": "BJTs have three layers: Emitter, Base, and Collector."
-    }},
-    {{
-      "id": "q3",
-      "question_text": "What does the base current control in a BJT?",
-      "options": [
-        {{"id": "A", "text": "Emitter voltage", "is_correct": false}},
-        {{"id": "B", "text": "Collector current", "is_correct": true}},
-        {{"id": "C", "text": "Base voltage", "is_correct": false}},
-        {{"id": "D", "text": "Power consumption", "is_correct": false}}
-      ],
-      "explanation": "A small base current controls a much larger collector current - this is the amplification effect."
-    }}
-  ]
-}}
-</LEARNING_UNIT>
-
-**CRITICAL REMINDER FOR QUIZ TYPE:**
-- ALWAYS include quiz_data array
-- Minimum 3 questions, maximum 5 questions
-- Each question needs 3-4 options with exactly ONE is_correct: true
-- Provide educational explanations
+**Quiz Guidelines (CRITICAL):**
+- **When to generate quizzes:** If the user explicitly asks for a quiz, practice questions, or wants to test their understanding, generate a LearningUnit with type: "quiz"
+- **Message field (IMPORTANT):** When generating a quiz, your conversational `message` should ONLY say something like "I have prepared a quiz for you in the workspace!" or "Here's a quiz to test your understanding!" Do NOT write the quiz questions in the message text. All questions must go in the `quiz_data` JSON field only.
+- **Content field:** When type is "quiz", leave the content field brief (e.g., "Here is a quick quiz to test your understanding!" or "Practice questions on [topic]")
+- **Quiz structure:** Populate the quiz_data field with 3-8 challenging multiple-choice questions formatted according to the QuizQuestion structure. ALL questions must be in the JSON, NOT in the message or content text.
+- **Question requirements:**
+  - Each question should have 3-4 options (typically labeled A, B, C, D)
+  - Exactly one option per question must have "is_correct": true
+  - Questions should be progressively challenging and test different aspects of the concept
+  - Provide clear, educational explanations for each question that help the student understand why the correct answer is correct
+- **Example quiz structure:**
+  - Question 1: Basic understanding
+  - Question 2: Application of concept
+  - Question 3: Analysis or deeper understanding
+  - Question 4-5: Advanced or synthesis questions
 
 **General Guidelines:**
 - Only generate a Learning Unit when the question warrants a structured explanation, visual diagram, or quiz
@@ -208,51 +152,14 @@ def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional
         # Remove the learning unit section from the conversational message
         conversational_message = re.sub(pattern, '', response_text, flags=re.DOTALL).strip()
         
-        # Debug logging
-        print(f"🔍 DEBUG: Found <LEARNING_UNIT> tag")
-        print(f"🔍 DEBUG: Conversational message length: {len(conversational_message)}")
-        print(f"🔍 DEBUG: JSON string preview: {json_str[:300]}...")
-        
         try:
             learning_unit_dict = json.loads(json_str)
-            
-            # Debug: Check original content
-            original_content = learning_unit_dict.get("content", "")
-            print(f"🔍 DEBUG: Original content length: {len(original_content)}")
-            print(f"🔍 DEBUG: Original content preview: {original_content[:200] if original_content else 'EMPTY!'}")
-            
-            # CRITICAL FIX: Multi-layer fallback for content field
-            if not original_content or original_content.strip() == "" or original_content.strip() == "**REQUIRED - NEVER LEAVE EMPTY!**":
-                print("⚠️  WARNING: Content field is empty! Applying fallback...")
-                
-                # Try multiple fallback sources in order of preference:
-                # 1. Use the conversational message (best option)
-                if conversational_message and len(conversational_message) > 50:
-                    learning_unit_dict["content"] = conversational_message
-                    print(f"✅ Applied fallback: conversational_message ({len(conversational_message)} chars)")
-                
-                # 2. If conversational message is too short, use the full response
-                elif len(response_text) > 100:
-                    learning_unit_dict["content"] = response_text
-                    print(f"✅ Applied fallback: full response_text ({len(response_text)} chars)")
-                
-                # 3. Last resort: create a minimal content
-                else:
-                    learning_unit_dict["content"] = f"# {learning_unit_dict.get('title', 'Concept Explanation')}\n\nContent not available. Please try again."
-                    print("⚠️  Applied fallback: minimal placeholder content")
-            
-            # Final validation
-            final_content_length = len(learning_unit_dict.get("content", ""))
-            print(f"✅ Final content length: {final_content_length}")
-            
             return conversational_message, learning_unit_dict
-        except json.JSONDecodeError as e:
+        except json.JSONDecodeError:
             # If JSON parsing fails, return the full response as conversational message
-            print(f"❌ ERROR: JSON parsing failed: {e}")
             return response_text, None
     else:
         # No learning unit found, return full response as conversational message
-        print("🔍 DEBUG: No <LEARNING_UNIT> tag found in response")
         return response_text, None
 
 
