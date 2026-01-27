@@ -16,6 +16,15 @@ interface ActiveDocument {
   equations?: string[];
 }
 
+// ✨ [추가] Source 인터페이스 정의
+export interface Source {
+  id: string;
+  title: string;
+  content: string;
+  url?: string;
+  relevance_score?: number;
+}
+
 export interface QuizOption {
   id: string; // e.g., 'A', 'B', 'C', 'D'
   text: string;
@@ -35,7 +44,6 @@ export interface LearningUnit {
   content: string; // Markdown text
   equations?: string[]; // LaTeX strings
   diagram_description?: string; 
-  // ✨ [추가됨] 다이어그램 코드를 별도로 저장하거나 뷰에서 추출할 때 타입 에러 방지
   mermaid_code?: string; 
   quiz_data?: QuizQuestion[]; 
 }
@@ -134,6 +142,10 @@ interface AppState {
   userStreak: UserStreak;
   updateStreak: (date?: string) => void;
   resetStreak: () => void;
+
+  // ✨ [추가] 출처 패널 상태 관리
+  activeSources: Source[];
+  setActiveSources: (sources: Source[]) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -152,7 +164,7 @@ export const useAppStore = create<AppState>((set) => ({
   addLearningTab: (unit) => {
     const id = `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newTab: LearningTab = {
-      ...unit, // 여기서 unit의 모든 속성(mermaid_code 포함)이 복사됩니다.
+      ...unit, 
       id,
       timestamp: Date.now(),
     };
@@ -487,4 +499,8 @@ export const useAppStore = create<AppState>((set) => ({
       },
     });
   },
+
+  // ✨ [추가] 출처 패널 초기화 및 액션
+  activeSources: [],
+  setActiveSources: (sources) => set({ activeSources: sources }),
 }));

@@ -31,6 +31,7 @@ export function ChatSidebar() {
     knowledgeFolders,
     activeFolderId,
     addMessageToFolder,
+    setActiveSources, // ✨ [추가] 스토어에서 액션 가져오기
   } = useAppStore();
 
   const router = useRouter();
@@ -216,6 +217,14 @@ export function ChatSidebar() {
         setConversationId(response.conversation_id);
       }
 
+      // ✨ [추가] AI 응답에 출처가 있다면 전역 스토어 업데이트
+      if (response.sources && response.sources.length > 0) {
+        setActiveSources(response.sources as any);
+      } else {
+        // 출처가 없으면 (일반 상식 답변 등) 비워주기
+        setActiveSources([]);
+      }
+
       // Check for learning unit and add as a new tab
       if (response.learning_unit) {
         addLearningTab(response.learning_unit);
@@ -234,8 +243,7 @@ export function ChatSidebar() {
       
       // Save messages to active folder's chat history
       if (activeFolderId) {
-        // ✨ [수정됨] 중복 저장 코드 삭제 완료!
-        // userMessage는 위에서 이미 저장했으므로, 여기서는 assistantMessage만 저장합니다.
+        // userMessage는 이미 위에서 저장했으므로, 여기서는 assistantMessage만 저장
         addMessageToFolder(activeFolderId, assistantMessage);
       }
       
