@@ -3,7 +3,7 @@ from typing import List, Optional, Dict, Literal
 from datetime import datetime
 
 
-# Learning Unit Types
+# Learning Unit Types (For Feeds/Reels)
 class LearningUnit(BaseModel):
     """Represents a learning unit that can be displayed as a Reel or Document"""
     id: str
@@ -127,11 +127,15 @@ class QuizQuestion(BaseModel):
     explanation: str = Field(..., description="Explanation for why the correct answer is correct")
 
 
-class LearningUnit(BaseModel):
+# ✨✨ [수정됨] 이름 충돌 방지를 위해 이름을 변경했습니다 (LearningUnit -> LearningUnitResponse) ✨✨
+class LearningUnitResponse(BaseModel):
     """Represents a structured learning unit that can be displayed in the workspace"""
     title: str
     type: Literal["concept", "math", "code", "summary", "quiz"] = Field(..., description="Type of learning unit")
+    
+    # ✨ 여기에 content 필드가 확실하게 존재합니다!
     content: str = Field(..., description="Markdown content. For diagrams, use mermaid code blocks like ```mermaid ... ```")
+    
     equations: Optional[List[str]] = Field(None, description="LaTeX equation strings for mathematical concepts")
     diagram_description: Optional[str] = Field(None, description="Description for generating diagrams (deprecated - use mermaid in content)")
     quiz_data: Optional[List[QuizQuestion]] = Field(None, description="Structured quiz questions (required when type is 'quiz')")
@@ -153,5 +157,6 @@ class ChatResponse(BaseModel):
     sources: Optional[List[Source]] = None
     reasoning_chain: Optional[List[str]] = None
     confidence_score: Optional[float] = None
-    learning_unit: Optional[LearningUnit] = None
-
+    
+    # ✨✨ [수정됨] 위에서 변경한 새 클래스 이름(LearningUnitResponse)을 참조합니다 ✨✨
+    learning_unit: Optional[LearningUnitResponse] = None
