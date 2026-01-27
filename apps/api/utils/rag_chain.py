@@ -65,12 +65,15 @@ Format your response as follows:
 
 **FINAL WARNING:** If you send a Learning Unit with an empty or placeholder "content" field, the system will fail and students won't see your explanation. ALWAYS fill the "content" field with your complete, detailed explanation!
 
-**Type Guidelines:**
+**Type Guidelines (CRITICAL - READ CAREFULLY):**
+- **QUIZ DETECTION**: If the user's question contains words like "quiz", "test", "practice", "questions", "assess", "check my understanding", then you MUST set type: "quiz" AND generate quiz_data
 - Use "math" type for mathematical concepts with equations
 - Use "code" type for programming examples
 - Use "concept" type for general explanations
 - Use "summary" type for condensed overviews
-- Use "quiz" type when the user explicitly asks for a quiz or practice questions
+
+**QUIZ TYPE REQUIREMENTS (MANDATORY):**
+When type is "quiz", you MUST include a populated quiz_data array with 3-5 questions. Do NOT set type to "quiz" without providing quiz_data!
 
 **Content Guidelines:**
 - Include LaTeX equations in the "equations" array when explaining mathematical concepts
@@ -101,21 +104,71 @@ Format your response as follows:
     ```
   - Always validate that your Mermaid syntax is correct before including it, especially ensuring all labels with special characters are properly quoted
 
-**Quiz Guidelines (CRITICAL):**
-- **When to generate quizzes:** If the user explicitly asks for a quiz, practice questions, or wants to test their understanding, generate a LearningUnit with type: "quiz"
-- **Message field (IMPORTANT):** When generating a quiz, your conversational `message` should ONLY say something like "I have prepared a quiz for you in the workspace!" or "Here's a quiz to test your understanding!" Do NOT write the quiz questions in the message text. All questions must go in the `quiz_data` JSON field only.
-- **Content field:** When type is "quiz", leave the content field brief (e.g., "Here is a quick quiz to test your understanding!" or "Practice questions on [topic]")
-- **Quiz structure:** Populate the quiz_data field with 3-5 challenging multiple-choice questions formatted according to the QuizQuestion structure. ALL questions must be in the JSON, NOT in the message or content text.
-- **Question requirements:**
-  - Each question should have 3-4 options (typically labeled A, B, C, D)
-  - Exactly one option per question must have "is_correct": true
-  - Questions should be progressively challenging and test different aspects of the concept
-  - Provide clear, educational explanations for each question that help the student understand why the correct answer is correct
-- **Example quiz structure:**
-  - Question 1: Basic understanding
-  - Question 2: Application of concept
-  - Question 3: Analysis or deeper understanding
-  - Question 4-5: Advanced or synthesis questions
+**Quiz Guidelines (CRITICAL - MANDATORY FOR QUIZ TYPE):**
+
+**When to generate quizzes:**
+- If user asks: "quiz", "test me", "practice questions", "make a quiz", "assess my knowledge", etc.
+- You MUST set type: "quiz" AND populate quiz_data with 3-5 questions
+
+**Message field:** 
+- Keep it brief: "I've prepared a quiz for you!" or "Here's a quiz to test your understanding!"
+- Do NOT write quiz questions in the message
+
+**Content field:**
+- Keep it brief: "Practice questions on [topic]" or "Test your understanding with this quiz!"
+
+**quiz_data field (MANDATORY - DO NOT SKIP):**
+- You MUST include quiz_data array with 3-5 questions
+- Each question MUST have this exact structure:
+
+<LEARNING_UNIT>
+{{
+  "title": "Quiz on BJTs",
+  "type": "quiz",
+  "content": "Test your understanding of Bipolar Junction Transistors!",
+  "quiz_data": [
+    {{
+      "id": "q1",
+      "question_text": "What is the primary function of a BJT?",
+      "options": [
+        {{"id": "A", "text": "To amplify or switch electrical signals", "is_correct": true}},
+        {{"id": "B", "text": "To store electrical energy", "is_correct": false}},
+        {{"id": "C", "text": "To resist current flow", "is_correct": false}},
+        {{"id": "D", "text": "To generate voltage", "is_correct": false}}
+      ],
+      "explanation": "BJTs are primarily used for amplification and switching of electrical signals."
+    }},
+    {{
+      "id": "q2",
+      "question_text": "How many layers does a BJT have?",
+      "options": [
+        {{"id": "A", "text": "Two layers", "is_correct": false}},
+        {{"id": "B", "text": "Three layers", "is_correct": true}},
+        {{"id": "C", "text": "Four layers", "is_correct": false}},
+        {{"id": "D", "text": "Five layers", "is_correct": false}}
+      ],
+      "explanation": "BJTs have three layers: Emitter, Base, and Collector."
+    }},
+    {{
+      "id": "q3",
+      "question_text": "What does the base current control in a BJT?",
+      "options": [
+        {{"id": "A", "text": "Emitter voltage", "is_correct": false}},
+        {{"id": "B", "text": "Collector current", "is_correct": true}},
+        {{"id": "C", "text": "Base voltage", "is_correct": false}},
+        {{"id": "D", "text": "Power consumption", "is_correct": false}}
+      ],
+      "explanation": "A small base current controls a much larger collector current - this is the amplification effect."
+    }}
+  ]
+}}
+</LEARNING_UNIT>
+
+**CRITICAL REMINDER FOR QUIZ TYPE:**
+- ALWAYS include quiz_data array
+- Minimum 3 questions, maximum 5 questions
+- Each question needs 3-4 options with exactly ONE is_correct: true
+- Provide educational explanations
 
 **General Guidelines:**
 - Only generate a Learning Unit when the question warrants a structured explanation, visual diagram, or quiz
