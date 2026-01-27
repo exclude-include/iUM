@@ -1,6 +1,6 @@
 """
 RAG Chain implementation with Feynman Technique prompt
-Refactored: Fixed PromptTemplate escaping (Double curly braces for JSON examples)
+Refactored: STRICT JSON Escaping Rules to prevent broken JSON
 """
 import os
 import json
@@ -13,7 +13,7 @@ from langchain_core.output_parsers import StrOutputParser
 from utils.vector_store import get_retriever
 from utils.opik_config import trace
 
-# ✨ [수정됨] JSON 예시의 중괄호를 {{ }}로 감싸서 에러 방지
+# ✨ [프롬프트 강화] 쌍따옴표 이스케이프 규칙 추가
 FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to explain concepts clearly and intuitively in the style of Richard Feynman.
 
 **Teaching Philosophy:**
@@ -33,44 +33,32 @@ Determine the User's Intent and choose ONE of the following modes:
 **MODE A: GENERAL EXPLANATION (Default)**
 Used when the user asks "What is...", "Explain...", or creates code/math content.
 
-* **"message" (Conversational Reply):**
-    * Keep it **clean, engaging, and summary-like**.
-    * **DO NOT** include large code blocks or Mermaid code here.
-    * Example: "That's a great question! I've prepared a detailed explanation with a diagram in the workspace!"
-
-* **"content" (Learning Unit Body):**
-    * This is where the **FULL, DETAILED explanation** goes.
-    * **DIAGRAMS (REQUIRED):** You MUST include a Mermaid diagram code block here to visualize the concept.
-    * **MERMAID SYNTAX RULE:** You MUST use double quotes for ALL node labels (e.g., A["Label"]).
+* **"message":** Keep it clean and engaging. Example: "I've prepared a detailed explanation in the workspace!"
+* **"content":** * The FULL detailed explanation.
+    * **DIAGRAMS (REQUIRED):** Include a Mermaid diagram code block.
+    * **MERMAID SYNTAX:** Use double quotes for labels (e.g., A["Label"]).
 
 * **"quiz_data":** Leave empty [].
 
 ---
 **MODE B: QUIZ REQUEST**
-Used ONLY when the user asks for a "quiz", "test", "practice questions".
+Used ONLY when the user asks for a "quiz".
 
 * **"type":** "quiz"
-* **"message":** "I've prepared a quiz to test your understanding!"
+* **"message":** "I've prepared a quiz!"
 * **"content":** "## Quiz Time!\\nTest your knowledge below."
-* **"quiz_data":** Generate 3-5 questions.
-    * **CRITICAL JSON RULES FOR QUIZ:**
-        1. Use key `"question_text"`, NOT `"question"`.
-        2. `options` MUST be a list of OBJECTS.
-        3. Each option MUST have `"id"`, `"text"`, `"is_correct"`.
+* **"quiz_data":** Generate 3-5 questions (use "question_text", and options list of objects).
 
-    * **CORRECT QUIZ EXAMPLE:**
-      ```json
-      {{
-        "id": "q1",
-        "question_text": "What is CLI?",
-        "options": [
-          {{"id": "A", "text": "Command Line Interface", "is_correct": true}},
-          {{"id": "B", "text": "Computer Line", "is_correct": false}}
-        ],
-        "explanation": "CLI stands for..."
-      }}
-      ```
 ---
+**🚨 EXTREMELY IMPORTANT JSON RULES 🚨**
+1. **ESCAPE DOUBLE QUOTES:** If your content contains a double quote (`"`), you **MUST** escape it with a backslash (`\"`).
+   * ❌ WRONG: `"content": "He said "Hello""`
+   * ✅ RIGHT: `"content": "He said \"Hello\""`
+   * This is frequent in explanations (e.g., metaphors, code). **CHECK THIS TWICE.**
+
+2. **NO CONTROL CHARACTERS:** Do not put real line breaks inside the string. Use `\n` for newlines.
+
+3. **VALID JSON:** The output inside <LEARNING_UNIT> tags must be parseable by standard `json.loads()`.
 
 **JSON Structure:**
 <LEARNING_UNIT>
@@ -120,6 +108,11 @@ def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional
         try:
             # Common JSON cleanup
             json_str = match.group(1).strip()
+            
+            # ✨ [추가] LLM이 실수로 제어문자(줄바꿈)를 넣었을 경우를 대비해 살짝 청소
+            # (단, \n 문자열은 건드리면 안 되므로 주의)
+            # json_str = json_str.replace('\n', '\\n') # 이건 위험할 수 있어서 생략하고 프롬프트에 의존
+            
             learning_unit_dict = json.loads(json_str)
             
             # Fallback for empty content
@@ -130,8 +123,12 @@ def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional
             
             return conversational_message, learning_unit_dict
             
-        except json.JSONDecodeError:
-            return response_text, None
+        except json.JSONDecodeError as e:
+            print(f"JSON Parse Error: {e}")
+            print(f"Faulty JSON: {json_str[:200]}...") # 로그 확인용
+            # 파싱 실패 시, 원본 텍스트를 그대로 리턴하면 화면에 지저분하게 뜨므로
+            # 태그만이라도 제거하고 리턴하는 것이 좋습니다.
+            return conversational_message, None
     else:
         return response_text, None
 
