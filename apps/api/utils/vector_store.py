@@ -12,7 +12,7 @@ from chromadb.config import Settings
 
 # Initialize Google Gemini Embeddings
 embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/embedding-004",
+    model="models/text-embedding-004",
     google_api_key=os.getenv("GOOGLE_API_KEY")
 )
 
