@@ -5,7 +5,7 @@
  * Note: Some types are also defined in types/index.ts for backward compatibility
  */
 
-// Re-export common types from index.ts for convenience
+/* Re-export common types from index.ts for convenience
 export type {
   LearningUnit,
   FeedResponse,
@@ -15,7 +15,7 @@ export type {
   HistoryItem,
   Workspace,
 } from "./index";
-
+*/
 // Chat Types
 export interface ChatMessage {
   id: string;
