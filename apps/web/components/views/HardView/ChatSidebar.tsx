@@ -163,7 +163,15 @@ export function ChatSidebar() {
         console.log("🔍 DEBUG: Received learning_unit:", response.learning_unit);
         console.log("🔍 DEBUG: learning_unit.content length:", response.learning_unit.content?.length || 0);
         console.log("🔍 DEBUG: learning_unit.content preview:", response.learning_unit.content?.substring(0, 200));
-        addLearningTab(response.learning_unit);
+        
+        // CRITICAL FIX: If content is empty, use the conversational message as fallback
+        const learningUnitToAdd = {
+          ...response.learning_unit,
+          content: response.learning_unit.content?.trim() || response.message || "No content available",
+        };
+        
+        console.log("✅ DEBUG: Final content length:", learningUnitToAdd.content.length);
+        addLearningTab(learningUnitToAdd);
       }
 
       // Add assistant response
