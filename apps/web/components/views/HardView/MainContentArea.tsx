@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
-import { Moon, Sun, X, BookOpen, Brain, MessageCircle } from "lucide-react";
+import { Moon, Sun, X } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { MathContent } from "./MathContent";
 import { SourcesPanel } from "./SourcesPanel";
 import { QuizView } from "@/components/QuizView";
-import { Mermaid } from "@/components/Mermaid";
+import { Mermaid } from "@/components/Mermaid"; // Mermaid 컴포넌트 임포트 확인 필요
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import ReactMarkdown from "react-markdown";
@@ -19,39 +19,19 @@ import remarkGfm from "remark-gfm";
 import { BlockMath } from "react-katex";
 import "katex/dist/katex.min.css";
 
-// 헬퍼 함수: 마크다운 텍스트에서 Mermaid 코드만 추출하기
-const extractMermaidCode = (content: string): string | null => {
-  if (!content) return null;
-  // ```mermaid 로 시작해서 ``` 로 끝나는 블록을 찾습니다.
-  const match = content.match(/```mermaid\n([\s\S]*?)\n```/);
-  return match ? match[1] : null;
-};
-
-// 헬퍼 함수: Mermaid 코드를 제외한 순수 텍스트만 남기기 (선택 사항)
-const removeMermaidCode = (content: string): string => {
-  if (!content) return "";
-  return content.replace(/```mermaid\n[\s\S]*?\n```/g, "");
-};
+// 헬퍼 함수들은 이제 필요 없으므로 삭제하거나 무시해도 됩니다.
 
 export function MainContentArea() {
   const { activeDocument, learningTabs, activeTabId, setActiveTab, closeTab } = useAppStore();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   
-  const activeLearningUnit = learningTabs.find((tab) => tab.id === activeTabId);
+  // 타입 캐스팅
+  const activeLearningUnit = learningTabs.find((tab) => tab.id === activeTabId) as any;
 
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  // 다이어그램 코드 추출 (데이터가 들어오면 즉시 확인)
-  const mermaidCode = activeLearningUnit?.content 
-    ? extractMermaidCode(activeLearningUnit.content) 
-    : null;
-
-  // 본문 텍스트 (다이어그램 코드가 섞여 있으면 보기 싫으므로 제거하고 보여줄 수도 있음)
-  // 원본을 그대로 보여주고 싶다면 그냥 activeLearningUnit.content를 쓰면 됩니다.
-  const displayContent = activeLearningUnit?.content || "";
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -90,7 +70,6 @@ export function MainContentArea() {
                 </button>
               </div>
             ))}
-            {/* 문서 탭 (기존 코드 유지) */}
             {activeDocument && (
               <div className={cn(
                   "flex items-center gap-1.5 rounded-t px-3 py-1.5 text-xs font-medium transition-colors border-b-2 border-transparent",
@@ -127,23 +106,13 @@ export function MainContentArea() {
                 <div className="mb-4">
                   <span className={cn(
                     "inline-block px-2.5 py-1 rounded text-xs font-medium",
-                    "bg-primary/10 text-primary"
+                    "bg-primary/10 text-primary uppercase"
                   )}>
-                    {activeLearningUnit.type.toUpperCase()}
+                    {activeLearningUnit.type}
                   </span>
                 </div>
 
-                {/* ✨✨ [핵심 수정] 추출된 Mermaid 다이어그램 먼저 보여주기 ✨✨ */}
-                {mermaidCode && (
-                  <div className="mb-8 mt-4">
-                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-                      Visual Concept
-                    </h3>
-                    <div className="flex justify-center p-6 bg-white/50 dark:bg-black/20 rounded-xl border border-border/50 backdrop-blur-sm overflow-hidden shadow-sm">
-                      <Mermaid chart={mermaidCode} />
-                    </div>
-                  </div>
-                )}
+                {/* ❌ 삭제됨: 맨 위에 강제로 그리던 Mermaid 블록 삭제 */}
                 
                 {/* 텍스트 콘텐츠 (Markdown) */}
                 <div className="prose prose-sm max-w-none dark:prose-invert">
@@ -151,35 +120,44 @@ export function MainContentArea() {
                     remarkPlugins={[remarkMath, remarkGfm]}
                     rehypePlugins={[rehypeKatex]}
                     components={{
-                      // 코드 블록 처리 (Mermaid가 또 나오면 중복되므로 숨기거나 일반 코드로 표시)
-                      code: ({ inline, className, children, ...props }: any) => {
+                      // ✨✨ [핵심 수정] 코드 블록을 만났을 때, 언어가 'mermaid'면 바로 그리기
+                      code: (props: any) => {
+                        const { inline, className, children, ...rest } = props;
                         const match = /language-(\w+)/.exec(className || "");
                         const isMermaid = match && match[1] === "mermaid";
                         
-                        // 이미 위에서 크게 그려줬으므로, 본문에서는 숨기거나 텍스트로만 보여줍니다.
-                        if (isMermaid) return null; 
+                        // 내용 추출
+                        const content = String(children).replace(/\n$/, "");
+
+                        if (!inline && isMermaid) {
+                          // 본문 중간에 Mermaid 컴포넌트 렌더링
+                          return (
+                            <div className="my-6 flex justify-center p-4 bg-white/50 dark:bg-black/20 rounded-lg border border-border/50 overflow-hidden">
+                              <Mermaid chart={content} />
+                            </div>
+                          );
+                        }
 
                         return !inline ? (
-                          <code className={cn("block rounded bg-muted p-3 text-sm overflow-x-auto font-mono", className)} {...props}>
+                          <code className={cn("block rounded bg-muted p-3 text-sm overflow-x-auto font-mono", className)} {...rest}>
                             {children}
                           </code>
                         ) : (
-                          <code className={cn("rounded bg-muted/50 px-1.5 py-0.5 text-sm font-mono", className)} {...props}>
+                          <code className={cn("rounded bg-muted/50 px-1.5 py-0.5 text-sm font-mono", className)} {...rest}>
                             {children}
                           </code>
                         );
                       }
                     }}
                   >
-                    {/* Mermaid 코드를 제거한 텍스트만 보여주고 싶다면 removeMermaidCode(activeLearningUnit.content) 사용 */}
-                    {activeLearningUnit.content} 
+                    {activeLearningUnit.content || "No content available."}
                   </ReactMarkdown>
                 </div>
                 
                 {/* 수식 (Equations) */}
                 {activeLearningUnit.equations && activeLearningUnit.equations.length > 0 && (
                   <div className="mt-6 space-y-4">
-                    {activeLearningUnit.equations.map((equation, idx) => (
+                    {activeLearningUnit.equations.map((equation: string, idx: number) => (
                       <div key={idx} className="p-4 bg-muted rounded-lg border border-border">
                         <BlockMath math={equation} />
                       </div>
@@ -188,11 +166,10 @@ export function MainContentArea() {
                 )}
               </Card>
             )
+          ) : activeDocument && !activeTabId ? (
+             <MathContent document={activeDocument} />
           ) : (
-            // --- Empty State (기존 코드 유지) ---
-            <div className="flex h-full min-h-[400px] flex-col items-center justify-center text-center px-4">
-               {/* ... (생략) ... */}
-               <Brain className="h-16 w-16 text-primary/60 mb-4" />
+             <div className="flex h-full min-h-[400px] flex-col items-center justify-center text-center px-4">
                <p className="text-muted-foreground">Select content to view</p>
             </div>
           )}
