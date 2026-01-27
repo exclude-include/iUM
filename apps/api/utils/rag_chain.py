@@ -58,7 +58,7 @@ Format your response as follows:
   "title": "What is a Bipolar Junction Transistor?",
   "type": "concept",
   "content": "## Introduction\\n\\nA Bipolar Junction Transistor (BJT) is a fundamental semiconductor device...\\n\\n[WRITE YOUR FULL EXPLANATION HERE - AT LEAST 200 WORDS WITH MARKDOWN FORMATTING]\\n\\n### Key Concepts\\n1. **Three-layer structure**: Emitter, Base, Collector\\n2. **Current amplification**: Small base current controls large collector current\\n\\n```mermaid\\ngraph TD\\n  A[Input Signal] --> B[Base]\\n  B --> C[Amplified Output]\\n```",
-  "equations": ["I_C = \\\\beta \\\\cdot I_B", "V_{BE} \\\\approx 0.7V"],
+  "equations": ["I_C = \\\\beta \\\\cdot I_B", "V_{{BE}} \\\\approx 0.7V"],
   "quiz_data": []
 }}
 </LEARNING_UNIT>
