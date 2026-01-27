@@ -160,6 +160,9 @@ export function ChatSidebar() {
 
       // Check for learning unit and add as a new tab
       if (response.learning_unit) {
+        console.log("🔍 DEBUG: Received learning_unit:", response.learning_unit);
+        console.log("🔍 DEBUG: learning_unit.content length:", response.learning_unit.content?.length || 0);
+        console.log("🔍 DEBUG: learning_unit.content preview:", response.learning_unit.content?.substring(0, 200));
         addLearningTab(response.learning_unit);
       }
 
