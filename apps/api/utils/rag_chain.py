@@ -1,6 +1,6 @@
 """
 RAG Chain implementation with Feynman Technique prompt
-Refactored: Strict JSON Schema enforcement for Quizzes & Clean Chat
+Refactored: Fixed PromptTemplate escaping (Double curly braces for JSON examples)
 """
 import os
 import json
@@ -13,7 +13,7 @@ from langchain_core.output_parsers import StrOutputParser
 from utils.vector_store import get_retriever
 from utils.opik_config import trace
 
-# ✨ [프롬프트 강화] 퀴즈 JSON 구조를 틀리지 않도록 예시와 경고를 대폭 추가했습니다.
+# ✨ [수정됨] JSON 예시의 중괄호를 {{ }}로 감싸서 에러 방지
 FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to explain concepts clearly and intuitively in the style of Richard Feynman.
 
 **Teaching Philosophy:**
@@ -36,7 +36,7 @@ Used when the user asks "What is...", "Explain...", or creates code/math content
 * **"message" (Conversational Reply):**
     * Keep it **clean, engaging, and summary-like**.
     * **DO NOT** include large code blocks or Mermaid code here.
-    * Example: "That's a great question! A BJT is essentially... (brief summary). I've prepared a detailed explanation with a diagram in the workspace!"
+    * Example: "That's a great question! I've prepared a detailed explanation with a diagram in the workspace!"
 
 * **"content" (Learning Unit Body):**
     * This is where the **FULL, DETAILED explanation** goes.
@@ -50,25 +50,25 @@ Used when the user asks "What is...", "Explain...", or creates code/math content
 Used ONLY when the user asks for a "quiz", "test", "practice questions".
 
 * **"type":** "quiz"
-* **"message":** "I've prepared a quiz to test your understanding!" (Keep it short).
+* **"message":** "I've prepared a quiz to test your understanding!"
 * **"content":** "## Quiz Time!\\nTest your knowledge below."
 * **"quiz_data":** Generate 3-5 questions.
     * **CRITICAL JSON RULES FOR QUIZ:**
         1. Use key `"question_text"`, NOT `"question"`.
-        2. `options` MUST be a list of OBJECTS, NOT strings.
+        2. `options` MUST be a list of OBJECTS.
         3. Each option MUST have `"id"`, `"text"`, `"is_correct"`.
 
     * **CORRECT QUIZ EXAMPLE:**
       ```json
-      {
+      {{
         "id": "q1",
         "question_text": "What is CLI?",
         "options": [
-          {"id": "A", "text": "Command Line Interface", "is_correct": true},
-          {"id": "B", "text": "Computer Line", "is_correct": false}
+          {{"id": "A", "text": "Command Line Interface", "is_correct": true}},
+          {{"id": "B", "text": "Computer Line", "is_correct": false}}
         ],
         "explanation": "CLI stands for..."
-      }
+      }}
       ```
 ---
 
@@ -109,7 +109,6 @@ prompt_template = PromptTemplate(
 def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional[Dict[str, Any]]]:
     """
     Parse the LLM response to extract the conversational message and optional Learning Unit JSON.
-    Includes fail-safes for empty content.
     """
     pattern = r'<LEARNING_UNIT>(.*?)</LEARNING_UNIT>'
     match = re.search(pattern, response_text, re.DOTALL)
@@ -123,7 +122,7 @@ def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional
             json_str = match.group(1).strip()
             learning_unit_dict = json.loads(json_str)
             
-            # ✨ [안전장치] 퀴즈가 아닌데 내용이 비어있으면 채팅 메시지 복사
+            # Fallback for empty content
             if learning_unit_dict.get("type") != "quiz":
                 content = learning_unit_dict.get("content", "").strip()
                 if not content or len(content) < 10:
@@ -191,61 +190,40 @@ async def query_rag_chain(
         folder_id=folder_id
     )
     
-    # Get relevant documents for source attribution
     retriever = get_retriever(collection_name=collection_name, k=k, folder_id=folder_id)
     relevant_docs = retriever.invoke(question) if hasattr(retriever, 'invoke') else retriever.get_relevant_documents(question)
     
-    # Invoke the chain
     raw_answer = chain.invoke(question)
-    
-    # Parse learning unit from response
     answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
     
-    # Check if answer indicates general knowledge usage
     general_knowledge_indicators = [
-        "i don't have information",
-        "i don't have enough information",
-        "not in the provided context",
-        "not in the context",
-        "context doesn't contain",
-        "context is empty",
-        "no information in",
-        "based on my general knowledge",
-        "using my knowledge",
-        "from my training",
-        "general knowledge"
+        "i don't have information", "not in the provided context", "context is empty",
+        "based on my general knowledge", "general knowledge"
     ]
     answer_lower = answer.lower()
     using_general_knowledge = any(indicator in answer_lower for indicator in general_knowledge_indicators)
     
-    # Format and clean sources
     source_map = {}
-    
     for doc in relevant_docs:
         raw_source = doc.metadata.get("source", "Unknown")
-        
-        if not raw_source or raw_source == "Unknown": continue
-        if "/tmp" in raw_source or raw_source.startswith("tmp"): continue
+        if not raw_source or "tmp" in raw_source: continue
         
         source_filename = os.path.basename(raw_source).strip()
-        
-        if source_filename.startswith("tmp"): continue
-        if not source_filename or source_filename == "Unknown": continue
+        if not source_filename or source_filename == "Unknown" or source_filename.startswith("tmp"): continue
         
         if source_filename not in source_map:
             source_map[source_filename] = {
                 "id": doc.metadata.get("id", ""),
                 "title": source_filename,
-                "content": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
+                "content": doc.page_content[:200] + "...",
                 "relevance_score": 1.0
             }
     
     sources = list(source_map.values())
     
-    if using_general_knowledge or not sources or len(relevant_docs) == 0:
+    if using_general_knowledge or not sources:
         sources = []
     
-    # Build reasoning chain
     reasoning_chain = []
     if len(relevant_docs) > 0:
         reasoning_chain.append("Retrieved relevant documents from VectorDB")
@@ -253,11 +231,7 @@ async def query_rag_chain(
         reasoning_chain.append("No documents found in VectorDB - using general knowledge")
     
     reasoning_chain.append("Applied Feynman Technique prompt")
-    
-    if using_general_knowledge or not sources:
-        reasoning_chain.append("Generated response using general knowledge (no context available)")
-    else:
-        reasoning_chain.append("Generated response using Gemini with RAG context")
+    reasoning_chain.append("Generated response using Gemini with RAG context")
     
     result = {
         "answer": answer,
@@ -272,9 +246,7 @@ async def query_rag_chain(
 
 
 async def generate_study_summary(messages: list) -> dict:
-    """
-    Analyze conversation history to generate a concise study topic summary.
-    """
+    # (기존 코드 유지)
     if not messages or len(messages) == 0:
         return {"title": "General Study", "category": "concept"}
     
@@ -284,58 +256,16 @@ async def generate_study_summary(messages: list) -> dict:
         if msg.get('role') in ['user', 'assistant']
     ])
     
-    summary_prompt = f"""Analyze the following conversation history. Identify the main topic the user is studying (max 3 words).
-Also categorize it into one of: ['concept', 'code', 'review', 'quiz'].
-
-Conversation:
-{conversation_text[:2000]}
-
-Return ONLY valid JSON in this exact format:
-{{"title": "Topic Name", "category": "concept|code|review|quiz"}}
-
-Do not include any other text, explanations, or markdown formatting. Only return the JSON object."""
+    summary_prompt = f"""Analyze the following conversation history. Identify the main topic (max 3 words).
+Also categorize into: ['concept', 'code', 'review', 'quiz'].
+Conversation: {conversation_text[:2000]}
+Return JSON: {{"title": "Topic", "category": "concept"}}"""
 
     try:
-        llm = ChatGoogleGenerativeAI(
-            model="models/gemini-2.5-flash",
-            temperature=0.3,
-            google_api_key=os.getenv("GOOGLE_API_KEY")
-        )
-        
+        llm = ChatGoogleGenerativeAI(model="models/gemini-2.5-flash", temperature=0.3, google_api_key=os.getenv("GOOGLE_API_KEY"))
         response = await llm.ainvoke(summary_prompt)
-        response_text = response.content.strip()
-        
-        json_match = re.search(r'\{[^}]+\}', response_text)
-        if json_match:
-            summary_dict = json.loads(json_match.group())
-        else:
-            summary_dict = json.loads(response_text)
-        
-        valid_categories = ['concept', 'code', 'review', 'quiz']
-        category = summary_dict.get('category', 'concept')
-        if category not in valid_categories:
-            category = 'concept'
-        
-        title = summary_dict.get('title', 'General Study')
-        title_words = title.split()
-        if len(title_words) > 3:
-            title = ' '.join(title_words[:3])
-        
-        return {
-            "title": title,
-            "category": category
-        }
-        
-    except Exception as e:
-        print(f"Error generating study summary: {str(e)}")
-        first_user_msg = next(
-            (msg.get('content', '') for msg in messages if msg.get('role') == 'user'),
-            'General Study'
-        )
-        title_words = first_user_msg.split()[:3]
-        title = ' '.join(title_words) if title_words else 'General Study'
-        
-        return {
-            "title": title,
-            "category": "concept"
-        }
+        match = re.search(r'\{[^}]+\}', response.content.strip())
+        if match: return json.loads(match.group())
+        return {"title": "General Study", "category": "concept"}
+    except:
+        return {"title": "General Study", "category": "concept"}

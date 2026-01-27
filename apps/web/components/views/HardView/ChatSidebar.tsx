@@ -234,7 +234,8 @@ export function ChatSidebar() {
       
       // Save messages to active folder's chat history
       if (activeFolderId) {
-        addMessageToFolder(activeFolderId, userMessage);
+        // ✨ [수정됨] 중복 저장 코드 삭제 완료!
+        // userMessage는 위에서 이미 저장했으므로, 여기서는 assistantMessage만 저장합니다.
         addMessageToFolder(activeFolderId, assistantMessage);
       }
       
