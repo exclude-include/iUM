@@ -21,6 +21,10 @@ from models.integrations import (
     DriveSyncRequest,
     DriveSyncResponse,
     DriveFile,
+    DriveFileInfo,
+    DriveFilesResponse,
+    DriveImportRequest,
+    DriveImportResponse,
 )
 from utils.supabase_client import get_supabase_client
 
@@ -327,6 +331,194 @@ async def sync_drive_files(
         raise HTTPException(status_code=500, detail=f"Drive sync failed: {str(e)}")
 
 
+# Video MIME types for filtering
+VIDEO_MIME_TYPES = [
+    'video/mp4',
+    'video/webm',
+    'video/ogg',
+    'video/quicktime',
+    'video/x-msvideo',
+    'video/mpeg',
+    'video/3gpp',
+    'video/x-matroska',
+]
+
+
+@router.get("/drive/files", response_model=DriveFilesResponse)
+async def list_drive_video_files(
+    user_id: str = Query(..., description="User ID for authentication"),
+    page_token: Optional[str] = Query(None, description="Page token for pagination"),
+):
+    """
+    List video files from user's Google Drive
+    
+    Args:
+        user_id: User ID to fetch files for
+        page_token: Optional page token for pagination
+        
+    Returns:
+        DriveFilesResponse: List of video files from Google Drive
+    """
+    try:
+        # Get valid credentials
+        credentials = get_credentials_for_user(user_id)
+        
+        # Build Drive API service
+        service = build('drive', 'v3', credentials=credentials)
+        
+        # Query for video files only
+        mime_type_query = " or ".join([f"mimeType='{mt}'" for mt in VIDEO_MIME_TYPES])
+        query = f"({mime_type_query}) and trashed=false"
+        
+        # List files from Drive
+        request_params = {
+            'q': query,
+            'pageSize': 50,
+            'fields': "nextPageToken, files(id, name, mimeType, size, thumbnailLink, webViewLink, modifiedTime)",
+        }
+        
+        if page_token:
+            request_params['pageToken'] = page_token
+        
+        results = service.files().list(**request_params).execute()
+        files = results.get('files', [])
+        
+        # Convert to response model
+        file_list = [
+            DriveFileInfo(
+                id=f['id'],
+                name=f['name'],
+                mime_type=f['mimeType'],
+                size=int(f.get('size', 0)) if f.get('size') else None,
+                thumbnail_link=f.get('thumbnailLink'),
+                web_view_link=f.get('webViewLink'),
+                modified_time=f.get('modifiedTime'),
+            )
+            for f in files
+        ]
+        
+        return DriveFilesResponse(
+            success=True,
+            files=file_list,
+            message=f"Found {len(file_list)} video files"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list Drive files: {str(e)}")
+
+
+@router.post("/drive/import", response_model=DriveImportResponse)
+async def import_from_drive(
+    request: DriveImportRequest,
+    user_id: str = Query(..., description="User ID for authentication"),
+):
+    """
+    Import a video file from Google Drive to Supabase Storage
+    
+    1. Downloads the file from Google Drive
+    2. Uploads to Supabase Storage 'reels' bucket
+    3. Creates a record in the 'reels' table
+    
+    Args:
+        request: Import request with file ID and reel metadata
+        user_id: User ID performing the import
+        
+    Returns:
+        DriveImportResponse: Result with public URL and reel ID
+    """
+    try:
+        import io
+        
+        # Get valid credentials
+        credentials = get_credentials_for_user(user_id)
+        
+        # Build Drive API service
+        service = build('drive', 'v3', credentials=credentials)
+        
+        # Get file metadata first
+        file_metadata = service.files().get(
+            fileId=request.file_id,
+            fields='id, name, mimeType, size'
+        ).execute()
+        
+        file_name = file_metadata['name']
+        mime_type = file_metadata['mimeType']
+        
+        # Validate it's a video file
+        if mime_type not in VIDEO_MIME_TYPES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File is not a supported video format. Got: {mime_type}"
+            )
+        
+        # Download file content
+        file_request = service.files().get_media(fileId=request.file_id)
+        file_content = io.BytesIO()
+        
+        from googleapiclient.http import MediaIoBaseDownload
+        downloader = MediaIoBaseDownload(file_content, file_request)
+        
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        
+        file_content.seek(0)
+        file_bytes = file_content.read()
+        
+        # Generate unique filename for Supabase storage
+        file_ext = file_name.split('.')[-1] if '.' in file_name else 'mp4'
+        timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        storage_filename = f"{user_id}/{timestamp}_{secrets.token_hex(4)}.{file_ext}"
+        
+        # Upload to Supabase Storage
+        supabase = get_supabase_client()
+        
+        # Upload file to 'reels' bucket
+        storage_result = supabase.storage.from_('reels').upload(
+            path=storage_filename,
+            file=file_bytes,
+            file_options={"content-type": mime_type}
+        )
+        
+        # Get public URL
+        public_url_response = supabase.storage.from_('reels').get_public_url(storage_filename)
+        public_url = public_url_response
+        
+        # Create reel record in database
+        reel_data = {
+            "title": request.title,
+            "description": request.description or "",
+            "video_url": public_url,
+            "user_id": user_id,
+            "folder_name": request.folder_name,
+            "tags": request.tags,
+            "likes": 0,
+            "comments": 0,
+            "source": "google_drive",
+            "google_file_id": request.file_id,
+        }
+        
+        reel_result = supabase.table("reels").insert(reel_data).execute()
+        
+        reel_id = None
+        if reel_result.data:
+            reel_id = reel_result.data[0].get('id')
+        
+        return DriveImportResponse(
+            success=True,
+            message=f"Successfully imported '{file_name}' from Google Drive",
+            video_url=public_url,
+            reel_id=str(reel_id) if reel_id else None
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Drive import failed: {str(e)}")
+
+
 async def process_file_for_rag(file_id: str, credentials: Credentials):
     """
     Placeholder function for RAG processing
@@ -350,3 +542,4 @@ async def process_file_for_rag(file_id: str, credentials: Credentials):
     # from langchain.embeddings import GoogleGenerativeAIEmbeddings
     
     pass
+

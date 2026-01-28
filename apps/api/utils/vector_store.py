@@ -13,7 +13,7 @@ from chromadb.config import Settings
 # Initialize Google Gemini Embeddings
 embeddings = GoogleGenerativeAIEmbeddings(
     model="models/embedding-001",
-    google_api_key=os.getenv("GOOGLE_API_KEY")
+    google_api_key=os.getenv("GOOGLE_GEMINI_API_KEY")
 )
 
 # Text splitter configuration

@@ -65,3 +65,39 @@ class GoogleCallbackResponse(BaseModel):
     success: bool
     message: str
     user_id: str
+
+
+class DriveFileInfo(BaseModel):
+    """Model for Drive file info returned to frontend"""
+    id: str = Field(..., description="Google Drive file ID")
+    name: str = Field(..., description="File name")
+    mime_type: str = Field(..., description="MIME type")
+    size: Optional[int] = Field(None, description="File size in bytes")
+    thumbnail_link: Optional[str] = Field(None, description="Thumbnail URL")
+    web_view_link: Optional[str] = Field(None, description="Web view URL")
+    modified_time: Optional[str] = Field(None, description="Last modified time")
+
+
+class DriveFilesResponse(BaseModel):
+    """Response for listing Drive files"""
+    success: bool
+    files: list[DriveFileInfo] = Field(default_factory=list)
+    message: str = ""
+
+
+class DriveImportRequest(BaseModel):
+    """Request model for importing a file from Google Drive"""
+    file_id: str = Field(..., description="Google Drive file ID to import")
+    title: str = Field(..., description="Title for the reel")
+    description: Optional[str] = Field(None, description="Description for the reel")
+    folder_name: Optional[str] = Field(None, description="Folder/category name")
+    tags: list[str] = Field(default_factory=list, description="Hashtags for the reel")
+
+
+class DriveImportResponse(BaseModel):
+    """Response model for Drive import operation"""
+    success: bool
+    message: str
+    video_url: Optional[str] = Field(None, description="Public URL of uploaded video")
+    reel_id: Optional[str] = Field(None, description="ID of created reel record")
+
