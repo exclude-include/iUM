@@ -1,8 +1,9 @@
 """
 VectorDB utility functions for ChromaDB integration
+Updated: Added support for 'document_ids' filtering (NotebookLM style) and refined embedding configuration.
 """
 import os
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -11,6 +12,7 @@ import chromadb
 from chromadb.config import Settings
 
 # Initialize Google Gemini Embeddings
+# ✨ [수정] 모델명을 'models/text-embedding-004'로 명확히 지정
 embeddings = GoogleGenerativeAIEmbeddings(
     model="text-embedding-004",
     google_api_key=os.getenv("GOOGLE_API_KEY")
@@ -108,30 +110,57 @@ def get_retriever(
     collection_name: str = "user_knowledge",
     persist_directory: str = "./chroma_db",
     k: int = 4,
-    folder_id: Optional[str] = None
+    folder_id: Optional[str] = None,
+    document_ids: Optional[List[str]] = None  # ✨ [추가] 중요: document_ids 인자 추가
 ):
     """
-    Get a retriever from the vector store.
+    Get a retriever from the vector store with advanced filtering.
     
     Args:
         collection_name: Name of the collection
         persist_directory: Directory to persist the ChromaDB database
         k: Number of documents to retrieve
         folder_id: Optional folder ID to filter documents by
+        document_ids: Optional list of document IDs to restrict search (NotebookLM style)
         
     Returns:
         Vector store retriever
     """
     vector_store = get_vector_store(collection_name, persist_directory)
     
-    # Build search kwargs with optional folder filter
-    search_kwargs = {"k": k}
+    # ✨ [수정] ChromaDB 필터 구성 로직 강화
+    # $and, $in 연산자를 사용하여 폴더와 선택된 파일을 동시에 필터링
+    where_filter: Dict[str, Any] = {}
+    filters_list = []
+
+    # 1. 폴더 필터
     if folder_id:
-        search_kwargs["filter"] = {"folder_id": folder_id}
+        filters_list.append({"folder_id": folder_id})
+
+    # 2. 파일 ID 필터 (선택된 파일만 검색)
+    if document_ids and len(document_ids) > 0:
+        if len(document_ids) == 1:
+            # 파일이 하나일 때
+            filters_list.append({"document_id": document_ids[0]})
+        else:
+            # 파일이 여러 개일 때 ($in 연산자 사용)
+            filters_list.append({"document_id": {"$in": document_ids}})
+
+    # 필터 결합 로직
+    if len(filters_list) > 1:
+        where_filter = {"$and": filters_list}
+    elif len(filters_list) == 1:
+        where_filter = filters_list[0]
+    else:
+        where_filter = None # 필터 없음
+
+    # 검색 설정
+    search_kwargs = {"k": k}
+    if where_filter:
+        search_kwargs["filter"] = where_filter
     
     retriever = vector_store.as_retriever(
         search_type="similarity",
         search_kwargs=search_kwargs
     )
     return retriever
-

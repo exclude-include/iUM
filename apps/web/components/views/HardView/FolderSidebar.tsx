@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
-// ✨ [수정] Sparkles가 추가되었습니다.
+import { useState, useRef, useEffect } from "react"; // ✨ [수정] useEffect 추가
 import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,7 +11,6 @@ import { useAppStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { HistoryTimeline } from "@/components/HistoryTimeline";
-// 1단계에서 설치한 체크박스 컴포넌트 (만약 설치 안 했다면 에러가 날 수 있으니 꼭 설치해주세요!)
 import { Checkbox } from "@/components/ui/checkbox"; 
 
 // Color presets for folders
@@ -38,6 +36,7 @@ export function FolderSidebar() {
     toggleDocumentSelection,
     isMindMapOpen,
     setMindMapOpen,
+    fetchFiles, // ✨ [추가] 파일 목록 불러오기 액션 가져오기
   } = useAppStore();
 
   const { toast } = useToast();
@@ -46,6 +45,11 @@ export function FolderSidebar() {
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedColor, setSelectedColor] = useState(FOLDER_COLORS[0].value);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ✨ [추가] 컴포넌트 마운트 시 DB에서 파일 목록 불러오기 (새로고침 유지용)
+  useEffect(() => {
+    fetchFiles();
+  }, [fetchFiles]);
 
   const handleCreateFolder = () => {
     if (!newFolderName.trim()) return;
@@ -224,7 +228,7 @@ export function FolderSidebar() {
                               toggleDocumentSelection(file.id);
                             }}
                           >
-                             {/* shadcn Checkbox가 설치되지 않았을 경우를 대비해 수동 아이콘 사용 */}
+                             {/* 선택 여부에 따라 아이콘 변경 */}
                              {isSelected ? (
                                <CheckSquare className="h-3.5 w-3.5 text-primary" />
                              ) : (
@@ -429,7 +433,6 @@ export function FolderSidebar() {
                   Knowledge Graph visualization will appear here.
                 </p>
                 <Button variant="outline" onClick={() => toast({ description: "Generating graph..." })}>
-                  {/* ✨ [수정] Sparkles 컴포넌트 사용 */}
                   <Sparkles className="mr-2 h-4 w-4" />
                   Generate Graph
                 </Button>
