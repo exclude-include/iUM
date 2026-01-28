@@ -35,6 +35,7 @@ export function ChatSidebar() {
     activeFolderId,
     addMessageToFolder,
     setActiveSources,
+    selectedDocumentIds, // ✨ store에서 가져옴
   } = useAppStore();
 
   const router = useRouter();

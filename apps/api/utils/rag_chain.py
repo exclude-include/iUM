@@ -137,8 +137,113 @@ async def query_rag_chain(
     collection_name: str = "user_knowledge",
     model_name: str = "models/gemini-2.5-flash",
     k: int = 4,
-    folder_id: Optional[str] = None
+    folder_id: Optional[str] = None,
+    document_ids: Optional[List[str]] = None # ✨ [추가] 인자 추가
 ):
+    """
+    Query the RAG chain with status streaming.
+    Supports selective context (document_ids).
+    """
+    
+    # 📡 [상태 전송 1]
+    search_msg = "Searching knowledge base... 🔍"
+    if document_ids:
+        search_msg = f"Searching in {len(document_ids)} selected files... 🔍"
+    yield {"status": "progress", "step": "searching", "message": search_msg}
+    
+    # 1. 문서 검색 시도
+    relevant_docs = []
+    try:
+        # ✨ get_retriever에 document_ids 전달
+        retriever = get_retriever(
+            collection_name=collection_name, 
+            k=k, # 선택된 파일이 있으면 검색 범위를 좀 더 넓혀도 됨 (예: k*2)
+            folder_id=folder_id,
+            document_ids=document_ids
+        )
+        
+        if hasattr(retriever, 'invoke'):
+            docs = retriever.invoke(question)
+        else:
+            docs = retriever.get_relevant_documents(question)
+            
+        # ✨ [후처리 필터링] 
+        # Supabase 쿼리에서 'IN' 필터가 까다로울 수 있으므로, 
+        # 가져온 문서들 중에서 사용자가 선택한 파일에 속하는지 파이썬 레벨에서 한 번 더 확인합니다.
+        if document_ids:
+            relevant_docs = [
+                d for d in docs 
+                if d.metadata.get("document_id") in document_ids or d.metadata.get("source") in document_ids
+            ]
+            if not relevant_docs and docs:
+                # 만약 필터링 후 남은게 없다면, 너무 엄격했을 수 있으니 상위 2개만 fallback으로 사용
+                 relevant_docs = docs[:2]
+        else:
+            relevant_docs = docs
+            
+    except Exception as e:
+        print(f"⚠️ Vector Store Retrieval Failed: {e}")
+        relevant_docs = []
+
+    # ... (이하 로직은 기존과 동일: 문맥 분석 -> LLM 호출 -> 파싱 -> 반환)
+    # 📡 [상태 전송 2]
+    doc_count = len(relevant_docs)
+    yield {"status": "progress", "step": "analyzing", "message": f"Found {doc_count} relevant segments. Analyzing... 🧠"}
+
+    try:
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=0,
+            google_api_key=os.getenv("GOOGLE_API_KEY")
+        )
+        
+        context_text = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else ""
+        final_prompt = prompt_template.format(context=context_text, question=question)
+        
+        # 📡 [상태 전송 3]
+        yield {"status": "progress", "step": "generating", "message": "Formulating response... ✍️"}
+        
+        response_msg = await llm.ainvoke(final_prompt)
+        raw_answer = response_msg.content
+        
+    except Exception as e:
+        yield { "status": "error", "data": { "answer": f"Error: {str(e)}", "sources": [], "reasoning_chain": ["Error"] } }
+        return
+
+    # 3. 답변 파싱 (parse_learning_unit_from_response 호출 등 기존 코드 그대로 유지)
+    answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
+    
+    # ... (소스 매핑 로직 유지) ...
+    source_map = {}
+    for doc in relevant_docs:
+        raw_source = doc.metadata.get("source", "Unknown")
+        # (기존 소스 처리 코드 복사/유지)
+        if not raw_source or "tmp" in raw_source: continue
+        source_filename = os.path.basename(raw_source).strip()
+        if source_filename not in source_map:
+            source_map[source_filename] = {
+                "id": doc.metadata.get("id", ""),
+                "title": source_filename,
+                "content": doc.page_content[:200] + "...",
+                "relevance_score": 1.0
+            }
+    sources = list(source_map.values())
+    
+    reasoning_chain = ["Using selected documents" if document_ids else "Using folder context"]
+    reasoning_chain.append("Generated response using Gemini")
+
+    result = {
+        "message": answer,
+        "conversation_id": "temp-id",
+        "sources": sources,
+        "reasoning_chain": reasoning_chain
+    }
+    
+    if learning_unit_dict:
+        result["learning_unit"] = learning_unit_dict
+        
+    yield {"status": "complete", "data": result}
+    
     """
     Query the RAG chain with status streaming.
     Yields status updates and finally the result.
