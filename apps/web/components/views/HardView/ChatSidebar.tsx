@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { 
   Send, Loader2, MessageCircle, LogOut, User, Settings, 
-  ThumbsUp, ThumbsDown, Sparkles, Search, Brain, PenTool 
+  ThumbsUp, ThumbsDown, Sparkles, Search
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -27,13 +27,6 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import "katex/dist/katex.min.css";
 
-// ✨ [추가] 로딩 상태 텍스트 시퀀스
-const LOADING_STEPS = [
-  { text: "Searching knowledge base...", icon: Search },
-  { text: "Analyzing context...", icon: Brain },
-  { text: "Formulating response...", icon: PenTool },
-];
-
 export function ChatSidebar() {
   const {
     addLearningTab,
@@ -49,9 +42,9 @@ export function ChatSidebar() {
   const supabase = createClient();
   const activeFolder = knowledgeFolders.find((f) => f.id === activeFolderId);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  // ✨ [추가] 현재 로딩 단계 상태
-  const [loadingStepIndex, setLoadingStepIndex] = useState(0);
+  
+  // ✨ [수정] 단순 boolean 대신 현재 진행 상태 메시지를 저장 (null이면 로딩 아님)
+  const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
   
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -86,18 +79,6 @@ export function ChatSidebar() {
 
     return () => subscription.unsubscribe();
   }, [supabase]);
-
-  // ✨ [추가] 로딩 중일 때 1.5초마다 단계 변경
-  useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (isLoading) {
-      setLoadingStepIndex(0); // 시작할 때 0으로 초기화
-      interval = setInterval(() => {
-        setLoadingStepIndex((prev) => (prev + 1) % LOADING_STEPS.length);
-      }, 1500);
-    }
-    return () => clearInterval(interval);
-  }, [isLoading]);
 
   const handleSignOut = async () => {
     try {
@@ -137,7 +118,7 @@ export function ChatSidebar() {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, isLoading]);
+  }, [messages, loadingStatus]);
 
   const generateStudySummary = useCallback(async () => {
     if (isGeneratingSummary || messages.length < 2) return;
@@ -185,24 +166,23 @@ export function ChatSidebar() {
     }
   }, [messages, generateStudySummary]);
 
-  // ✨ [추가] 피드백 핸들러
+  // 피드백 핸들러
   const handleFeedback = (messageId: string, type: "like" | "dislike") => {
     setMessages((prev) =>
       prev.map((msg) =>
         msg.id === messageId
-          ? { ...msg, feedback: msg.feedback === type ? null : type } // 토글 기능
+          ? { ...msg, feedback: msg.feedback === type ? null : type }
           : msg
       )
     );
 
-    // 실제로는 여기서 API를 호출하여 피드백을 서버에 저장할 수 있습니다.
     toast({
       description: type === "like" ? "Thanks for the positive feedback!" : "Thanks for the feedback. We'll improve.",
     });
   };
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || loadingStatus) return; // 로딩 중이면 중복 방지
 
     if (!activeFolderId) {
       toast({
@@ -226,15 +206,25 @@ export function ChatSidebar() {
     }
     
     setInput("");
-    setIsLoading(true);
+    
+    // ✨ [수정] 초기 상태 메시지 설정
+    setLoadingStatus("Starting agent..."); 
     userMessageCountRef.current += 1;
 
     try {
-      const response = await api.chat.sendMessage(input.trim(), {
-        conversationId: conversationId || undefined,
-        collectionName: "user_knowledge",
-        folderId: activeFolderId || undefined,
-      });
+      // ✨ [핵심 수정] 3번째 인자로 상태 업데이트 콜백 전달
+      const response = await api.chat.sendMessage(
+        input.trim(), 
+        {
+          conversationId: conversationId || undefined,
+          collectionName: "user_knowledge",
+          folderId: activeFolderId || undefined,
+        },
+        // Callback: 서버에서 스트리밍으로 오는 상태 메시지를 실시간으로 UI에 반영
+        (statusMessage) => {
+          setLoadingStatus(statusMessage);
+        }
+      );
 
       if (response.conversation_id) {
         setConversationId(response.conversation_id);
@@ -256,7 +246,6 @@ export function ChatSidebar() {
         content: response.message,
         timestamp: new Date().toISOString(),
         sources: response.sources,
-        // ✨ [추가] 서버에서 받은 reasoning_chain이 있다면 저장 (없으면 undefined)
         reasoning_chain: response.reasoning_chain,
       };
 
@@ -292,7 +281,8 @@ export function ChatSidebar() {
         addMessageToFolder(activeFolderId, errorMessage);
       }
     } finally {
-      setIsLoading(false);
+      // ✨ [수정] 로딩 종료 시 상태 초기화
+      setLoadingStatus(null);
     }
   };
 
@@ -438,7 +428,7 @@ export function ChatSidebar() {
                   )}
                 </div>
 
-                {/* ✨ [추가] 피드백 버튼 (Assistant 메시지인 경우에만 표시) */}
+                {/* 피드백 버튼 (Assistant 메시지인 경우에만 표시) */}
                 {message.role === "assistant" && (
                   <div className="flex items-center gap-1 px-1">
                     <Button
@@ -469,8 +459,8 @@ export function ChatSidebar() {
             </div>
           ))}
 
-          {/* ✨ [추가] 스마트 로딩 인디케이터 */}
-          {isLoading && (
+          {/* ✨ [수정] 스마트 로딩 인디케이터 (진짜 상태 표시) */}
+          {loadingStatus && (
             <div className="flex gap-2">
               <Avatar className="h-7 w-7 border border-border shrink-0">
                 <AvatarFallback className="bg-primary text-primary-foreground text-[10px]">
@@ -486,18 +476,9 @@ export function ChatSidebar() {
                   <span className="font-medium text-[10px] text-primary">Processing...</span>
                 </div>
                 
-                {/* 텍스트 애니메이션 영역 */}
-                <div className="flex items-center gap-2 text-muted-foreground h-5 overflow-hidden">
-                   {/* 현재 단계 아이콘과 텍스트 */}
-                   {(() => {
-                     const StepIcon = LOADING_STEPS[loadingStepIndex].icon;
-                     return (
-                       <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-1 duration-300" key={loadingStepIndex}>
-                         <StepIcon className="h-3 w-3" />
-                         <span>{LOADING_STEPS[loadingStepIndex].text}</span>
-                       </div>
-                     );
-                   })()}
+                {/* 실시간 상태 메시지 표시 */}
+                <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
+                   <span>{loadingStatus}</span>
                 </div>
               </div>
             </div>
@@ -547,7 +528,7 @@ export function ChatSidebar() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
-            disabled={isLoading}
+            disabled={!!loadingStatus} // 로딩 중 입력 비활성화
             className="flex-1 rounded border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring border-border disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <Button
@@ -555,7 +536,7 @@ export function ChatSidebar() {
             size="icon"
             className="h-7 w-7"
             onClick={handleSend}
-            disabled={isLoading || !input.trim()}
+            disabled={!!loadingStatus || !input.trim()}
           >
             <Send className="h-3.5 w-3.5" />
           </Button>

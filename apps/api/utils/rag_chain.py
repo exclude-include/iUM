@@ -176,13 +176,16 @@ async def query_rag_chain(
     model_name: str = "models/gemini-2.5-flash",
     k: int = 4,
     folder_id: Optional[str] = None
-) -> dict:
+):  # -> Return type annotation removed as it yields
     """
-    Query the RAG chain with a user question.
-    Includes fallback to general knowledge if retrieval fails.
+    Query the RAG chain with status streaming.
+    Yields status updates and finally the result.
     """
     
-    # 1. 문서 검색 시도 (에러 나면 무시하고 빈 리스트 처리)
+    # 📡 [상태 전송 1] 검색 시작
+    yield {"status": "progress", "step": "searching", "message": "Searching knowledge base... 🔍"}
+    
+    # 1. 문서 검색 시도
     relevant_docs = []
     try:
         retriever = get_retriever(collection_name=collection_name, k=k, folder_id=folder_id)
@@ -192,77 +195,81 @@ async def query_rag_chain(
             relevant_docs = retriever.get_relevant_documents(question)
     except Exception as e:
         print(f"⚠️ Vector Store Retrieval Failed: {e}")
-        # 검색 실패해도 멈추지 않고 계속 진행합니다!
         relevant_docs = []
 
-    # 2. RAG 체인 실행 (검색된 문서가 없으면 일반 지식 활용)
+    # 📡 [상태 전송 2] 검색 완료 및 문맥 분석 시작
+    doc_count = len(relevant_docs)
+    yield {"status": "progress", "step": "analyzing", "message": f"Found {doc_count} documents. Analyzing context... 🧠"}
+
+    # 2. RAG 체인 실행
     try:
-        # 체인을 매번 새로 생성하는 대신, 직접 LLM을 호출하여 유연하게 처리
         llm = ChatGoogleGenerativeAI(
             model=model_name,
             temperature=0,
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
         
-        # 검색된 문서가 있으면 합치고, 없으면 비움
         context_text = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else ""
-        
-        # 프롬프트에 주입
         final_prompt = prompt_template.format(context=context_text, question=question)
         
+        # 📡 [상태 전송 3] 답변 생성 시작
+        yield {"status": "progress", "step": "generating", "message": "Formulating response... ✍️"}
+        
         # LLM 답변 생성
-        response_msg = llm.invoke(final_prompt)
-        raw_answer = response_msg.content if hasattr(response_msg, 'content') else str(response_msg)
+        response_msg = await llm.ainvoke(final_prompt) # 비동기 호출로 변경
+        raw_answer = response_msg.content
         
     except Exception as e:
-        return {
-            "answer": f"Sorry, I encountered an error while processing your request: {str(e)}",
-            "sources": [],
-            "reasoning_chain": ["Error occurred during generation"]
+        yield {
+            "status": "error",
+            "data": {
+                "answer": f"Error: {str(e)}",
+                "sources": [],
+                "reasoning_chain": ["Error occurred"]
+            }
         }
+        return
 
-    # 3. 답변 파싱 (JSON 추출)
+    # 3. 답변 파싱 및 후처리 (기존 로직 유지)
     answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
     
-    # 4. 출처 정리
+    # ... (중략: 소스 매핑 로직은 기존과 동일) ...
     source_map = {}
-    if relevant_docs:
-        for doc in relevant_docs:
-            raw_source = doc.metadata.get("source", "Unknown")
-            if not raw_source or "tmp" in raw_source: continue
-            
-            source_filename = os.path.basename(raw_source).strip()
-            if not source_filename or source_filename == "Unknown" or source_filename.startswith("tmp"): continue
-            
-            if source_filename not in source_map:
-                source_map[source_filename] = {
-                    "id": doc.metadata.get("id", ""),
-                    "title": source_filename,
-                    "content": doc.page_content[:200] + "...",
-                    "relevance_score": 1.0
-                }
-    
+    for doc in relevant_docs:
+        # (기존 소스 매핑 코드 유지)
+        raw_source = doc.metadata.get("source", "Unknown")
+        if not raw_source or "tmp" in raw_source: continue
+        source_filename = os.path.basename(raw_source).strip()
+        if not source_filename or source_filename == "Unknown" or source_filename.startswith("tmp"): continue
+        if source_filename not in source_map:
+            source_map[source_filename] = {
+                "id": doc.metadata.get("id", ""),
+                "title": source_filename,
+                "content": doc.page_content[:200] + "...",
+                "relevance_score": 1.0
+            }
     sources = list(source_map.values())
     
-    # 5. 추론 과정 기록
+    # ... (중략: 추론 과정 기록 로직 유지) ...
     reasoning_chain = []
     if relevant_docs:
-        reasoning_chain.append(f"Retrieved {len(relevant_docs)} documents from VectorDB")
+        reasoning_chain.append(f"Retrieved {len(relevant_docs)} documents")
     else:
-        reasoning_chain.append("Retrieval failed or no documents found - using General Knowledge")
-    
+        reasoning_chain.append("Using General Knowledge")
     reasoning_chain.append("Generated response using Gemini")
-    
+
     result = {
-        "answer": answer,
+        "message": answer, # Frontend expects 'message', not 'answer' in final response structure usually
+        "conversation_id": "temp-id", # You might want to manage this
         "sources": sources,
         "reasoning_chain": reasoning_chain
     }
     
     if learning_unit_dict:
         result["learning_unit"] = learning_unit_dict
-    
-    return result
+        
+    # 📡 [상태 전송 4] 최종 완료 데이터 전송
+    yield {"status": "complete", "data": result}
 
 
 async def generate_study_summary(messages: list) -> dict:

@@ -1,6 +1,7 @@
 /**
  * API Client for FastAPI Backend
  * Handles all HTTP requests to the backend API
+ * Updated for SSE Streaming Support
  */
 
 import type {
@@ -58,7 +59,8 @@ async function fetchApi<T>(
  */
 export const chatApi = {
   /**
-   * Send a message to the AI agent
+   * Send a message to the AI agent with Streaming Support (SSE)
+   * ✨ [수정됨] 스트리밍 데이터 처리 및 상태 콜백 추가
    */
   async sendMessage(
     message: string,
@@ -68,21 +70,81 @@ export const chatApi = {
       conversationId?: string;
       collectionName?: string;
       folderId?: string;
-    }
+    },
+    // ✨ [추가] 실시간 상태 업데이트를 위한 콜백 함수
+    onStatusUpdate?: (status: string) => void
   ): Promise<ChatResponse> {
-    const request: ChatRequest = {
-      message,
-      workspace_id: options?.workspaceId,
-      context: options?.context,
-      conversation_id: options?.conversationId,
-      collection_name: options?.collectionName,
-      folder_id: options?.folderId,
-    };
+    const url = `${API_BASE_URL}/api/agent/message`; // Endpoint updated to match backend router
+    
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message,
+          workspace_id: options?.workspaceId,
+          conversation_id: options?.conversationId,
+          collection_name: options?.collectionName,
+          folder_id: options?.folderId,
+        }),
+      });
 
-    return fetchApi<ChatResponse>("/api/agent/chat", {
-      method: "POST",
-      body: JSON.stringify(request),
-    });
+      if (!response.ok) {
+        throw new Error(`API Request failed: ${response.statusText}`);
+      }
+
+      // ✨ 스트림 리더 생성
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let finalResult: ChatResponse | null = null;
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          // SSE 데이터 파싱 (data: {...})
+          const lines = chunk.split("\n\n");
+          
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const jsonStr = line.replace("data: ", "");
+                const data = JSON.parse(jsonStr);
+
+                if (data.status === "progress") {
+                  // ✨ 실시간 상태 업데이트: "Searching...", "Analyzing..."
+                  if (onStatusUpdate) onStatusUpdate(data.message);
+                } else if (data.status === "complete") {
+                  // ✨ 최종 결과 수신
+                  finalResult = data.data;
+                } else if (data.status === "error") {
+                  throw new Error(data.message);
+                }
+              } catch (e) {
+                // JSON 파싱 에러는 무시 (청크가 잘린 경우 등)
+                // console.warn("Error parsing stream chunk:", e);
+              }
+            }
+          }
+        }
+      }
+
+      if (!finalResult) {
+        throw new Error("No valid response received from the server.");
+      }
+
+      return finalResult;
+
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error("Unknown error occurred during streaming request");
+    }
   },
 
   /**
@@ -98,7 +160,6 @@ export const chatApi = {
    * Generate study summary from conversation messages
    */
   async generateSummary(messages: ChatMessage[]): Promise<{ title: string; category: string }> {
-    // Convert ChatMessage objects to plain dicts for API
     const messageDicts = messages.map((msg) => ({
       id: msg.id,
       role: msg.role,
@@ -133,13 +194,12 @@ export const ingestApi = {
       formData.append("folder_id", folderId);
     }
 
-    const url = `${API_BASE_URL}/api/ingest`;
+    const url = `${API_BASE_URL}/api/ingest/upload`; // Endpoint path adjusted based on standard router
     
     try {
       const response = await fetch(url, {
         method: "POST",
         body: formData,
-        // Don't set Content-Type header - browser will set it with boundary
       });
 
       if (!response.ok) {
@@ -175,9 +235,6 @@ export const ingestApi = {
  * Feed API Functions
  */
 export const feedApi = {
-  /**
-   * Get learning feed for Soft View
-   */
   async getFeed(options?: {
     limit?: number;
     offset?: number;
@@ -199,16 +256,10 @@ export const feedApi = {
  * Workspace API Functions
  */
 export const workspaceApi = {
-  /**
-   * Get workspace data for Hard View
-   */
   async getWorkspace(workspaceId: string = "default"): Promise<Workspace> {
     return fetchApi<Workspace>(`/api/workspace/${workspaceId}`);
   },
 
-  /**
-   * Get folders in a workspace
-   */
   async getFolders(workspaceId: string = "default"): Promise<Workspace["folders"]> {
     return fetchApi<Workspace["folders"]>(
       `/api/workspace/${workspaceId}/folders`
@@ -231,4 +282,3 @@ export const api = {
   workspace: workspaceApi,
   health: checkHealth,
 };
-
