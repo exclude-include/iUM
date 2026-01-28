@@ -5,7 +5,7 @@ Refactored: STRICT JSON Escaping & SAFE MERMAID Rules
 import os
 import json
 import re
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
@@ -243,7 +243,7 @@ async def query_rag_chain(
         result["learning_unit"] = learning_unit_dict
         
     yield {"status": "complete", "data": result}
-    
+
     """
     Query the RAG chain with status streaming.
     Yields status updates and finally the result.
