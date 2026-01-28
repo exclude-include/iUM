@@ -1,6 +1,6 @@
 """
 RAG Chain implementation with Feynman Technique prompt
-Refactored: STRICT JSON Escaping Rules to prevent broken JSON
+Refactored: STRICT JSON Escaping & SAFE MERMAID Rules
 """
 import os
 import json
@@ -13,7 +13,7 @@ from langchain_core.output_parsers import StrOutputParser
 from utils.vector_store import get_retriever
 from utils.opik_config import trace
 
-# ✨ [프롬프트 강화] 쌍따옴표 이스케이프 규칙 추가
+# ✨ [프롬프트 강화] Mermaid 문법 제한 추가 (No 'note for', No 'linkStyle')
 FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to explain concepts clearly and intuitively in the style of Richard Feynman.
 
 **Teaching Philosophy:**
@@ -34,9 +34,13 @@ Determine the User's Intent and choose ONE of the following modes:
 Used when the user asks "What is...", "Explain...", or creates code/math content.
 
 * **"message":** Keep it clean and engaging. Example: "I've prepared a detailed explanation in the workspace!"
-* **"content":** * The FULL detailed explanation.
+* **"content":** The FULL detailed explanation.
     * **DIAGRAMS (REQUIRED):** Include a Mermaid diagram code block.
-    * **MERMAID SYNTAX:** Use double quotes for labels (e.g., A["Label"]).
+    * **MERMAID RULES (STRICT):** 1. Use `graph TD` or `graph LR`.
+        2. Use double quotes for labels: `A["Label Text"]`.
+        3. ❌ **DO NOT use `note for`** (It crashes the renderer). Use a regular node for notes: `NoteNode["📝 Note: Text"]`.
+        4. ❌ **DO NOT use `linkStyle`** (It is error-prone).
+        5. Keep the graph structure simple and hierarchical.
 
 * **"quiz_data":** Leave empty [].
 
@@ -109,10 +113,6 @@ def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional
             # Common JSON cleanup
             json_str = match.group(1).strip()
             
-            # ✨ [추가] LLM이 실수로 제어문자(줄바꿈)를 넣었을 경우를 대비해 살짝 청소
-            # (단, \n 문자열은 건드리면 안 되므로 주의)
-            # json_str = json_str.replace('\n', '\\n') # 이건 위험할 수 있어서 생략하고 프롬프트에 의존
-            
             learning_unit_dict = json.loads(json_str)
             
             # Fallback for empty content
@@ -125,48 +125,10 @@ def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional
             
         except json.JSONDecodeError as e:
             print(f"JSON Parse Error: {e}")
-            print(f"Faulty JSON: {json_str[:200]}...") # 로그 확인용
-            # 파싱 실패 시, 원본 텍스트를 그대로 리턴하면 화면에 지저분하게 뜨므로
-            # 태그만이라도 제거하고 리턴하는 것이 좋습니다.
+            # 파싱 실패 시, 태그만 제거하고 메시지로 반환 (화면 깨짐 방지)
             return conversational_message, None
     else:
         return response_text, None
-
-
-@trace
-def create_rag_chain(
-    collection_name: str = "user_knowledge",
-    model_name: str = "models/gemini-2.5-flash",
-    temperature: float = 0,
-    k: int = 4,
-    folder_id: Optional[str] = None
-):
-    """
-    Create a RAG chain for chat interactions.
-    """
-    retriever = get_retriever(
-        collection_name=collection_name,
-        k=k,
-        folder_id=folder_id
-    )
-    
-    llm = ChatGoogleGenerativeAI(
-        model=model_name,
-        temperature=temperature,
-        google_api_key=os.getenv("GOOGLE_API_KEY")
-    )
-    
-    chain = (
-        {
-            "context": retriever | (lambda docs: "\n\n".join([doc.page_content for doc in docs])),
-            "question": RunnablePassthrough()
-        }
-        | prompt_template
-        | llm
-        | StrOutputParser()
-    )
-    
-    return chain
 
 
 @trace
@@ -176,7 +138,7 @@ async def query_rag_chain(
     model_name: str = "models/gemini-2.5-flash",
     k: int = 4,
     folder_id: Optional[str] = None
-):  # -> Return type annotation removed as it yields
+):
     """
     Query the RAG chain with status streaming.
     Yields status updates and finally the result.
@@ -230,13 +192,11 @@ async def query_rag_chain(
         }
         return
 
-    # 3. 답변 파싱 및 후처리 (기존 로직 유지)
+    # 3. 답변 파싱 및 후처리
     answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
     
-    # ... (중략: 소스 매핑 로직은 기존과 동일) ...
     source_map = {}
     for doc in relevant_docs:
-        # (기존 소스 매핑 코드 유지)
         raw_source = doc.metadata.get("source", "Unknown")
         if not raw_source or "tmp" in raw_source: continue
         source_filename = os.path.basename(raw_source).strip()
@@ -250,7 +210,6 @@ async def query_rag_chain(
             }
     sources = list(source_map.values())
     
-    # ... (중략: 추론 과정 기록 로직 유지) ...
     reasoning_chain = []
     if relevant_docs:
         reasoning_chain.append(f"Retrieved {len(relevant_docs)} documents")
@@ -259,8 +218,8 @@ async def query_rag_chain(
     reasoning_chain.append("Generated response using Gemini")
 
     result = {
-        "message": answer, # Frontend expects 'message', not 'answer' in final response structure usually
-        "conversation_id": "temp-id", # You might want to manage this
+        "message": answer, 
+        "conversation_id": "temp-id", 
         "sources": sources,
         "reasoning_chain": reasoning_chain
     }
@@ -273,7 +232,6 @@ async def query_rag_chain(
 
 
 async def generate_study_summary(messages: list) -> dict:
-    # (기존 코드 유지)
     if not messages or len(messages) == 0:
         return {"title": "General Study", "category": "concept"}
     
