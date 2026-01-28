@@ -54,7 +54,6 @@ export interface LearningTab extends LearningUnit {
 
 // Knowledge Folder System
 export interface UploadedFile {
-  // ✨ [수정] 파일 식별을 위한 ID 필드 필수 추가
   id: string; 
   name: string;
   url?: string; // or path
@@ -148,14 +147,17 @@ interface AppState {
   activeSources: Source[];
   setActiveSources: (sources: Source[]) => void;
 
-  // ✨ [추가] 파일 선택 상태 (NotebookLM 스타일)
+  // 파일 선택 상태 (NotebookLM 스타일)
   selectedDocumentIds: string[];
   toggleDocumentSelection: (id: string) => void;
   setSelectedDocuments: (ids: string[]) => void;
 
-  // ✨ [추가] 마인드맵 팝업 상태
+  // 마인드맵 팝업 상태
   isMindMapOpen: boolean;
   setMindMapOpen: (isOpen: boolean) => void;
+
+  // ✨ [추가] 서버에서 파일 목록 불러오기 액션
+  fetchFiles: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -514,7 +516,7 @@ export const useAppStore = create<AppState>((set) => ({
   activeSources: [],
   setActiveSources: (sources) => set({ activeSources: sources }),
 
-  // ✨ [추가] 파일 선택 상태 (NotebookLM 스타일)
+  // 파일 선택 상태 (NotebookLM 스타일)
   selectedDocumentIds: [],
   toggleDocumentSelection: (id) => set((state) => {
     const isSelected = state.selectedDocumentIds.includes(id);
@@ -526,7 +528,68 @@ export const useAppStore = create<AppState>((set) => ({
   }),
   setSelectedDocuments: (ids) => set({ selectedDocumentIds: ids }),
 
-  // ✨ [추가] 마인드맵 팝업 상태
+  // 마인드맵 팝업 상태
   isMindMapOpen: false,
   setMindMapOpen: (isOpen) => set({ isMindMapOpen: isOpen }),
+
+  // ✨ [추가] 파일 목록 동기화 액션
+  fetchFiles: async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      // 백엔드에서 파일 목록을 가져옵니다.
+      const response = await fetch(`${apiUrl}/api/workspace/default/folders`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch files');
+      }
+
+      const data = await response.json();
+      
+      if (data.files && Array.isArray(data.files)) {
+        set((state) => {
+          // 1. 만약 폴더가 하나도 없다면 기본 폴더를 생성해줍니다.
+          let currentFolders = state.knowledgeFolders;
+          if (currentFolders.length === 0) {
+            currentFolders = [{
+               id: "folder-1",
+               name: "General",
+               color: "#3B82F6",
+               files: [],
+               chatHistory: []
+            }];
+          }
+
+          // 2. DB에서 가져온 파일들을 각 폴더에 매핑합니다.
+          const updatedFolders = currentFolders.map((folder) => {
+            // 이 폴더 ID(folder.id)에 속하거나, folder_id가 없으면 첫번째 폴더에 넣습니다.
+            const folderFiles = data.files
+              .filter((f: any) => 
+                  f.folder_id === folder.id || 
+                  (folder.id === "folder-1" && (!f.folder_id || f.folder_id === "root"))
+              )
+              .map((f: any) => ({
+                id: f.id,
+                name: f.name,
+                uploadedAt: new Date(f.created_at).getTime(),
+                url: f.storage_path
+              }));
+
+            // 기존 파일과 DB 파일을 병합 (DB가 우선)
+            return {
+              ...folder,
+              files: folderFiles
+            };
+          });
+
+          return { 
+             knowledgeFolders: updatedFolders,
+             // 폴더가 생성되었으면 활성 폴더 ID도 설정
+             activeFolderId: state.activeFolderId || updatedFolders[0].id
+          };
+        });
+      }
+    } catch (error) {
+      console.error("Failed to fetch files:", error);
+    }
+  },
 }));

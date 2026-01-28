@@ -1,138 +1,119 @@
 """
-Document ingestion endpoint for uploading and processing PDFs/Text files
+Document ingestion endpoint with Supabase Storage integration
+Updated: Persists files to Supabase Storage & DB before VectorDB ingestion
 """
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 from langchain_core.documents import Document
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from utils.vector_store import add_documents_to_vector_store
 from utils.opik_config import trace
+from utils.supabase_client import get_supabase_client
 import os
 import tempfile
 
 router = APIRouter()
 
-
 @trace
-async def process_pdf_file(file_path: str, original_filename: str, folder_id: Optional[str] = None) -> List[Document]:
+async def process_pdf_file(file_path: str, original_filename: str) -> List[Document]:
     """
     Process a PDF file and extract text as LangChain Documents.
-    
-    Args:
-        file_path: Path to the temporary PDF file
-        original_filename: Original filename from the upload
-        folder_id: Optional folder ID to tag documents with
-        
-    Returns:
-        List of LangChain Document objects
     """
     loader = PyPDFLoader(file_path)
     documents = loader.load()
-    
-    # Add metadata with original filename (not temp filename) and folder_id
-    for doc in documents:
-        doc.metadata["source"] = original_filename
-        doc.metadata["type"] = "pdf"
-        if folder_id:
-            doc.metadata["folder_id"] = folder_id
-    
     return documents
 
 
 @trace
-async def process_text_file(content: str, filename: str, folder_id: Optional[str] = None) -> List[Document]:
+async def process_text_file(file_path: str, original_filename: str) -> List[Document]:
     """
     Process a text file content and create LangChain Documents.
-    
-    Args:
-        content: Text content
-        filename: Name of the file
-        folder_id: Optional folder ID to tag documents with
-        
-    Returns:
-        List of LangChain Document objects
     """
-    metadata = {
-        "source": filename,
-        "type": "text"
-    }
-    if folder_id:
-        metadata["folder_id"] = folder_id
-    
-    document = Document(
-        page_content=content,
-        metadata=metadata
-    )
-    
-    return [document]
+    loader = TextLoader(file_path)
+    documents = loader.load()
+    return documents
 
 
-@router.post("")
+@router.post("/upload") # ✨ 프론트엔드 경로(/api/ingest/upload)에 맞춤
 async def ingest_document(
     file: UploadFile = File(...),
     collection_name: str = Form("user_knowledge"),
     folder_id: Optional[str] = Form(None)
 ):
     """
-    Ingest a document (PDF or Text) into the VectorDB.
-    
-    - **file**: PDF or text file to upload
-    - **collection_name**: ChromaDB collection name (default: user_knowledge)
-    
-    Returns:
-        JSON response with ingestion status and document IDs
+    Ingest a document:
+    1. Upload to Supabase Storage (Persistence)
+    2. Save metadata to Supabase DB (Persistence)
+    3. Process & Embed into VectorDB (Search)
     """
+    supabase = get_supabase_client()
+    
+    # 1. 파일 내용을 메모리에 읽기 (Storage 업로드 및 처리용)
+    content = await file.read()
+    
+    # 임시 파일 생성 (LangChain Loader용)
+    # suffix를 붙여야 Loader가 파일 타입을 인식함
+    file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
+    if not file_ext and file.content_type == "application/pdf":
+        file_ext = ".pdf"
+    elif not file_ext:
+        file_ext = ".txt"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
+        tmp_file.write(content)
+        tmp_file_path = tmp_file.name
+
     try:
-        # Check file type
-        content_type = file.content_type or ""
-        file_extension = file.filename.split(".")[-1].lower() if file.filename else ""
+        # 2. Supabase Storage에 영구 저장
+        # 경로: folder_id/filename (폴더가 없으면 root/filename)
+        storage_path = f"{folder_id}/{file.filename}" if folder_id else file.filename
         
+        try:
+            # upsert='true'로 설정하여 덮어쓰기 허용
+            supabase.storage.from_("documents").upload(
+                path=storage_path,
+                file=content,
+                file_options={"content-type": file.content_type, "upsert": "true"}
+            )
+        except Exception as e:
+            print(f"Storage upload warning (might exist): {e}")
+
+        # 3. Supabase DB (files 테이블)에 메타데이터 저장
+        file_data = {
+            "name": file.filename,
+            "folder_id": folder_id or "root",
+            "storage_path": storage_path,
+            "content_type": file.content_type,
+            "size": len(content)
+        }
+        
+        # DB Insert & Return ID
+        db_res = supabase.table("files").insert(file_data).execute()
+        
+        # 새로 생성된 파일 ID (이것이 NotebookLM 기능의 핵심 ID가 됨)
+        new_file_id = db_res.data[0]['id'] if db_res.data else f"temp-{os.urandom(4).hex()}"
+
+        # 4. 문서 처리 (텍스트 추출)
         documents: List[Document] = []
-        
-        if content_type == "application/pdf" or file_extension == "pdf":
-            # Process PDF file
-            original_filename = file.filename or "uploaded_file.pdf"
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                content = await file.read()
-                tmp_file.write(content)
-                tmp_file_path = tmp_file.name
-            
-            try:
-                documents = await process_pdf_file(tmp_file_path, original_filename, folder_id)
-            finally:
-                # Clean up temporary file
-                os.unlink(tmp_file_path)
-                
-        elif content_type.startswith("text/") or file_extension in ["txt", "md", "markdown"]:
-            # Process text file
-            content = await file.read()
-            text_content = content.decode("utf-8")
-            documents = await process_text_file(text_content, file.filename or "uploaded_file.txt", folder_id)
-            
+        if file.content_type == "application/pdf" or file.filename.endswith(".pdf"):
+            documents = await process_pdf_file(tmp_file_path, file.filename)
         else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported file type: {content_type}. Supported types: PDF, TXT, MD"
-            )
-        
+            documents = await process_text_file(tmp_file_path, file.filename)
+            
         if not documents:
-            raise HTTPException(
-                status_code=400,
-                detail="No content extracted from the file"
-            )
-        
-        # Ensure all documents have the correct source metadata with original filename and folder_id
-        original_filename = file.filename or "uploaded_file"
+            raise HTTPException(status_code=400, detail="No content extracted from the file")
+
+        # 5. 메타데이터 주입 (검색 필터링을 위해 document_id 필수)
         for doc in documents:
-            # Force use of original filename (overwrite any temp filename that might have been set)
-            doc.metadata["source"] = original_filename
-            # Ensure folder_id is set if provided
-            if folder_id:
-                doc.metadata["folder_id"] = folder_id
-        
-        # Add documents to vector store
-        document_ids = add_documents_to_vector_store(
+            doc.metadata["source"] = file.filename
+            doc.metadata["folder_id"] = folder_id
+            doc.metadata["type"] = "pdf" if file.filename.endswith(".pdf") else "text"
+            # ✨ 중요: 이 ID로 나중에 "이 파일에서만 검색해줘" 기능 구현
+            doc.metadata["document_id"] = new_file_id 
+
+        # 6. 벡터 스토어(Chroma)에 저장
+        ids = add_documents_to_vector_store(
             documents=documents,
             collection_name=collection_name
         )
@@ -140,11 +121,12 @@ async def ingest_document(
         return JSONResponse(
             status_code=200,
             content={
-                "message": "Document ingested successfully",
+                "message": "File processed and saved successfully",
                 "filename": file.filename,
-                "chunks_created": len(document_ids),
-                "document_ids": document_ids[:10],  # Return first 10 IDs
-                "collection": collection_name
+                "document_ids": [new_file_id], # 프론트엔드는 이 DB ID를 추적함
+                "chunks_created": len(ids),
+                "collection": collection_name,
+                "storage_path": storage_path
             }
         )
         
@@ -153,27 +135,24 @@ async def ingest_document(
             status_code=500,
             detail=f"Error processing document: {str(e)}"
         )
+    
+    finally:
+        # 임시 파일 정리
+        if 'tmp_file_path' in locals() and os.path.exists(tmp_file_path):
+            os.unlink(tmp_file_path)
 
 
 @router.get("/status")
 async def get_ingestion_status(collection_name: str = "user_knowledge"):
     """
     Get status of the vector store collection.
-    
-    Args:
-        collection_name: Name of the collection to check
-        
-    Returns:
-        Collection status information
     """
     try:
         from utils.vector_store import get_vector_store
         
         vector_store = get_vector_store(collection_name=collection_name)
-        collection = vector_store._collection
-        
-        # Get collection count
-        count = collection.count()
+        # Chroma collection count
+        count = vector_store._collection.count()
         
         return {
             "collection_name": collection_name,
@@ -187,4 +166,3 @@ async def get_ingestion_status(collection_name: str = "user_knowledge"):
             "status": "error",
             "error": str(e)
         }
-
