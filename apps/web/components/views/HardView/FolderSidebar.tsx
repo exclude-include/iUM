@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame } from "lucide-react";
+// ✨ [수정] Sparkles가 추가되었습니다.
+import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -11,6 +12,8 @@ import { useAppStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { HistoryTimeline } from "@/components/HistoryTimeline";
+// 1단계에서 설치한 체크박스 컴포넌트 (만약 설치 안 했다면 에러가 날 수 있으니 꼭 설치해주세요!)
+import { Checkbox } from "@/components/ui/checkbox"; 
 
 // Color presets for folders
 const FOLDER_COLORS = [
@@ -31,6 +34,10 @@ export function FolderSidebar() {
     deleteFolder,
     addFileToFolder,
     userStreak,
+    selectedDocumentIds,
+    toggleDocumentSelection,
+    isMindMapOpen,
+    setMindMapOpen,
   } = useAppStore();
 
   const { toast } = useToast();
@@ -53,7 +60,6 @@ export function FolderSidebar() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Safety check: Require active folder for file upload
     if (!activeFolderId) {
       toast({
         title: "No folder selected",
@@ -66,26 +72,22 @@ export function FolderSidebar() {
       return;
     }
 
-    // Show uploading toast
     toast({
       title: "Uploading...",
       description: `Processing ${file.name}`,
     });
 
     try {
-      // Upload file to backend with folder_id
       const response = await api.ingest.uploadFile(file, "user_knowledge", activeFolderId);
 
-      // Create UploadedFile object for UI state
       const uploadedFile = {
+        id: response.document_ids[0] || `doc-${Date.now()}`, 
         name: file.name,
         uploadedAt: Date.now(),
       };
 
-      // Add to folder UI state
       addFileToFolder(activeFolderId, uploadedFile);
 
-      // Show success toast
       toast({
         title: "File processed successfully",
         description: `${file.name} has been added to "${activeFolder?.name}". ${response.chunks_created} chunks created.`,
@@ -102,7 +104,6 @@ export function FolderSidebar() {
       });
     }
 
-    // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -113,18 +114,29 @@ export function FolderSidebar() {
       {/* Header */}
       <div className="flex items-center justify-between border-b px-3 py-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide">FOLDERS</h3>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-5 w-5"
-          onClick={() => setShowNewFolderModal(true)}
-          title="New Folder"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5"
+            onClick={() => setMindMapOpen(true)}
+            title="View Knowledge Graph"
+          >
+            <Network className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-5 w-5"
+            onClick={() => setShowNewFolderModal(true)}
+            title="New Folder"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
 
-      {/* Section 1: FOLDERS (Natural Height, Scrollable if needed) */}
+      {/* Section 1: FOLDERS */}
       <div className="w-full shrink-0 max-h-[40vh] overflow-y-auto">
         <div className="p-2 space-y-2">
           {/* Folder List */}
@@ -194,18 +206,44 @@ export function FolderSidebar() {
                   />
                 </div>
 
-                {/* File List */}
+                {/* File List with Checkboxes */}
                 {activeFolder.files.length > 0 && (
-                  <div className="space-y-1 ml-5">
-                    {activeFolder.files.map((file, index) => (
-                      <div
-                        key={`${file.name}-${file.uploadedAt}`}
-                        className="flex items-center gap-1.5 text-[10px] text-muted-foreground"
-                      >
-                        <FileText className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{file.name}</span>
-                      </div>
-                    ))}
+                  <div className="space-y-1 ml-2">
+                    {activeFolder.files.map((file, index) => {
+                      const isSelected = selectedDocumentIds.includes(file.id);
+                      return (
+                        <div
+                          key={`${file.id}-${index}`}
+                          className="flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-muted/50 p-1 rounded"
+                        >
+                          {/* 체크박스 영역 */}
+                          <div 
+                            className="shrink-0 cursor-pointer flex items-center justify-center h-4 w-4"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleDocumentSelection(file.id);
+                            }}
+                          >
+                             {/* shadcn Checkbox가 설치되지 않았을 경우를 대비해 수동 아이콘 사용 */}
+                             {isSelected ? (
+                               <CheckSquare className="h-3.5 w-3.5 text-primary" />
+                             ) : (
+                               <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
+                             )}
+                          </div>
+                          
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <FileText className="h-3 w-3 shrink-0 opacity-70" />
+                            <span 
+                              className={cn("truncate cursor-pointer", isSelected && "text-foreground font-medium")}
+                              title={file.name}
+                            >
+                              {file.name}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
                 {activeFolder.files.length === 0 && (
@@ -219,7 +257,6 @@ export function FolderSidebar() {
         </div>
       </div>
 
-      {/* Divider */}
       <Separator />
 
       {/* Section 2: HISTORY */}
@@ -237,7 +274,7 @@ export function FolderSidebar() {
         </div>
       </div>
 
-      {/* Section 3: LEARNING STATUS (Bottom Pinned) */}
+      {/* Section 3: LEARNING STATUS */}
       <div className="shrink-0 border-t bg-card">
         <div className="p-2.5">
           <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -288,7 +325,6 @@ export function FolderSidebar() {
             </div>
 
             <div className="space-y-4">
-              {/* Folder Name Input */}
               <div>
                 <label className="text-xs text-muted-foreground mb-1.5 block">
                   Folder Name
@@ -310,7 +346,6 @@ export function FolderSidebar() {
                 />
               </div>
 
-              {/* Color Picker */}
               <div>
                 <label className="text-xs text-muted-foreground mb-2 block">
                   Color
@@ -333,7 +368,6 @@ export function FolderSidebar() {
                 </div>
               </div>
 
-              {/* Actions */}
               <div className="flex gap-2 justify-end pt-2">
                 <Button
                   variant="outline"
@@ -358,7 +392,61 @@ export function FolderSidebar() {
           </div>
         </div>
       )}
+
+      {/* Mind Map Modal */}
+      {isMindMapOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100]">
+          <div className="bg-background border rounded-xl w-[80vw] h-[80vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-muted/20">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Network className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold">Knowledge Graph</h2>
+                  <p className="text-xs text-muted-foreground">
+                    Visualizing connections in {activeFolder ? activeFolder.name : "All Folders"}
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setMindMapOpen(false)}
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            {/* Modal Content (Placeholder for Graph) */}
+            <div className="flex-1 bg-dot-pattern relative flex items-center justify-center bg-slate-50 dark:bg-slate-950/50">
+              <div className="text-center space-y-4">
+                <div className="w-64 h-64 border-2 border-dashed rounded-full flex items-center justify-center mx-auto opacity-20">
+                   <Network className="h-32 w-32" />
+                </div>
+                <p className="text-muted-foreground">
+                  Knowledge Graph visualization will appear here.
+                </p>
+                <Button variant="outline" onClick={() => toast({ description: "Generating graph..." })}>
+                  {/* ✨ [수정] Sparkles 컴포넌트 사용 */}
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Generate Graph
+                </Button>
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="px-6 py-3 border-t bg-muted/20 flex justify-between items-center text-xs text-muted-foreground">
+              <span>Selected context: {selectedDocumentIds.length} files</span>
+              <div className="flex gap-2">
+                 <Button variant="ghost" size="sm">Export</Button>
+                 <Button size="sm">Focus Mode</Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

@@ -16,7 +16,6 @@ interface ActiveDocument {
   equations?: string[];
 }
 
-// ✨ [추가] Source 인터페이스 정의
 export interface Source {
   id: string;
   title: string;
@@ -55,6 +54,8 @@ export interface LearningTab extends LearningUnit {
 
 // Knowledge Folder System
 export interface UploadedFile {
+  // ✨ [수정] 파일 식별을 위한 ID 필드 필수 추가
+  id: string; 
   name: string;
   url?: string; // or path
   uploadedAt: number;
@@ -143,9 +144,18 @@ interface AppState {
   updateStreak: (date?: string) => void;
   resetStreak: () => void;
 
-  // ✨ [추가] 출처 패널 상태 관리
+  // 출처 패널 상태 관리
   activeSources: Source[];
   setActiveSources: (sources: Source[]) => void;
+
+  // ✨ [추가] 파일 선택 상태 (NotebookLM 스타일)
+  selectedDocumentIds: string[];
+  toggleDocumentSelection: (id: string) => void;
+  setSelectedDocuments: (ids: string[]) => void;
+
+  // ✨ [추가] 마인드맵 팝업 상태
+  isMindMapOpen: boolean;
+  setMindMapOpen: (isOpen: boolean) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -500,7 +510,23 @@ export const useAppStore = create<AppState>((set) => ({
     });
   },
 
-  // ✨ [추가] 출처 패널 초기화 및 액션
+  // 출처 패널 초기화 및 액션
   activeSources: [],
   setActiveSources: (sources) => set({ activeSources: sources }),
+
+  // ✨ [추가] 파일 선택 상태 (NotebookLM 스타일)
+  selectedDocumentIds: [],
+  toggleDocumentSelection: (id) => set((state) => {
+    const isSelected = state.selectedDocumentIds.includes(id);
+    return {
+      selectedDocumentIds: isSelected
+        ? state.selectedDocumentIds.filter((docId) => docId !== id)
+        : [...state.selectedDocumentIds, id]
+    };
+  }),
+  setSelectedDocuments: (ids) => set({ selectedDocumentIds: ids }),
+
+  // ✨ [추가] 마인드맵 팝업 상태
+  isMindMapOpen: false,
+  setMindMapOpen: (isOpen) => set({ isMindMapOpen: isOpen }),
 }));
