@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # 2. 환경 변수가 로드된 후에 라우터 import
-from routers import feed, workspace, agent, ingest, integrations, reels
+from routers import feed, workspace, agent, ingest, integrations, reels, auth
 import os
 
 app = FastAPI(
@@ -42,6 +42,7 @@ app.include_router(agent.router, prefix="/api/agent", tags=["agent"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
 app.include_router(integrations.router, prefix="/api/integrations", tags=["integrations"])
 app.include_router(reels.router, prefix="/api/reels", tags=["reels"])
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 
 
 @app.get("/")
