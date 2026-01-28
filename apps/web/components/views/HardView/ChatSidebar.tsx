@@ -2,7 +2,10 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Loader2, MessageCircle, LogOut, User, Settings } from "lucide-react";
+import { 
+  Send, Loader2, MessageCircle, LogOut, User, Settings, 
+  ThumbsUp, ThumbsDown, Sparkles, Search, Brain, PenTool 
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -24,6 +27,13 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import "katex/dist/katex.min.css";
 
+// ✨ [추가] 로딩 상태 텍스트 시퀀스
+const LOADING_STEPS = [
+  { text: "Searching knowledge base...", icon: Search },
+  { text: "Analyzing context...", icon: Brain },
+  { text: "Formulating response...", icon: PenTool },
+];
+
 export function ChatSidebar() {
   const {
     addLearningTab,
@@ -31,7 +41,7 @@ export function ChatSidebar() {
     knowledgeFolders,
     activeFolderId,
     addMessageToFolder,
-    setActiveSources, // ✨ [추가] 스토어에서 액션 가져오기
+    setActiveSources,
   } = useAppStore();
 
   const router = useRouter();
@@ -40,6 +50,9 @@ export function ChatSidebar() {
   const activeFolder = knowledgeFolders.find((f) => f.id === activeFolderId);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  // ✨ [추가] 현재 로딩 단계 상태
+  const [loadingStepIndex, setLoadingStepIndex] = useState(0);
+  
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
@@ -65,7 +78,6 @@ export function ChatSidebar() {
 
     getUser();
 
-    // Listen for auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -74,6 +86,18 @@ export function ChatSidebar() {
 
     return () => subscription.unsubscribe();
   }, [supabase]);
+
+  // ✨ [추가] 로딩 중일 때 1.5초마다 단계 변경
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isLoading) {
+      setLoadingStepIndex(0); // 시작할 때 0으로 초기화
+      interval = setInterval(() => {
+        setLoadingStepIndex((prev) => (prev + 1) % LOADING_STEPS.length);
+      }, 1500);
+    }
+    return () => clearInterval(interval);
+  }, [isLoading]);
 
   const handleSignOut = async () => {
     try {
@@ -97,7 +121,6 @@ export function ChatSidebar() {
     return email.charAt(0).toUpperCase();
   };
 
-  // Load messages from active folder's chat history
   useEffect(() => {
     if (activeFolder) {
       setMessages(
@@ -110,46 +133,37 @@ export function ChatSidebar() {
     }
   }, [activeFolder]);
 
-  // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
   }, [messages, isLoading]);
 
-  // Generate study summary from last AI message content
   const generateStudySummary = useCallback(async () => {
     if (isGeneratingSummary || messages.length < 2) return;
     
-    // Check if already saved for current conversation
     const lastAssistantMessage = [...messages].reverse().find((msg) => msg.role === "assistant");
     if (lastAssistantMessage && lastSavedMessageId === lastAssistantMessage.id) {
-      return; // Already saved this conversation
+      return; 
     }
 
     setIsGeneratingSummary(true);
     try {
-      // Generate summary based on the conversation
       const summary = await api.chat.generateSummary(messages);
-      
-      // Calculate duration (estimate: 1 minute per message, minimum 5 minutes)
       const estimatedDuration = Math.max(5, messages.length);
 
-      // Add timeline event with the generated title
       addTimelineEvent({
         title: summary.title,
         category: summary.category as 'concept' | 'code' | 'review' | 'quiz',
-        startTime: messages[0].timestamp, // Use first message timestamp
+        startTime: messages[0].timestamp,
         duration: estimatedDuration,
       });
       
-      // Mark as saved
       if (lastAssistantMessage) {
         setLastSavedMessageId(lastAssistantMessage.id);
       }
       setIsSaved(true);
       
-      // Reset "Saved!" state after 2 seconds
       setTimeout(() => {
         setIsSaved(false);
       }, 2000);
@@ -160,12 +174,10 @@ export function ChatSidebar() {
     }
   }, [messages, isGeneratingSummary, addTimelineEvent, lastSavedMessageId]);
 
-  // Auto-trigger summary after 3 user messages
   useEffect(() => {
     const userMessages = messages.filter((msg) => msg.role === "user");
     if (userMessages.length >= 3 && userMessages.length > userMessageCountRef.current) {
       userMessageCountRef.current = userMessages.length;
-      // Delay to ensure all messages are processed
       const timer = setTimeout(() => {
         generateStudySummary();
       }, 1000);
@@ -173,10 +185,25 @@ export function ChatSidebar() {
     }
   }, [messages, generateStudySummary]);
 
+  // ✨ [추가] 피드백 핸들러
+  const handleFeedback = (messageId: string, type: "like" | "dislike") => {
+    setMessages((prev) =>
+      prev.map((msg) =>
+        msg.id === messageId
+          ? { ...msg, feedback: msg.feedback === type ? null : type } // 토글 기능
+          : msg
+      )
+    );
+
+    // 실제로는 여기서 API를 호출하여 피드백을 서버에 저장할 수 있습니다.
+    toast({
+      description: type === "like" ? "Thanks for the positive feedback!" : "Thanks for the feedback. We'll improve.",
+    });
+  };
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
 
-    // Safety check: Warn if no folder is active (but allow chat to work)
     if (!activeFolderId) {
       toast({
         title: "No folder selected",
@@ -192,10 +219,8 @@ export function ChatSidebar() {
       timestamp: new Date().toISOString(),
     };
 
-    // Add user message immediately
     setMessages((prev) => [...prev, userMessage]);
     
-    // Save user message to active folder's chat history
     if (activeFolderId) {
       addMessageToFolder(activeFolderId, userMessage);
     }
@@ -205,53 +230,45 @@ export function ChatSidebar() {
     userMessageCountRef.current += 1;
 
     try {
-      // Send message to API with folder_id for folder-aware RAG
       const response = await api.chat.sendMessage(input.trim(), {
         conversationId: conversationId || undefined,
         collectionName: "user_knowledge",
         folderId: activeFolderId || undefined,
       });
 
-      // Update conversation ID if we got one
       if (response.conversation_id) {
         setConversationId(response.conversation_id);
       }
 
-      // ✨ [추가] AI 응답에 출처가 있다면 전역 스토어 업데이트
       if (response.sources && response.sources.length > 0) {
         setActiveSources(response.sources as any);
       } else {
-        // 출처가 없으면 (일반 상식 답변 등) 비워주기
         setActiveSources([]);
       }
 
-      // Check for learning unit and add as a new tab
       if (response.learning_unit) {
         addLearningTab(response.learning_unit);
       }
 
-      // Add assistant response
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
         content: response.message,
         timestamp: new Date().toISOString(),
         sources: response.sources,
+        // ✨ [추가] 서버에서 받은 reasoning_chain이 있다면 저장 (없으면 undefined)
+        reasoning_chain: response.reasoning_chain,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
       
-      // Save messages to active folder's chat history
       if (activeFolderId) {
-        // userMessage는 이미 위에서 저장했으므로, 여기서는 assistantMessage만 저장
         addMessageToFolder(activeFolderId, assistantMessage);
       }
       
-      // Reset saved state when new AI message arrives
       setIsSaved(false);
       setLastSavedMessageId(null);
     } catch (error) {
-      // Show error toast
       toast({
         title: "Chat error",
         description: error instanceof Error 
@@ -260,7 +277,6 @@ export function ChatSidebar() {
         variant: "destructive",
       });
 
-      // Handle error
       const errorMessage: ChatMessage = {
         id: `error-${Date.now()}`,
         role: "assistant",
@@ -272,7 +288,6 @@ export function ChatSidebar() {
 
       setMessages((prev) => [...prev, errorMessage]);
       
-      // Save error message to folder if active
       if (activeFolderId) {
         addMessageToFolder(activeFolderId, errorMessage);
       }
@@ -287,8 +302,6 @@ export function ChatSidebar() {
       handleSend();
     }
   };
-
-
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -314,7 +327,7 @@ export function ChatSidebar() {
             </p>
           </div>
         ) : (
-          <div className="p-3 space-y-3">
+          <div className="p-3 space-y-4">
             {messages.map((message) => (
             <div
               key={message.id}
@@ -328,101 +341,135 @@ export function ChatSidebar() {
                   {message.role === "assistant" ? "i" : "U"}
                 </AvatarFallback>
               </Avatar>
-              <div
-                className={cn(
-                  "max-w-[80%] rounded border px-2.5 py-1.5 text-xs",
-                  message.role === "assistant"
-                    ? "bg-muted text-foreground border-border"
-                    : "bg-primary text-primary-foreground border-primary"
-                )}
-              >
-                {message.role === "assistant" && (
-                  <p className="font-medium text-[10px] mb-0.5">iUM!</p>
-                )}
+              
+              <div className={cn("flex flex-col gap-1 max-w-[85%]", message.role === "user" && "items-end")}>
                 <div
                   className={cn(
-                    "leading-relaxed prose prose-sm max-w-none",
-                    message.role === "user"
-                      ? "prose-invert text-primary-foreground"
-                      : "text-foreground"
+                    "rounded border px-3 py-2 text-xs shadow-sm",
+                    message.role === "assistant"
+                      ? "bg-muted text-foreground border-border"
+                      : "bg-primary text-primary-foreground border-primary"
                   )}
                 >
-                  {message.role === "assistant" ? (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkMath, remarkGfm]}
-                      rehypePlugins={[rehypeKatex]}
-                      components={{
-                        // Style code blocks
-                        code: (props: any) => {
-                          const { inline, className, children, ...rest } = props;
-                          return !inline ? (
-                            <code
-                              className={cn(
-                                "block rounded bg-muted p-2 text-xs overflow-x-auto",
-                                className
-                              )}
-                              {...rest}
-                            >
+                  {message.role === "assistant" && (
+                    <div className="flex items-center gap-1.5 mb-1 opacity-70">
+                      <Sparkles className="h-3 w-3 text-primary" />
+                      <span className="text-[10px] font-medium">iUM Agent</span>
+                    </div>
+                  )}
+                  
+                  <div
+                    className={cn(
+                      "leading-relaxed prose prose-sm max-w-none",
+                      message.role === "user"
+                        ? "prose-invert text-primary-foreground"
+                        : "text-foreground"
+                    )}
+                  >
+                    {message.role === "assistant" ? (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkMath, remarkGfm]}
+                        rehypePlugins={[rehypeKatex]}
+                        components={{
+                          code: (props: any) => {
+                            const { inline, className, children, ...rest } = props;
+                            return !inline ? (
+                              <code
+                                className={cn(
+                                  "block rounded bg-muted/50 border p-2 text-xs overflow-x-auto my-1",
+                                  className
+                                )}
+                                {...rest}
+                              >
+                                {children}
+                              </code>
+                            ) : (
+                              <code
+                                className={cn(
+                                  "rounded bg-muted/50 px-1 py-0.5 text-xs border",
+                                  className
+                                )}
+                                {...rest}
+                              >
+                                {children}
+                              </code>
+                            );
+                          },
+                          p: ({ children }: { children?: React.ReactNode }) => (
+                            <p className="mb-1 last:mb-0">{children}</p>
+                          ),
+                          ul: ({ children }: { children?: React.ReactNode }) => (
+                            <ul className="list-disc list-inside mb-1 space-y-0.5 pl-1">
                               {children}
-                            </code>
-                          ) : (
-                            <code
-                              className={cn(
-                                "rounded bg-muted/50 px-1 py-0.5 text-xs",
-                                className
-                              )}
-                              {...rest}
-                            >
+                            </ul>
+                          ),
+                          ol: ({ children }: { children?: React.ReactNode }) => (
+                            <ol className="list-decimal list-inside mb-1 space-y-0.5 pl-1">
                               {children}
-                            </code>
-                          );
-                        },
-                        // Style paragraphs
-                        p: ({ children }: { children?: React.ReactNode }) => (
-                          <p className="mb-1 last:mb-0">{children}</p>
-                        ),
-                        // Style lists
-                        ul: ({ children }: { children?: React.ReactNode }) => (
-                          <ul className="list-disc list-inside mb-1 space-y-0.5">
-                            {children}
-                          </ul>
-                        ),
-                        ol: ({ children }: { children?: React.ReactNode }) => (
-                          <ol className="list-decimal list-inside mb-1 space-y-0.5">
-                            {children}
-                          </ol>
-                        ),
-                      }}
-                    >
-                      {message.content}
-                    </ReactMarkdown>
-                  ) : (
-                    <p>{message.content}</p>
+                            </ol>
+                          ),
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    ) : (
+                      <p>{message.content}</p>
+                    )}
+                  </div>
+                  
+                  {message.sources && message.sources.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-border/50">
+                      <p className="text-[10px] text-muted-foreground mb-1 flex items-center gap-1">
+                        <Search className="h-3 w-3" />
+                        Sources used:
+                      </p>
+                      <div className="space-y-0.5 pl-1">
+                        {message.sources.map((source, idx) => (
+                          <p
+                            key={idx}
+                            className="text-[10px] text-muted-foreground truncate opacity-80"
+                            title={source.title}
+                          >
+                            • {source.title}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
-                {message.sources && message.sources.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-border/50">
-                    <p className="text-[10px] text-muted-foreground mb-1">
-                      Sources:
-                    </p>
-                    <div className="space-y-0.5">
-                      {message.sources.map((source, idx) => (
-                        <p
-                          key={idx}
-                          className="text-[10px] text-muted-foreground truncate"
-                          title={source.title}
-                        >
-                          • {source.title}
-                        </p>
-                      ))}
-                    </div>
+
+                {/* ✨ [추가] 피드백 버튼 (Assistant 메시지인 경우에만 표시) */}
+                {message.role === "assistant" && (
+                  <div className="flex items-center gap-1 px-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        "h-6 w-6 rounded-full hover:bg-muted transition-colors",
+                        message.feedback === "like" && "text-primary bg-primary/10"
+                      )}
+                      onClick={() => handleFeedback(message.id, "like")}
+                    >
+                      <ThumbsUp className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        "h-6 w-6 rounded-full hover:bg-muted transition-colors",
+                        message.feedback === "dislike" && "text-destructive bg-destructive/10"
+                      )}
+                      onClick={() => handleFeedback(message.id, "dislike")}
+                    >
+                      <ThumbsDown className="h-3 w-3" />
+                    </Button>
                   </div>
                 )}
               </div>
             </div>
           ))}
 
-          {/* Loading indicator */}
+          {/* ✨ [추가] 스마트 로딩 인디케이터 */}
           {isLoading && (
             <div className="flex gap-2">
               <Avatar className="h-7 w-7 border border-border shrink-0">
@@ -430,11 +477,27 @@ export function ChatSidebar() {
                   i
                 </AvatarFallback>
               </Avatar>
-              <div className="rounded border bg-muted px-2.5 py-1.5 text-xs">
-                <p className="font-medium text-[10px] mb-0.5">iUM!</p>
-                <div className="flex items-center gap-1 text-muted-foreground">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  <span className="text-[10px]">Thinking...</span>
+              <div className="rounded border bg-muted/50 px-3 py-2 text-xs w-full max-w-[200px]">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                  </span>
+                  <span className="font-medium text-[10px] text-primary">Processing...</span>
+                </div>
+                
+                {/* 텍스트 애니메이션 영역 */}
+                <div className="flex items-center gap-2 text-muted-foreground h-5 overflow-hidden">
+                   {/* 현재 단계 아이콘과 텍스트 */}
+                   {(() => {
+                     const StepIcon = LOADING_STEPS[loadingStepIndex].icon;
+                     return (
+                       <div className="flex items-center gap-2 animate-in fade-in slide-in-from-bottom-1 duration-300" key={loadingStepIndex}>
+                         <StepIcon className="h-3 w-3" />
+                         <span>{LOADING_STEPS[loadingStepIndex].text}</span>
+                       </div>
+                     );
+                   })()}
                 </div>
               </div>
             </div>
@@ -450,7 +513,6 @@ export function ChatSidebar() {
 
       {/* Input Area */}
       <div className="p-2 border-t space-y-1.5">
-        {/* Save Progress Button */}
         {messages.filter((m) => m.role === "user").length >= 1 && !isSaved && (
           <div className="flex justify-end">
             <Button
@@ -481,7 +543,7 @@ export function ChatSidebar() {
         <div className="flex items-center gap-1.5">
           <input
             type="text"
-            placeholder="text Input"
+            placeholder="Ask anything..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={handleKeyPress}
@@ -500,7 +562,7 @@ export function ChatSidebar() {
         </div>
       </div>
 
-      {/* Profile Section (Bottom Left) */}
+      {/* Profile Section */}
       <div className="border-t p-2">
         {user ? (
           <Popover>
@@ -548,7 +610,6 @@ export function ChatSidebar() {
                   variant="ghost"
                   className="w-full justify-start"
                   onClick={() => {
-                    // Placeholder for settings - can be updated later
                     toast({
                       title: "Settings",
                       description: "Settings page coming soon.",
