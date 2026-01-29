@@ -42,6 +42,20 @@ export interface QuizQuestion {
   explanation: string;
 }
 
+// Reel Quiz Types (for interactive video quizzes in Soft Mode)
+export interface ReelQuizOption {
+  key: string; // 'A', 'B', 'C', 'D', etc.
+  text: string;
+}
+
+export interface ReelQuiz {
+  question: string;
+  options: ReelQuizOption[];
+  answer: string; // Correct answer key ('A', 'B', 'C', etc.)
+  explanation?: string;
+  timestamp_seconds?: number; // When quiz appears in video (seconds)
+}
+
 export interface LearningUnitResponse {
   title: string;
   type: "concept" | "math" | "code" | "summary" | "quiz";

@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { supabase } from "@/lib/supabase/client";
+import type { ReelQuiz } from "@/types/api";
 
 export interface ReelItem {
   id: string;
@@ -17,6 +18,8 @@ export interface ReelItem {
   authorAvatar?: string;
   authorUserId?: string; // User ID of the author
   tags?: string[]; // Hashtags for categorization and recommendation
+  duration?: number; // Video duration in seconds
+  quiz?: ReelQuiz; // Interactive quiz data
 }
 
 interface SocialState {
@@ -107,7 +110,7 @@ const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelIt
   folders.forEach((folder, folderIndex) => {
     for (let i = 0; i < 3; i++) {
       const topicIndex = (folderIndex * 3 + i) % topics.length;
-      
+
       // Generate hashtags: folder name + 2-3 random tags
       const folderTag = folder.name.toLowerCase().replace(/\s+/g, "_");
       const numRandomTags = Math.floor(Math.random() * 2) + 2;
@@ -118,7 +121,7 @@ const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelIt
           randomTags.push(randomTag);
         }
       }
-      
+
       reels.push({
         id: `reel-${folder.id}-${i}`,
         title: topics[topicIndex],
@@ -134,7 +137,7 @@ const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelIt
       });
     }
   });
-  
+
   return reels;
 };
 
@@ -289,6 +292,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         authorUserId: reel.user_id,
         authorAvatar: undefined,
         tags: reel.tags || [],
+        duration: reel.duration || undefined,
+        quiz: reel.quiz || undefined,
       }));
 
       set({ reels: transformedReels });
