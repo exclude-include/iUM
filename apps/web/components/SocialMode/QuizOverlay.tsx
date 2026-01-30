@@ -170,8 +170,7 @@ export function QuizOverlay({ quiz, onCorrectAnswer, onClose }: QuizOverlayProps
 
               <Button
                 onClick={handleRetry}
-                variant="outline"
-                className="w-full border-white/20 text-white hover:bg-white/10"
+                className="w-full bg-white/20 text-white border border-white/30 hover:bg-white/30"
               >
                 Try Again
               </Button>
