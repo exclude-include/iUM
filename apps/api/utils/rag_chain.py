@@ -1,10 +1,11 @@
 """
 RAG Chain implementation with Feynman Technique prompt
+Refactored: STRICT JSON Escaping & SAFE MERMAID Rules
 """
 import os
 import json
 import re
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
@@ -12,175 +13,84 @@ from langchain_core.output_parsers import StrOutputParser
 from utils.vector_store import get_retriever
 from utils.opik_config import trace
 
-# Feynman Tutor System Prompt
+# ✨ [프롬프트 강화] Mermaid 문법 제한 추가 (No 'note for', No 'linkStyle')
 FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to explain concepts clearly and intuitively in the style of Richard Feynman.
 
-Your teaching philosophy:
-1. **Explain Simply**: Break down complex concepts into simple, understandable terms
-2. **Answer Directly**: When a student asks a question, provide a comprehensive answer immediately - DO NOT ask them to explain first
-3. **Use Analogies**: Relate new concepts to things the student already knows
-4. **Build Step-by-Step**: Guide students through learning step by step with clear explanations
-5. **Be Intuitive**: Help students develop intuition and understanding through clear, direct explanations
+**Teaching Philosophy:**
+1. **Explain Simply:** Break down complex concepts into simple terms.
+2. **Visualize:** Always try to visualize concepts using diagrams.
+3. **Interactive:** Provide quizzes when asked.
 
-**Answering Rules (CRITICAL):**
-**Rule 1:** First, check the provided `context` for the answer. If the `context` contains relevant information, cite the sources and explain based on the context.
-
-**Rule 2 (CRUCIAL):** If the `context` is empty, insufficient, or does not contain the answer, **DO NOT refuse to answer.** Instead, answer the question comprehensively using your own general knowledge and training data. You are an expert tutor - use your expertise to help the student learn.
-
-**Rule 3:** When answering from general knowledge, do not invent fake sources. Simply provide a clear, comprehensive explanation without citing sources.
-
-**Rule 4 (IMPORTANT):** Answer the user's question DIRECTLY and IMMEDIATELY. Do NOT ask the user to explain concepts first. Do NOT use Socratic questioning. Provide comprehensive definitions, intuition, examples, and explanations right away.
-
-**Rule 5:** Be encouraging and supportive, and provide helpful explanations whether from context or general knowledge.
+**Answering Rules:**
+1. Check `context` first. Cite sources using.
+2. If context is empty, use general knowledge.
 
 **Learning Unit Generation (CRITICAL):**
-When the user asks about a complex concept (e.g., mathematical equations, scientific principles, code examples, detailed explanations, or requests a quiz), generate a structured Learning Unit alongside your conversational reply.
+You MUST generate a structured Learning Unit JSON wrapped in <LEARNING_UNIT> tags.
+Determine the User's Intent and choose ONE of the following modes:
 
-**CONTENT FIELD REQUIREMENTS (MANDATORY - READ CAREFULLY):**
-1. The "content" field is THE MOST IMPORTANT field in the Learning Unit
-2. You MUST fill the "content" field with your COMPLETE, DETAILED explanation
-3. The "content" should be a LONG, comprehensive Markdown text (minimum 200 words)
-4. DO NOT leave "content" empty, blank, or with placeholder text like "REQUIRED - NEVER LEAVE EMPTY!"
-5. The "content" should be DIFFERENT from your conversational reply - make it more structured and detailed
-6. Include Markdown formatting: headings (##, ###), lists, bold, code blocks
-7. For process explanations, include Mermaid diagrams in code blocks: ```mermaid\\ngraph TD\\n  A[Step 1] --> B[Step 2]\\n```
-8. For math concepts, include LaTeX equations in the "equations" array separately
+---
+**MODE A: GENERAL EXPLANATION (Default)**
+Used when the user asks "What is...", "Explain...", or creates code/math content.
 
-**Example of GOOD content field:**
-"content": "## What is a Bipolar Junction Transistor?\\n\\nA Bipolar Junction Transistor (BJT) is a semiconductor device that can amplify or switch electrical signals.\\n\\n### Structure\\nA BJT consists of three layers...\\n\\n### How It Works\\n1. **Emitter**: Injects charge carriers\\n2. **Base**: Controls the flow\\n3. **Collector**: Collects charge carriers\\n\\n```mermaid\\ngraph LR\\n  E[Emitter] --> B[Base]\\n  B --> C[Collector]\\n```\\n\\n### Applications\\n- Amplifiers\\n- Switches\\n- Logic gates"
+* **"message":** Keep it clean and engaging. Example: "I've prepared a detailed explanation in the workspace!"
+* **"content":** The FULL detailed explanation.
+    * **DIAGRAMS (REQUIRED):** Include a Mermaid diagram code block.
+    * **MERMAID RULES (STRICT):** 1. Use `graph TD` or `graph LR`.
+        2. Use double quotes for labels: `A["Label Text"]`.
+        3. ❌ **DO NOT use `note for`** (It crashes the renderer). Use a regular node for notes: `NoteNode["📝 Note: Text"]`.
+        4. ❌ **DO NOT use `linkStyle`** (It is error-prone).
+        5. Keep the graph structure simple and hierarchical.
 
-Format your response as follows:
-1. First, provide your conversational reply (casual, friendly explanation).
-2. Then, ALWAYS add a structured Learning Unit in JSON format at the end, wrapped in <LEARNING_UNIT> tags:
+* **"quiz_data":** Leave empty [].
 
+---
+**MODE B: QUIZ REQUEST**
+Used ONLY when the user asks for a "quiz".
+
+* **"type":** "quiz"
+* **"message":** "I've prepared a quiz!"
+* **"content":** "## Quiz Time!\\nTest your knowledge below."
+* **"quiz_data":** Generate 3-5 questions (use "question_text", and options list of objects).
+
+---
+**🚨 EXTREMELY IMPORTANT JSON RULES 🚨**
+1. **ESCAPE DOUBLE QUOTES:** If your content contains a double quote (`"`), you **MUST** escape it with a backslash (`\"`).
+   * ❌ WRONG: `"content": "He said "Hello""`
+   * ✅ RIGHT: `"content": "He said \"Hello\""`
+   * This is frequent in explanations (e.g., metaphors, code). **CHECK THIS TWICE.**
+
+2. **NO CONTROL CHARACTERS:** Do not put real line breaks inside the string. Use `\n` for newlines.
+
+3. **VALID JSON:** The output inside <LEARNING_UNIT> tags must be parseable by standard `json.loads()`.
+
+**JSON Structure:**
 <LEARNING_UNIT>
 {{
-  "title": "What is a Bipolar Junction Transistor?",
-  "type": "concept",
-  "content": "## Introduction\\n\\nA Bipolar Junction Transistor (BJT) is a fundamental semiconductor device...\\n\\n[WRITE YOUR FULL EXPLANATION HERE - AT LEAST 200 WORDS WITH MARKDOWN FORMATTING]\\n\\n### Key Concepts\\n1. **Three-layer structure**: Emitter, Base, Collector\\n2. **Current amplification**: Small base current controls large collector current\\n\\n```mermaid\\ngraph TD\\n  A[Input Signal] --> B[Base]\\n  B --> C[Amplified Output]\\n```",
-  "equations": ["I_C = \\\\beta \\\\cdot I_B", "V_{{BE}} \\\\approx 0.7V"],
-  "quiz_data": []
-}}
-</LEARNING_UNIT>
-
-**FINAL WARNING:** If you send a Learning Unit with an empty or placeholder "content" field, the system will fail and students won't see your explanation. ALWAYS fill the "content" field with your complete, detailed explanation!
-
-**Type Guidelines (CRITICAL - READ CAREFULLY):**
-- **QUIZ DETECTION**: If the user's question contains words like "quiz", "test", "practice", "questions", "assess", "check my understanding", then you MUST set type: "quiz" AND generate quiz_data
-- Use "math" type for mathematical concepts with equations
-- Use "code" type for programming examples
-- Use "concept" type for general explanations
-- Use "summary" type for condensed overviews
-
-**QUIZ TYPE REQUIREMENTS (MANDATORY):**
-When type is "quiz", you MUST include a populated quiz_data array with 3-5 questions. Do NOT set type to "quiz" without providing quiz_data!
-
-**Content Guidelines:**
-- Include LaTeX equations in the "equations" array when explaining mathematical concepts
-- **Diagrams (Mermaid):** When explaining processes (like Git flow, photosynthesis, system workflows, algorithms, flows, hierarchies, relationships, system architectures), output a Markdown code block with `mermaid` language syntax (e.g., ```mermaid graph TD...```) inside the `content` field. Always place Mermaid diagrams within the `content` field as code blocks, not in the message text. Ensure the Mermaid syntax is correct and the diagram clearly illustrates the concept.
-  - **CRITICAL SYNTAX RULES:**
-    1. Always use **double quotes** around node labels if they contain spaces or special characters (like `&`, `()`, `[]`, `-`, `/`, etc.).
-       - ❌ Bad: `A[Water (H2O)]`, `B[ATP & NADPH]`, `C[Step 1/2]`
-       - ✅ Good: `A["Water (H2O)"]`, `B["ATP & NADPH"]`, `C["Step 1/2"]`
-    2. Keep the graph direction simple (e.g., `graph TD` for top-down or `graph LR` for left-right).
-    3. Simple labels without spaces or special characters can remain unquoted (e.g., `A[Start]`, `B[End]`).
-  - Common Mermaid diagram types: graph (flowchart), sequenceDiagram, classDiagram, stateDiagram, erDiagram, gantt, pie
-  - Example for a process flow:
-    ```mermaid
-    graph TD
-      A["Start"] --> B["Decision Point"]
-      B -->|Yes| C["Action 1"]
-      B -->|No| D["Action 2"]
-      C --> E["End"]
-      D --> E
-    ```
-  - Example for a sequence diagram:
-    ```mermaid
-    sequenceDiagram
-      participant User
-      participant System
-      User->>System: Request
-      System->>User: Response
-    ```
-  - Always validate that your Mermaid syntax is correct before including it, especially ensuring all labels with special characters are properly quoted
-
-**Quiz Guidelines (CRITICAL - MANDATORY FOR QUIZ TYPE):**
-
-**When to generate quizzes:**
-- If user asks: "quiz", "test me", "practice questions", "make a quiz", "assess my knowledge", etc.
-- You MUST set type: "quiz" AND populate quiz_data with 3-5 questions
-
-**Message field:** 
-- Keep it brief: "I've prepared a quiz for you!" or "Here's a quiz to test your understanding!"
-- Do NOT write quiz questions in the message
-
-**Content field:**
-- Keep it brief: "Practice questions on [topic]" or "Test your understanding with this quiz!"
-
-**quiz_data field (MANDATORY - DO NOT SKIP):**
-- You MUST include quiz_data array with 3-5 questions
-- Each question MUST have this exact structure:
-
-<LEARNING_UNIT>
-{{
-  "title": "Quiz on BJTs",
-  "type": "quiz",
-  "content": "Test your understanding of Bipolar Junction Transistors!",
+  "title": "Topic Title",
+  "type": "concept|math|code|quiz",
+  "content": "Markdown content here... \\n\\n```mermaid\\ngraph TD\\nA[\\"Start\\"]-->B[\\"End\\"]\\n```",
+  "equations": [],
   "quiz_data": [
     {{
-      "id": "q1",
-      "question_text": "What is the primary function of a BJT?",
+      "id": "1",
+      "question_text": "Question?",
       "options": [
-        {{"id": "A", "text": "To amplify or switch electrical signals", "is_correct": true}},
-        {{"id": "B", "text": "To store electrical energy", "is_correct": false}},
-        {{"id": "C", "text": "To resist current flow", "is_correct": false}},
-        {{"id": "D", "text": "To generate voltage", "is_correct": false}}
+        {{"id": "A", "text": "Option A", "is_correct": true}},
+        {{"id": "B", "text": "Option B", "is_correct": false}}
       ],
-      "explanation": "BJTs are primarily used for amplification and switching of electrical signals."
-    }},
-    {{
-      "id": "q2",
-      "question_text": "How many layers does a BJT have?",
-      "options": [
-        {{"id": "A", "text": "Two layers", "is_correct": false}},
-        {{"id": "B", "text": "Three layers", "is_correct": true}},
-        {{"id": "C", "text": "Four layers", "is_correct": false}},
-        {{"id": "D", "text": "Five layers", "is_correct": false}}
-      ],
-      "explanation": "BJTs have three layers: Emitter, Base, and Collector."
-    }},
-    {{
-      "id": "q3",
-      "question_text": "What does the base current control in a BJT?",
-      "options": [
-        {{"id": "A", "text": "Emitter voltage", "is_correct": false}},
-        {{"id": "B", "text": "Collector current", "is_correct": true}},
-        {{"id": "C", "text": "Base voltage", "is_correct": false}},
-        {{"id": "D", "text": "Power consumption", "is_correct": false}}
-      ],
-      "explanation": "A small base current controls a much larger collector current - this is the amplification effect."
+      "explanation": "Explanation here."
     }}
   ]
 }}
 </LEARNING_UNIT>
 
-**CRITICAL REMINDER FOR QUIZ TYPE:**
-- ALWAYS include quiz_data array
-- Minimum 3 questions, maximum 5 questions
-- Each question needs 3-4 options with exactly ONE is_correct: true
-- Provide educational explanations
-
-**General Guidelines:**
-- Only generate a Learning Unit when the question warrants a structured explanation, visual diagram, or quiz
-- Ensure all JSON in the LEARNING_UNIT is valid and properly escaped
-- When including Mermaid diagrams, test the syntax mentally to ensure it will render correctly
-
-Context from user's documents:
+Context:
 {context}
 
 User's question: {question}
 
-Your response (as iUM, the Feynman Tutor):"""
+Your response (as iUM):"""
 
 prompt_template = PromptTemplate(
     template=FEYNMAN_TUTOR_PROMPT,
@@ -191,118 +101,34 @@ prompt_template = PromptTemplate(
 def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional[Dict[str, Any]]]:
     """
     Parse the LLM response to extract the conversational message and optional Learning Unit JSON.
-    
-    Args:
-        response_text: Full LLM response text
-        
-    Returns:
-        Tuple of (conversational_message, learning_unit_dict or None)
     """
-    # Look for LEARNING_UNIT tags
     pattern = r'<LEARNING_UNIT>(.*?)</LEARNING_UNIT>'
     match = re.search(pattern, response_text, re.DOTALL)
     
     if match:
-        # Extract the JSON content
         json_str = match.group(1).strip()
-        # Remove the learning unit section from the conversational message
         conversational_message = re.sub(pattern, '', response_text, flags=re.DOTALL).strip()
         
-        # Debug logging
-        print(f"🔍 DEBUG: Found <LEARNING_UNIT> tag")
-        print(f"🔍 DEBUG: Conversational message length: {len(conversational_message)}")
-        print(f"🔍 DEBUG: JSON string preview: {json_str[:300]}...")
-        
         try:
+            # Common JSON cleanup
+            json_str = match.group(1).strip()
+            
             learning_unit_dict = json.loads(json_str)
             
-            # Debug: Check original content
-            original_content = learning_unit_dict.get("content", "")
-            print(f"🔍 DEBUG: Original content length: {len(original_content)}")
-            print(f"🔍 DEBUG: Original content preview: {original_content[:200] if original_content else 'EMPTY!'}")
-            
-            # CRITICAL FIX: Multi-layer fallback for content field
-            if not original_content or original_content.strip() == "" or original_content.strip() == "**REQUIRED - NEVER LEAVE EMPTY!**":
-                print("⚠️  WARNING: Content field is empty! Applying fallback...")
-                
-                # Try multiple fallback sources in order of preference:
-                # 1. Use the conversational message (best option)
-                if conversational_message and len(conversational_message) > 50:
+            # Fallback for empty content
+            if learning_unit_dict.get("type") != "quiz":
+                content = learning_unit_dict.get("content", "").strip()
+                if not content or len(content) < 10:
                     learning_unit_dict["content"] = conversational_message
-                    print(f"✅ Applied fallback: conversational_message ({len(conversational_message)} chars)")
-                
-                # 2. If conversational message is too short, use the full response
-                elif len(response_text) > 100:
-                    learning_unit_dict["content"] = response_text
-                    print(f"✅ Applied fallback: full response_text ({len(response_text)} chars)")
-                
-                # 3. Last resort: create a minimal content
-                else:
-                    learning_unit_dict["content"] = f"# {learning_unit_dict.get('title', 'Concept Explanation')}\n\nContent not available. Please try again."
-                    print("⚠️  Applied fallback: minimal placeholder content")
-            
-            # Final validation
-            final_content_length = len(learning_unit_dict.get("content", ""))
-            print(f"✅ Final content length: {final_content_length}")
             
             return conversational_message, learning_unit_dict
+            
         except json.JSONDecodeError as e:
-            # If JSON parsing fails, return the full response as conversational message
-            print(f"❌ ERROR: JSON parsing failed: {e}")
-            return response_text, None
+            print(f"JSON Parse Error: {e}")
+            # 파싱 실패 시, 태그만 제거하고 메시지로 반환 (화면 깨짐 방지)
+            return conversational_message, None
     else:
-        # No learning unit found, return full response as conversational message
-        print("🔍 DEBUG: No <LEARNING_UNIT> tag found in response")
         return response_text, None
-
-
-@trace
-def create_rag_chain(
-    collection_name: str = "user_knowledge",
-    model_name: str = "models/gemini-2.5-flash",
-    temperature: float = 0,
-    k: int = 4,
-    folder_id: Optional[str] = None
-):
-    """
-    Create a RAG chain for chat interactions.
-    
-    Args:
-        collection_name: Name of the ChromaDB collection
-        model_name: Google Gemini model to use
-        temperature: Model temperature
-        k: Number of documents to retrieve
-        folder_id: Optional folder ID to filter documents by
-        
-    Returns:
-        LangChain chain for RAG-based chat
-    """
-    # Get retriever with optional folder filter
-    retriever = get_retriever(
-        collection_name=collection_name,
-        k=k,
-        folder_id=folder_id
-    )
-    
-    # Initialize LLM
-    llm = ChatGoogleGenerativeAI(
-        model=model_name,
-        temperature=temperature,
-        google_api_key=os.getenv("GOOGLE_API_KEY")
-    )
-    
-    # Create the chain: Retriever -> Prompt -> LLM
-    chain = (
-        {
-            "context": retriever | (lambda docs: "\n\n".join([doc.page_content for doc in docs])),
-            "question": RunnablePassthrough()
-        }
-        | prompt_template
-        | llm
-        | StrOutputParser()
-    )
-    
-    return chain
 
 
 @trace
@@ -311,207 +137,225 @@ async def query_rag_chain(
     collection_name: str = "user_knowledge",
     model_name: str = "models/gemini-2.5-flash",
     k: int = 4,
-    folder_id: Optional[str] = None
-) -> dict:
+    folder_id: Optional[str] = None,
+    document_ids: Optional[List[str]] = None # ✨ [추가] 인자 추가
+):
     """
-    Query the RAG chain with a user question.
+    Query the RAG chain with status streaming.
+    Supports selective context (document_ids).
+    """
     
-    Args:
-        question: User's question
-        collection_name: Name of the ChromaDB collection
-        model_name: Google Gemini model to use
-        k: Number of documents to retrieve
-        folder_id: Optional folder ID to filter documents by
+    # 📡 [상태 전송 1]
+    search_msg = "Searching knowledge base... 🔍"
+    if document_ids:
+        search_msg = f"Searching in {len(document_ids)} selected files... 🔍"
+    yield {"status": "progress", "step": "searching", "message": search_msg}
+    
+    # 1. 문서 검색 시도
+    relevant_docs = []
+    try:
+        # ✨ get_retriever에 document_ids 전달
+        retriever = get_retriever(
+            collection_name=collection_name, 
+            k=k, # 선택된 파일이 있으면 검색 범위를 좀 더 넓혀도 됨 (예: k*2)
+            folder_id=folder_id,
+            document_ids=document_ids
+        )
         
-    Returns:
-        Dictionary with answer and sources
-    """
-    chain = create_rag_chain(
-        collection_name=collection_name,
-        model_name=model_name,
-        k=k,
-        folder_id=folder_id
-    )
-    
-    # Get relevant documents for source attribution (with folder filter)
-    retriever = get_retriever(collection_name=collection_name, k=k, folder_id=folder_id)
-    # Use invoke for LangChain retrievers (LCEL)
-    relevant_docs = retriever.invoke(question) if hasattr(retriever, 'invoke') else retriever.get_relevant_documents(question)
-    
-    # Invoke the chain
-    raw_answer = chain.invoke(question)
-    
-    # Parse learning unit from response
+        if hasattr(retriever, 'invoke'):
+            docs = retriever.invoke(question)
+        else:
+            docs = retriever.get_relevant_documents(question)
+            
+        # ✨ [후처리 필터링] 
+        # Supabase 쿼리에서 'IN' 필터가 까다로울 수 있으므로, 
+        # 가져온 문서들 중에서 사용자가 선택한 파일에 속하는지 파이썬 레벨에서 한 번 더 확인합니다.
+        if document_ids:
+            relevant_docs = [
+                d for d in docs 
+                if d.metadata.get("document_id") in document_ids or d.metadata.get("source") in document_ids
+            ]
+            if not relevant_docs and docs:
+                # 만약 필터링 후 남은게 없다면, 너무 엄격했을 수 있으니 상위 2개만 fallback으로 사용
+                 relevant_docs = docs[:2]
+        else:
+            relevant_docs = docs
+            
+    except Exception as e:
+        print(f"⚠️ Vector Store Retrieval Failed: {e}")
+        relevant_docs = []
+
+    # ... (이하 로직은 기존과 동일: 문맥 분석 -> LLM 호출 -> 파싱 -> 반환)
+    # 📡 [상태 전송 2]
+    doc_count = len(relevant_docs)
+    yield {"status": "progress", "step": "analyzing", "message": f"Found {doc_count} relevant segments. Analyzing... 🧠"}
+
+    try:
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=0,
+            google_api_key=os.getenv("GOOGLE_API_KEY")
+        )
+        
+        context_text = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else ""
+        final_prompt = prompt_template.format(context=context_text, question=question)
+        
+        # 📡 [상태 전송 3]
+        yield {"status": "progress", "step": "generating", "message": "Formulating response... ✍️"}
+        
+        response_msg = await llm.ainvoke(final_prompt)
+        raw_answer = response_msg.content
+        
+    except Exception as e:
+        yield { "status": "error", "data": { "answer": f"Error: {str(e)}", "sources": [], "reasoning_chain": ["Error"] } }
+        return
+
+    # 3. 답변 파싱 (parse_learning_unit_from_response 호출 등 기존 코드 그대로 유지)
     answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
     
-    # Check if answer indicates general knowledge usage
-    # If the answer mentions context is missing/insufficient, we should not cite sources
-    general_knowledge_indicators = [
-        "i don't have information",
-        "i don't have enough information",
-        "not in the provided context",
-        "not in the context",
-        "context doesn't contain",
-        "context is empty",
-        "no information in",
-        "based on my general knowledge",
-        "using my knowledge",
-        "from my training",
-        "general knowledge"
-    ]
-    answer_lower = answer.lower()
-    using_general_knowledge = any(indicator in answer_lower for indicator in general_knowledge_indicators)
-    
-    # Format and clean sources
-    # Step 1: Collect all source documents with their metadata
-    source_map = {}  # Map filename -> best document (first occurrence)
-    
+    # ... (소스 매핑 로직 유지) ...
+    source_map = {}
     for doc in relevant_docs:
-        # Extract source filename, handling both full paths and just filenames
         raw_source = doc.metadata.get("source", "Unknown")
-        
-        # Filter out temporary files (check both raw path and filename)
-        if not raw_source or raw_source == "Unknown":
-            continue
-        
-        # Check if raw source path contains temp directory indicators
-        if "/tmp" in raw_source or raw_source.startswith("tmp"):
-            continue
-        
-        source_filename = os.path.basename(raw_source)
-        
-        # Clean up: remove any leading/trailing whitespace
-        source_filename = source_filename.strip()
-        
-        # Filter out temporary filenames (after basename extraction)
-        if source_filename.startswith("tmp"):
-            continue
-        
-        # Skip empty or invalid filenames
-        if not source_filename or source_filename == "Unknown":
-            continue
-        
-        # Deduplicate: only keep the first occurrence of each unique filename
+        # (기존 소스 처리 코드 복사/유지)
+        if not raw_source or "tmp" in raw_source: continue
+        source_filename = os.path.basename(raw_source).strip()
         if source_filename not in source_map:
             source_map[source_filename] = {
                 "id": doc.metadata.get("id", ""),
                 "title": source_filename,
-                "content": doc.page_content[:200] + "..." if len(doc.page_content) > 200 else doc.page_content,
-                "relevance_score": 1.0  # ChromaDB doesn't provide scores by default
+                "content": doc.page_content[:200] + "...",
+                "relevance_score": 1.0
             }
-    
-    # Step 2: Convert map to list
     sources = list(source_map.values())
     
-    # Step 3: If using general knowledge or no valid sources, return empty sources list
-    # This ensures we don't cite irrelevant documents when answering from general knowledge
-    # Also check if we have no valid sources after filtering (indicates empty/irrelevant context)
-    if using_general_knowledge or not sources or len(relevant_docs) == 0:
-        sources = []
-    
-    # Build reasoning chain
-    reasoning_chain = []
-    if len(relevant_docs) > 0:
-        reasoning_chain.append("Retrieved relevant documents from VectorDB")
-    else:
-        reasoning_chain.append("No documents found in VectorDB - using general knowledge")
-    
-    reasoning_chain.append("Applied Feynman Technique prompt")
-    
-    if using_general_knowledge or not sources:
-        reasoning_chain.append("Generated response using general knowledge (no context available)")
-    else:
-        reasoning_chain.append("Generated response using Gemini with RAG context")
-    
+    reasoning_chain = ["Using selected documents" if document_ids else "Using folder context"]
+    reasoning_chain.append("Generated response using Gemini")
+
     result = {
-        "answer": answer,
+        "message": answer,
+        "conversation_id": "temp-id",
         "sources": sources,
         "reasoning_chain": reasoning_chain
     }
     
-    # Add learning unit if present
     if learning_unit_dict:
         result["learning_unit"] = learning_unit_dict
+        
+    yield {"status": "complete", "data": result}
+
+    """
+    Query the RAG chain with status streaming.
+    Yields status updates and finally the result.
+    """
     
-    return result
+    # 📡 [상태 전송 1] 검색 시작
+    yield {"status": "progress", "step": "searching", "message": "Searching knowledge base... 🔍"}
+    
+    # 1. 문서 검색 시도
+    relevant_docs = []
+    try:
+        retriever = get_retriever(collection_name=collection_name, k=k, folder_id=folder_id)
+        if hasattr(retriever, 'invoke'):
+            relevant_docs = retriever.invoke(question)
+        else:
+            relevant_docs = retriever.get_relevant_documents(question)
+    except Exception as e:
+        print(f"⚠️ Vector Store Retrieval Failed: {e}")
+        relevant_docs = []
+
+    # 📡 [상태 전송 2] 검색 완료 및 문맥 분석 시작
+    doc_count = len(relevant_docs)
+    yield {"status": "progress", "step": "analyzing", "message": f"Found {doc_count} documents. Analyzing context... 🧠"}
+
+    # 2. RAG 체인 실행
+    try:
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=0,
+            google_api_key=os.getenv("GOOGLE_API_KEY")
+        )
+        
+        context_text = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else ""
+        final_prompt = prompt_template.format(context=context_text, question=question)
+        
+        # 📡 [상태 전송 3] 답변 생성 시작
+        yield {"status": "progress", "step": "generating", "message": "Formulating response... ✍️"}
+        
+        # LLM 답변 생성
+        response_msg = await llm.ainvoke(final_prompt) # 비동기 호출로 변경
+        raw_answer = response_msg.content
+        
+    except Exception as e:
+        yield {
+            "status": "error",
+            "data": {
+                "answer": f"Error: {str(e)}",
+                "sources": [],
+                "reasoning_chain": ["Error occurred"]
+            }
+        }
+        return
+
+    # 3. 답변 파싱 및 후처리
+    answer, learning_unit_dict = parse_learning_unit_from_response(raw_answer)
+    
+    source_map = {}
+    for doc in relevant_docs:
+        raw_source = doc.metadata.get("source", "Unknown")
+        if not raw_source or "tmp" in raw_source: continue
+        source_filename = os.path.basename(raw_source).strip()
+        if not source_filename or source_filename == "Unknown" or source_filename.startswith("tmp"): continue
+        if source_filename not in source_map:
+            source_map[source_filename] = {
+                "id": doc.metadata.get("id", ""),
+                "title": source_filename,
+                "content": doc.page_content[:200] + "...",
+                "relevance_score": 1.0
+            }
+    sources = list(source_map.values())
+    
+    reasoning_chain = []
+    if relevant_docs:
+        reasoning_chain.append(f"Retrieved {len(relevant_docs)} documents")
+    else:
+        reasoning_chain.append("Using General Knowledge")
+    reasoning_chain.append("Generated response using Gemini")
+
+    result = {
+        "message": answer, 
+        "conversation_id": "temp-id", 
+        "sources": sources,
+        "reasoning_chain": reasoning_chain
+    }
+    
+    if learning_unit_dict:
+        result["learning_unit"] = learning_unit_dict
+        
+    # 📡 [상태 전송 4] 최종 완료 데이터 전송
+    yield {"status": "complete", "data": result}
 
 
 async def generate_study_summary(messages: list) -> dict:
-    """
-    Analyze conversation history to generate a concise study topic summary.
-    Returns: { title: str, category: str } where category is one of ['concept', 'code', 'review', 'quiz']
-    """
     if not messages or len(messages) == 0:
         return {"title": "General Study", "category": "concept"}
     
-    # Extract conversation text (only user and assistant messages)
     conversation_text = "\n".join([
         f"{msg.get('role', 'user').upper()}: {msg.get('content', '')}"
         for msg in messages
         if msg.get('role') in ['user', 'assistant']
     ])
     
-    # Create a lightweight prompt for summary generation
-    summary_prompt = f"""Analyze the following conversation history. Identify the main topic the user is studying (max 3 words, e.g., 'React Hooks', 'Maxwell Eq', 'Python Functions').
-Also categorize it into one of: ['concept', 'code', 'review', 'quiz'].
-
-Conversation:
-{conversation_text[:2000]}  # Limit to first 2000 chars for efficiency
-
-Return ONLY valid JSON in this exact format:
-{{"title": "Topic Name", "category": "concept|code|review|quiz"}}
-
-Do not include any other text, explanations, or markdown formatting. Only return the JSON object."""
+    summary_prompt = f"""Analyze the following conversation history. Identify the main topic (max 3 words).
+Also categorize into: ['concept', 'code', 'review', 'quiz'].
+Conversation: {conversation_text[:2000]}
+Return JSON: {{"title": "Topic", "category": "concept"}}"""
 
     try:
-        # Use a lightweight model for speed
-        llm = ChatGoogleGenerativeAI(
-            model="models/gemini-2.5-flash",
-            temperature=0.3,  # Lower temperature for more consistent summaries
-            google_api_key=os.getenv("GOOGLE_API_KEY")
-        )
-        
-        # Generate summary
+        llm = ChatGoogleGenerativeAI(model="models/gemini-2.5-flash", temperature=0.3, google_api_key=os.getenv("GOOGLE_API_KEY"))
         response = await llm.ainvoke(summary_prompt)
-        response_text = response.content.strip()
-        
-        # Parse JSON from response (handle markdown code blocks if present)
-        json_match = re.search(r'\{[^}]+\}', response_text)
-        if json_match:
-            summary_dict = json.loads(json_match.group())
-        else:
-            # Try parsing the whole response
-            summary_dict = json.loads(response_text)
-        
-        # Validate category
-        valid_categories = ['concept', 'code', 'review', 'quiz']
-        category = summary_dict.get('category', 'concept')
-        if category not in valid_categories:
-            category = 'concept'
-        
-        # Validate title (max 3 words)
-        title = summary_dict.get('title', 'General Study')
-        title_words = title.split()
-        if len(title_words) > 3:
-            title = ' '.join(title_words[:3])
-        
-        return {
-            "title": title,
-            "category": category
-        }
-        
-    except Exception as e:
-        print(f"Error generating study summary: {str(e)}")
-        # Fallback: try to extract a simple title from first user message
-        first_user_msg = next(
-            (msg.get('content', '') for msg in messages if msg.get('role') == 'user'),
-            'General Study'
-        )
-        # Extract first few words as title
-        title_words = first_user_msg.split()[:3]
-        title = ' '.join(title_words) if title_words else 'General Study'
-        
-        return {
-            "title": title,
-            "category": "concept"
-        }
+        match = re.search(r'\{[^}]+\}', response.content.strip())
+        if match: return json.loads(match.group())
+        return {"title": "General Study", "category": "concept"}
+    except:
+        return {"title": "General Study", "category": "concept"}

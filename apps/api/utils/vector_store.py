@@ -1,8 +1,9 @@
 """
 VectorDB utility functions for ChromaDB integration
+Updated: Fixed Embedding Model Name & Added 'document_ids' filtering
 """
 import os
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -11,9 +12,10 @@ import chromadb
 from chromadb.config import Settings
 
 # Initialize Google Gemini Embeddings
+# ✨ [수정] 'models/' 접두사 제거 (404 에러 해결)
 embeddings = GoogleGenerativeAIEmbeddings(
-    model="models/embedding-001",
-    google_api_key=os.getenv("GOOGLE_GEMINI_API_KEY")
+    model="text-embedding-004", 
+    google_api_key=os.getenv("GOOGLE_API_KEY")
 )
 
 # Text splitter configuration
@@ -28,12 +30,6 @@ text_splitter = RecursiveCharacterTextSplitter(
 def get_chroma_client(persist_directory: str = "./chroma_db") -> chromadb.ClientAPI:
     """
     Initialize and return a persistent ChromaDB client.
-    
-    Args:
-        persist_directory: Directory to persist the ChromaDB database
-        
-    Returns:
-        ChromaDB client instance
     """
     # Create directory if it doesn't exist
     os.makedirs(persist_directory, exist_ok=True)
@@ -55,13 +51,6 @@ def get_vector_store(
 ) -> Chroma:
     """
     Get or create a ChromaDB vector store for user knowledge.
-    
-    Args:
-        collection_name: Name of the collection to use
-        persist_directory: Directory to persist the ChromaDB database
-        
-    Returns:
-        Chroma vector store instance
     """
     client = get_chroma_client(persist_directory)
     
@@ -82,14 +71,6 @@ def add_documents_to_vector_store(
 ) -> list[str]:
     """
     Add documents to the vector store after chunking.
-    
-    Args:
-        documents: List of LangChain Document objects
-        collection_name: Name of the collection
-        persist_directory: Directory to persist the ChromaDB database
-        
-    Returns:
-        List of document IDs added to the vector store
     """
     # Split documents into chunks
     chunks = text_splitter.split_documents(documents)
@@ -98,7 +79,6 @@ def add_documents_to_vector_store(
     vector_store = get_vector_store(collection_name, persist_directory)
     
     # Add chunks to vector store
-    # Note: ChromaDB persists automatically when persist_directory is set
     document_ids = vector_store.add_documents(chunks)
     
     return document_ids
@@ -108,30 +88,46 @@ def get_retriever(
     collection_name: str = "user_knowledge",
     persist_directory: str = "./chroma_db",
     k: int = 4,
-    folder_id: Optional[str] = None
+    folder_id: Optional[str] = None,
+    document_ids: Optional[List[str]] = None  # ✨ [필수] NotebookLM 기능용 인자
 ):
     """
-    Get a retriever from the vector store.
-    
-    Args:
-        collection_name: Name of the collection
-        persist_directory: Directory to persist the ChromaDB database
-        k: Number of documents to retrieve
-        folder_id: Optional folder ID to filter documents by
-        
-    Returns:
-        Vector store retriever
+    Get a retriever from the vector store with advanced filtering.
     """
     vector_store = get_vector_store(collection_name, persist_directory)
     
-    # Build search kwargs with optional folder filter
-    search_kwargs = {"k": k}
+    # ✨ ChromaDB 필터 구성 로직
+    where_filter: Dict[str, Any] = {}
+    filters_list = []
+
+    # 1. 폴더 필터
     if folder_id:
-        search_kwargs["filter"] = {"folder_id": folder_id}
+        filters_list.append({"folder_id": folder_id})
+
+    # 2. 파일 ID 필터 (선택된 파일만 검색)
+    if document_ids and len(document_ids) > 0:
+        if len(document_ids) == 1:
+            # 파일이 하나일 때
+            filters_list.append({"document_id": document_ids[0]})
+        else:
+            # 파일이 여러 개일 때 ($in 연산자 사용)
+            filters_list.append({"document_id": {"$in": document_ids}})
+
+    # 필터 결합 로직 ($and)
+    if len(filters_list) > 1:
+        where_filter = {"$and": filters_list}
+    elif len(filters_list) == 1:
+        where_filter = filters_list[0]
+    else:
+        where_filter = None # 필터 없음
+
+    # 검색 설정
+    search_kwargs = {"k": k}
+    if where_filter:
+        search_kwargs["filter"] = where_filter
     
     retriever = vector_store.as_retriever(
         search_type="similarity",
         search_kwargs=search_kwargs
     )
     return retriever
-

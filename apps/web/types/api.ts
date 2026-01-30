@@ -1,20 +1,7 @@
 /**
  * API Types - Matching Backend Pydantic Models
  * These types correspond to the FastAPI backend models
- * 
- * Note: Some types are also defined in types/index.ts for backward compatibility
  */
-
-// Re-export common types from index.ts for convenience
-export type {
-  LearningUnit,
-  FeedResponse,
-  Document,
-  Tab,
-  Folder,
-  HistoryItem,
-  Workspace,
-} from "./index";
 
 // Chat Types
 export interface ChatMessage {
@@ -27,6 +14,10 @@ export interface ChatMessage {
     title: string;
     relevance_score?: number;
   }>;
+  // ✨ [추가] 사고 과정 (로딩 중 또는 완료 후 표시용)
+  reasoning_chain?: string[];
+  // ✨ [추가] 사용자 피드백 상태
+  feedback?: "like" | "dislike" | null;
 }
 
 export interface ChatRequest {
@@ -167,4 +158,3 @@ export interface ApiError {
   detail: string;
   status_code?: number;
 }
-

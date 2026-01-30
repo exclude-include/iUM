@@ -3,14 +3,14 @@ from typing import List, Optional, Dict, Literal
 from datetime import datetime
 
 
-# Learning Unit Types
+# Learning Unit Types (For Feeds/Reels)
 class LearningUnit(BaseModel):
-    """Represents a learning unit that can be displayed as a Reel or Document"""
-    id: Optional[str] = None  # Made optional with default None
+    """Represents a learning unit that can be displayed as a Reel or Document (DB/Feed usage)"""
+    id: Optional[str] = None
     title: str
-    description: Optional[str] = None  # Made optional with default None
-    type: Literal["reel", "document", "quiz", "discussion", "concept"]  # Added "concept"
-    author: Optional[str] = "AI Tutor"  # Made optional with default value
+    description: Optional[str] = None
+    type: Literal["reel", "document", "quiz", "discussion", "concept"]
+    author: Optional[str] = "AI Tutor"
     tags: List[str] = []
     content_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
@@ -127,6 +127,23 @@ class QuizQuestion(BaseModel):
     explanation: str = Field(..., description="Explanation for why the correct answer is correct")
 
 
+# ✨✨ [새로 추가된 클래스] Agent 응답용 전용 모델 ✨✨
+class LearningUnitResponse(BaseModel):
+    """
+    Represents a structured learning unit returned by the Agent.
+    This explicitly includes the 'content' field for Markdown text.
+    """
+    title: str
+    type: Literal["concept", "math", "code", "summary", "quiz"] = Field(..., description="Type of learning unit")
+    
+    # 🚨 가장 중요한 필드! 이 줄이 없어서 데이터가 사라졌던 것입니다.
+    content: str = Field(..., description="Markdown content. Includes mermaid diagrams.")
+    
+    equations: Optional[List[str]] = Field(None, description="LaTeX equation strings")
+    diagram_description: Optional[str] = Field(None, description="Deprecated")
+    quiz_data: Optional[List[QuizQuestion]] = Field(None, description="Structured quiz questions")
+
+
 class ChatMessage(BaseModel):
     """Represents a chat message"""
     id: str
@@ -143,4 +160,6 @@ class ChatResponse(BaseModel):
     sources: Optional[List[Source]] = None
     reasoning_chain: Optional[List[str]] = None
     confidence_score: Optional[float] = None
-    learning_unit: Optional[LearningUnit] = None
+    
+    # ✨✨ [수정됨] 위에서 정의한 LearningUnitResponse를 사용하도록 변경 ✨✨
+    learning_unit: Optional[LearningUnitResponse] = None

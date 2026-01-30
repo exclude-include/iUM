@@ -16,6 +16,14 @@ interface ActiveDocument {
   equations?: string[];
 }
 
+export interface Source {
+  id: string;
+  title: string;
+  content: string;
+  url?: string;
+  relevance_score?: number;
+}
+
 export interface QuizOption {
   id: string; // e.g., 'A', 'B', 'C', 'D'
   text: string;
@@ -32,10 +40,11 @@ export interface QuizQuestion {
 export interface LearningUnit {
   title: string;
   type: "concept" | "math" | "code" | "summary" | "quiz";
-  content: string; // Markdown text. For diagrams, use mermaid code blocks like ```mermaid ... ```
+  content: string; // Markdown text
   equations?: string[]; // LaTeX strings
-  diagram_description?: string; // Deprecated - use mermaid in content instead
-  quiz_data?: QuizQuestion[]; // Structured quiz questions (required when type is 'quiz')
+  diagram_description?: string; 
+  mermaid_code?: string; 
+  quiz_data?: QuizQuestion[]; 
 }
 
 export interface LearningTab extends LearningUnit {
@@ -45,6 +54,7 @@ export interface LearningTab extends LearningUnit {
 
 // Knowledge Folder System
 export interface UploadedFile {
+  id: string; 
   name: string;
   url?: string; // or path
   uploadedAt: number;
@@ -55,10 +65,10 @@ export interface KnowledgeFolder {
   name: string;
   color: string; // e.g., "#3B82F6" (Blue), "#EF4444" (Red)
   files: UploadedFile[];
-  chatHistory: ChatMessage[]; // Each folder has its own chat context
+  chatHistory: ChatMessage[]; 
 }
 
-// Legacy ChatSession interface (deprecated - use KnowledgeFolder)
+// Legacy ChatSession interface
 export interface ChatSession {
   id: string;
   title: string;
@@ -70,17 +80,17 @@ export interface ChatSession {
 // History Timeline
 export interface TimelineEvent {
   id: string;
-  title: string; // e.g., "RAG Study"
+  title: string;
   category: 'concept' | 'code' | 'review' | 'quiz';
   startTime: string; // ISO String
-  duration: number; // in minutes (visual width)
+  duration: number; // in minutes
 }
 
 // Learning Streaks
 export interface UserStreak {
   currentStreak: number;
   lastStudyDate: string | null; // YYYY-MM-DD
-  history: string[]; // List of dates studied (YYYY-MM-DD format)
+  history: string[]; 
 }
 
 interface AppState {
@@ -102,7 +112,7 @@ interface AppState {
   // Knowledge Folders state
   knowledgeFolders: KnowledgeFolder[];
   activeFolderId: string | null;
-  createFolder: (name: string, color?: string) => string; // Creates new folder, returns folder ID
+  createFolder: (name: string, color?: string) => string; 
   setActiveFolder: (id: string | null) => void;
   updateFolder: (id: string, updates: Partial<KnowledgeFolder>) => void;
   deleteFolder: (id: string) => void;
@@ -111,7 +121,7 @@ interface AppState {
   removeFileFromFolder: (folderId: string, fileName: string) => void;
   addMessageToFolder: (folderId: string, message: ChatMessage) => void;
   
-  // Legacy Chat Sessions (deprecated - kept for backward compatibility)
+  // Legacy Chat Sessions
   chatSessions: ChatSession[];
   activeChatSessionId: string | null;
   createSession: () => string;
@@ -130,12 +140,28 @@ interface AppState {
   
   // Learning streaks state
   userStreak: UserStreak;
-  updateStreak: (date?: string) => void; // Updates streak based on current date or provided date
+  updateStreak: (date?: string) => void;
   resetStreak: () => void;
+
+  // 출처 패널 상태 관리
+  activeSources: Source[];
+  setActiveSources: (sources: Source[]) => void;
+
+  // 파일 선택 상태 (NotebookLM 스타일)
+  selectedDocumentIds: string[];
+  toggleDocumentSelection: (id: string) => void;
+  setSelectedDocuments: (ids: string[]) => void;
+
+  // 마인드맵 팝업 상태
+  isMindMapOpen: boolean;
+  setMindMapOpen: (isOpen: boolean) => void;
+
+  // ✨ [추가] 서버에서 파일 목록 불러오기 액션
+  fetchFiles: () => Promise<void>;
 }
 
 export const useAppStore = create<AppState>((set) => ({
-  // View mode state - default to 'hard'
+  // View mode state
   viewMode: "hard",
   setViewMode: (mode) => set({ viewMode: mode }),
   
@@ -150,13 +176,13 @@ export const useAppStore = create<AppState>((set) => ({
   addLearningTab: (unit) => {
     const id = `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     const newTab: LearningTab = {
-      ...unit,
+      ...unit, 
       id,
       timestamp: Date.now(),
     };
     set((state) => ({
       learningTabs: [...state.learningTabs, newTab],
-      activeTabId: id, // Auto-focus the new tab
+      activeTabId: id, 
     }));
   },
   
@@ -167,12 +193,9 @@ export const useAppStore = create<AppState>((set) => ({
       const newTabs = state.learningTabs.filter((tab) => tab.id !== id);
       let newActiveTabId = state.activeTabId;
       
-      // If the closed tab was active, switch to the nearest tab
       if (state.activeTabId === id) {
         if (newTabs.length > 0) {
-          // Find the index of the closed tab
           const closedIndex = state.learningTabs.findIndex((tab) => tab.id === id);
-          // Switch to the tab before it, or the first tab if it was the first
           if (closedIndex > 0) {
             newActiveTabId = state.learningTabs[closedIndex - 1].id;
           } else {
@@ -190,7 +213,7 @@ export const useAppStore = create<AppState>((set) => ({
     });
   },
   
-  // Knowledge Folders state - default to empty
+  // Knowledge Folders state
   knowledgeFolders: [],
   activeFolderId: null,
   
@@ -205,7 +228,7 @@ export const useAppStore = create<AppState>((set) => ({
     };
     set((state) => ({
       knowledgeFolders: [...state.knowledgeFolders, newFolder],
-      activeFolderId: id, // Immediately set as active folder
+      activeFolderId: id,
     }));
     return id;
   },
@@ -227,12 +250,9 @@ export const useAppStore = create<AppState>((set) => ({
       const newFolders = state.knowledgeFolders.filter((folder) => folder.id !== id);
       let newActiveFolderId = state.activeFolderId;
       
-      // If the deleted folder was active, switch to the nearest folder
       if (state.activeFolderId === id) {
         if (newFolders.length > 0) {
-          // Find the index of the deleted folder
           const deletedIndex = state.knowledgeFolders.findIndex((folder) => folder.id === id);
-          // Switch to the folder before it, or the first folder if it was the first
           if (deletedIndex > 0) {
             newActiveFolderId = state.knowledgeFolders[deletedIndex - 1].id;
           } else {
@@ -290,7 +310,7 @@ export const useAppStore = create<AppState>((set) => ({
     }));
   },
   
-  // Legacy Chat Sessions (deprecated - kept for backward compatibility)
+  // Legacy Chat Sessions
   chatSessions: [],
   activeChatSessionId: null,
   
@@ -304,7 +324,7 @@ export const useAppStore = create<AppState>((set) => ({
     };
     set((state) => ({
       chatSessions: [...state.chatSessions, newSession],
-      activeChatSessionId: id, // Immediately set as active session
+      activeChatSessionId: id,
     }));
     return id;
   },
@@ -320,7 +340,7 @@ export const useAppStore = create<AppState>((set) => ({
     };
     set((state) => ({
       chatSessions: [...state.chatSessions, newSession],
-      activeChatSessionId: id, // Immediately set as active session
+      activeChatSessionId: id,
     }));
     return id;
   },
@@ -356,12 +376,9 @@ export const useAppStore = create<AppState>((set) => ({
       const newSessions = state.chatSessions.filter((session) => session.id !== id);
       let newActiveSessionId = state.activeChatSessionId;
       
-      // If the deleted session was active, switch to the nearest session
       if (state.activeChatSessionId === id) {
         if (newSessions.length > 0) {
-          // Find the index of the deleted session
           const deletedIndex = state.chatSessions.findIndex((session) => session.id === id);
-          // Switch to the session before it, or the first session if it was the first
           if (deletedIndex > 0) {
             newActiveSessionId = state.chatSessions[deletedIndex - 1].id;
           } else {
@@ -380,17 +397,13 @@ export const useAppStore = create<AppState>((set) => ({
   },
   
   deleteChatSession: (id) => {
-    // Alias for deleteSession - use the same logic
     set((state) => {
       const newSessions = state.chatSessions.filter((session) => session.id !== id);
       let newActiveSessionId = state.activeChatSessionId;
       
-      // If the deleted session was active, switch to the nearest session
       if (state.activeChatSessionId === id) {
         if (newSessions.length > 0) {
-          // Find the index of the deleted session
           const deletedIndex = state.chatSessions.findIndex((session) => session.id === id);
-          // Switch to the session before it, or the first session if it was the first
           if (deletedIndex > 0) {
             newActiveSessionId = state.chatSessions[deletedIndex - 1].id;
           } else {
@@ -418,7 +431,7 @@ export const useAppStore = create<AppState>((set) => ({
     }));
   },
   
-  // History timeline state - default to empty
+  // History timeline state
   timelineEvents: [],
   
   addTimelineEvent: (event) => {
@@ -428,8 +441,8 @@ export const useAppStore = create<AppState>((set) => ({
       id,
       title: event.title,
       category: event.category,
-      startTime: event.startTime || now, // Use provided startTime or current time
-      duration: event.duration || 5, // Default to 5 minutes if not provided
+      startTime: event.startTime || now,
+      duration: event.duration || 5,
     };
     set((state) => ({
       timelineEvents: [...state.timelineEvents, newEvent].sort(
@@ -444,26 +457,24 @@ export const useAppStore = create<AppState>((set) => ({
     }));
   },
   
-  // Learning streaks state - start with Day 1
+  // Learning streaks state
   userStreak: {
     currentStreak: 1,
-    lastStudyDate: new Date().toISOString().split('T')[0], // Today's date in YYYY-MM-DD
+    lastStudyDate: new Date().toISOString().split('T')[0],
     history: [],
   },
   
   updateStreak: (date) => {
-    const today = date || new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const today = date || new Date().toISOString().split('T')[0];
     
     set((state) => {
       const { userStreak } = state;
       const { lastStudyDate, history, currentStreak } = userStreak;
       
-      // If already studied today, don't update
       if (lastStudyDate === today || history.includes(today)) {
         return state;
       }
       
-      // Calculate new streak
       let newStreak = 1;
       if (lastStudyDate) {
         const lastDate = new Date(lastStudyDate);
@@ -473,13 +484,10 @@ export const useAppStore = create<AppState>((set) => ({
         );
         
         if (diffDays === 1) {
-          // Consecutive day - increment streak
           newStreak = currentStreak + 1;
         } else if (diffDays > 1) {
-          // Streak broken - reset to 1
           newStreak = 1;
         } else {
-          // Same day - keep current streak
           newStreak = currentStreak;
         }
       }
@@ -488,7 +496,7 @@ export const useAppStore = create<AppState>((set) => ({
         userStreak: {
           currentStreak: newStreak,
           lastStudyDate: today,
-          history: [...history, today].filter((d, i, arr) => arr.indexOf(d) === i), // Remove duplicates
+          history: [...history, today].filter((d, i, arr) => arr.indexOf(d) === i),
         },
       };
     });
@@ -503,5 +511,85 @@ export const useAppStore = create<AppState>((set) => ({
       },
     });
   },
-}));
 
+  // 출처 패널 초기화 및 액션
+  activeSources: [],
+  setActiveSources: (sources) => set({ activeSources: sources }),
+
+  // 파일 선택 상태 (NotebookLM 스타일)
+  selectedDocumentIds: [],
+  toggleDocumentSelection: (id) => set((state) => {
+    const isSelected = state.selectedDocumentIds.includes(id);
+    return {
+      selectedDocumentIds: isSelected
+        ? state.selectedDocumentIds.filter((docId) => docId !== id)
+        : [...state.selectedDocumentIds, id]
+    };
+  }),
+  setSelectedDocuments: (ids) => set({ selectedDocumentIds: ids }),
+
+  // 마인드맵 팝업 상태
+  isMindMapOpen: false,
+  setMindMapOpen: (isOpen) => set({ isMindMapOpen: isOpen }),
+
+  // ✨ [추가] 파일 목록 동기화 액션
+  fetchFiles: async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      // 백엔드에서 파일 목록을 가져옵니다.
+      const response = await fetch(`${apiUrl}/api/workspace/default/folders`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch files');
+      }
+
+      const data = await response.json();
+      
+      if (data.files && Array.isArray(data.files)) {
+        set((state) => {
+          // 1. 만약 폴더가 하나도 없다면 기본 폴더를 생성해줍니다.
+          let currentFolders = state.knowledgeFolders;
+          if (currentFolders.length === 0) {
+            currentFolders = [{
+               id: "folder-1",
+               name: "General",
+               color: "#3B82F6",
+               files: [],
+               chatHistory: []
+            }];
+          }
+
+          // 2. DB에서 가져온 파일들을 각 폴더에 매핑합니다.
+          const updatedFolders = currentFolders.map((folder) => {
+            // 이 폴더 ID(folder.id)에 속하거나, folder_id가 없으면 첫번째 폴더에 넣습니다.
+            const folderFiles = data.files
+              .filter((f: any) => 
+                  f.folder_id === folder.id || 
+                  (folder.id === "folder-1" && (!f.folder_id || f.folder_id === "root"))
+              )
+              .map((f: any) => ({
+                id: f.id,
+                name: f.name,
+                uploadedAt: new Date(f.created_at).getTime(),
+                url: f.storage_path
+              }));
+
+            // 기존 파일과 DB 파일을 병합 (DB가 우선)
+            return {
+              ...folder,
+              files: folderFiles
+            };
+          });
+
+          return { 
+             knowledgeFolders: updatedFolders,
+             // 폴더가 생성되었으면 활성 폴더 ID도 설정
+             activeFolderId: state.activeFolderId || updatedFolders[0].id
+          };
+        });
+      }
+    } catch (error) {
+      console.error("Failed to fetch files:", error);
+    }
+  },
+}));

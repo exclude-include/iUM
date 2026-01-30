@@ -31,6 +31,3 @@ google-auth>=2.25.0
 supabase>=2.3.0
 postgrest>=0.13.0
 storage3>=0.7.0
-
-# JWT Authentication
-python-jose[cryptography]>=3.3.0
