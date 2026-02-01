@@ -12,6 +12,7 @@ from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from utils.vector_store import get_retriever
 from utils.opik_config import trace
+from utils.memory_manager import get_memory_manager
 
 # ✨ [프롬프트 강화] Mermaid 문법 제한 추가 (No 'note for', No 'linkStyle')
 FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to explain concepts clearly and intuitively in the style of Richard Feynman.
@@ -85,16 +86,20 @@ Used ONLY when the user asks for a "quiz".
 }}
 </LEARNING_UNIT>
 
-Context:
+## Previous Conversation (for multi-turn context)
+{conversation_history}
+
+## Retrieved Documents
 {context}
 
-User's question: {question}
+## Current Question
+{question}
 
 Your response (as iUM):"""
 
 prompt_template = PromptTemplate(
     template=FEYNMAN_TUTOR_PROMPT,
-    input_variables=["context", "question"]
+    input_variables=["context", "question", "conversation_history"]
 )
 
 
@@ -138,11 +143,15 @@ async def query_rag_chain(
     model_name: str = "models/gemini-2.5-flash",
     k: int = 4,
     folder_id: Optional[str] = None,
-    document_ids: Optional[List[str]] = None # ✨ [추가] 인자 추가
+    document_ids: Optional[List[str]] = None,
+    conversation_context: Optional[str] = None  # ✨ [Phase 1] 대화 컨텍스트 추가
 ):
     """
     Query the RAG chain with status streaming.
-    Supports selective context (document_ids).
+    Supports selective context (document_ids) and multi-turn conversation.
+    
+    Args:
+        conversation_context: Optional string of previous conversation for multi-turn support
     """
     
     # 📡 [상태 전송 1]
@@ -198,7 +207,15 @@ async def query_rag_chain(
         )
         
         context_text = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else ""
-        final_prompt = prompt_template.format(context=context_text, question=question)
+        
+        # ✨ [Phase 1] 대화 히스토리 컨텍스트 추가 (없으면 빈 문자열)
+        history_text = conversation_context or "No previous conversation."
+        
+        final_prompt = prompt_template.format(
+            context=context_text, 
+            question=question,
+            conversation_history=history_text
+        )
         
         # 📡 [상태 전송 3]
         yield {"status": "progress", "step": "generating", "message": "Formulating response... ✍️"}
