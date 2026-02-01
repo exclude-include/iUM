@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react"; // ✨ [수정] useEffect 추가
-import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles } from "lucide-react";
+import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -9,9 +9,10 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
+import { useGooglePicker } from "@/hooks/useGooglePicker";
 import { api } from "@/lib/api";
 import { HistoryTimeline } from "@/components/HistoryTimeline";
-import { Checkbox } from "@/components/ui/checkbox"; 
+import { Checkbox } from "@/components/ui/checkbox";
 
 // Color presets for folders
 const FOLDER_COLORS = [
@@ -44,7 +45,53 @@ export function FolderSidebar() {
   const [showNewFolderModal, setShowNewFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedColor, setSelectedColor] = useState(FOLDER_COLORS[0].value);
+  const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Google Picker for Drive file selection
+  const { openPicker, isLoading: isPickerLoading, isReady: isPickerReady } = useGooglePicker({
+    onFilePicked: async (file) => {
+      if (!activeFolderId) {
+        toast({
+          title: "No folder selected",
+          description: "Please select or create a folder first.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setIsImporting(true);
+      toast({
+        title: "Importing...",
+        description: `Downloading ${file.name} from Google Drive`,
+      });
+
+      try {
+        // TODO: Implement backend endpoint for document import from Drive
+        // For now, show success with coming soon message
+        toast({
+          title: "Coming Soon",
+          description: `Document import for "${file.name}" will be available soon. Currently only video reels are supported via the Social mode.`,
+        });
+      } catch (error) {
+        toast({
+          title: "Import failed",
+          description: error instanceof Error ? error.message : "Failed to import from Google Drive",
+          variant: "destructive",
+        });
+      } finally {
+        setIsImporting(false);
+      }
+    },
+    onError: (error) => {
+      toast({
+        title: "Google Drive Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+    mimeTypes: undefined, // No file type restrictions for documents
+  });
 
   // ✨ [추가] 컴포넌트 마운트 시 DB에서 파일 목록 불러오기 (새로고침 유지용)
   useEffect(() => {
@@ -85,7 +132,7 @@ export function FolderSidebar() {
       const response = await api.ingest.uploadFile(file, "user_knowledge", activeFolderId);
 
       const uploadedFile = {
-        id: response.document_ids[0] || `doc-${Date.now()}`, 
+        id: response.document_ids[0] || `doc-${Date.now()}`,
         name: file.name,
         uploadedAt: Date.now(),
       };
@@ -192,19 +239,30 @@ export function FolderSidebar() {
                       {activeFolder.name}
                     </p>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5"
-                    onClick={() => fileInputRef.current?.click()}
-                    title="Upload file"
-                  >
-                    <UploadCloud className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="flex items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={() => fileInputRef.current?.click()}
+                      title="Upload local file"
+                    >
+                      <UploadCloud className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-5 w-5"
+                      onClick={openPicker}
+                      disabled={!isPickerReady || isPickerLoading || isImporting}
+                      title="Import from Google Drive"
+                    >
+                      <HardDrive className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".pdf,.txt,.md"
                     className="hidden"
                     onChange={handleFileUpload}
                   />
@@ -221,24 +279,24 @@ export function FolderSidebar() {
                           className="flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-muted/50 p-1 rounded"
                         >
                           {/* 체크박스 영역 */}
-                          <div 
+                          <div
                             className="shrink-0 cursor-pointer flex items-center justify-center h-4 w-4"
                             onClick={(e) => {
                               e.stopPropagation();
                               toggleDocumentSelection(file.id);
                             }}
                           >
-                             {/* 선택 여부에 따라 아이콘 변경 */}
-                             {isSelected ? (
-                               <CheckSquare className="h-3.5 w-3.5 text-primary" />
-                             ) : (
-                               <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
-                             )}
+                            {/* 선택 여부에 따라 아이콘 변경 */}
+                            {isSelected ? (
+                              <CheckSquare className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                              <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
+                            )}
                           </div>
-                          
+
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
                             <FileText className="h-3 w-3 shrink-0 opacity-70" />
-                            <span 
+                            <span
                               className={cn("truncate cursor-pointer", isSelected && "text-foreground font-medium")}
                               title={file.name}
                             >
@@ -295,8 +353,8 @@ export function FolderSidebar() {
                 {userStreak.currentStreak === 0
                   ? "Start your streak!"
                   : userStreak.currentStreak === 1
-                  ? "Day 1!"
-                  : `${userStreak.currentStreak} days streak!`}
+                    ? "Day 1!"
+                    : `${userStreak.currentStreak} days streak!`}
               </p>
               <p className="text-[10px] text-muted-foreground">
                 {userStreak.currentStreak === 0
@@ -427,7 +485,7 @@ export function FolderSidebar() {
             <div className="flex-1 bg-dot-pattern relative flex items-center justify-center bg-slate-50 dark:bg-slate-950/50">
               <div className="text-center space-y-4">
                 <div className="w-64 h-64 border-2 border-dashed rounded-full flex items-center justify-center mx-auto opacity-20">
-                   <Network className="h-32 w-32" />
+                  <Network className="h-32 w-32" />
                 </div>
                 <p className="text-muted-foreground">
                   Knowledge Graph visualization will appear here.
@@ -438,13 +496,13 @@ export function FolderSidebar() {
                 </Button>
               </div>
             </div>
-            
+
             {/* Modal Footer */}
             <div className="px-6 py-3 border-t bg-muted/20 flex justify-between items-center text-xs text-muted-foreground">
               <span>Selected context: {selectedDocumentIds.length} files</span>
               <div className="flex gap-2">
-                 <Button variant="ghost" size="sm">Export</Button>
-                 <Button size="sm">Focus Mode</Button>
+                <Button variant="ghost" size="sm">Export</Button>
+                <Button size="sm">Focus Mode</Button>
               </div>
             </div>
           </div>

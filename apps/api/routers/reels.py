@@ -5,16 +5,29 @@ Handles video upload and management for the reels feature
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Form
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 import uuid
 import os
+import re
+import requests
 from pathlib import Path
 
 from models.reels import Reel, ReelUploadResponse, ReelListResponse
 from utils.supabase_client import get_supabase_client, get_storage_client
 
 router = APIRouter()
+
+
+# Request model for Drive import
+class DriveImportRequest(BaseModel):
+    drive_url: str
+    user_id: str
+    title: str
+    description: Optional[str] = None
+    folder_name: Optional[str] = None
+    tags: Optional[list[str]] = None
 
 # Supabase storage bucket name
 REELS_BUCKET = "reels"
@@ -265,3 +278,146 @@ async def delete_reel(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete reel: {str(e)}")
+
+
+def extract_drive_file_id(url: str) -> str:
+    """
+    Extract Google Drive file ID from various URL formats
+    Supports:
+    - https://drive.google.com/file/d/FILE_ID/view
+    - https://drive.google.com/open?id=FILE_ID
+    - https://drive.google.com/uc?id=FILE_ID
+    """
+    patterns = [
+        r'/file/d/([a-zA-Z0-9_-]+)',
+        r'[?&]id=([a-zA-Z0-9_-]+)',
+        r'/folders/([a-zA-Z0-9_-]+)',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    
+    raise ValueError("Could not extract file ID from Google Drive URL")
+
+
+@router.post("/import-from-drive", response_model=ReelUploadResponse)
+async def import_reel_from_drive(request: DriveImportRequest):
+    """
+    Import a video from Google Drive shared URL
+    
+    The URL must be a publicly shared Google Drive link.
+    Supported formats:
+    - https://drive.google.com/file/d/FILE_ID/view
+    - https://drive.google.com/open?id=FILE_ID
+    
+    Args:
+        request: DriveImportRequest with URL, user_id, title, etc.
+        
+    Returns:
+        ReelUploadResponse: Upload result with reel metadata
+    """
+    try:
+        # Extract file ID from URL
+        file_id = extract_drive_file_id(request.drive_url)
+        
+        # Google Drive direct download URL for public files
+        download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        
+        # Download file from Google Drive
+        response = requests.get(download_url, stream=True, allow_redirects=True)
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=400,
+                detail="Failed to download file from Google Drive. Make sure the file is publicly shared."
+            )
+        
+        # Get content type and file content
+        content_type = response.headers.get('Content-Type', 'video/mp4')
+        file_content = response.content
+        file_size = len(file_content)
+        
+        # Validate file size
+        if file_size > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File size exceeds maximum allowed size of {MAX_FILE_SIZE / (1024 * 1024)}MB"
+            )
+        
+        if file_size == 0:
+            raise HTTPException(status_code=400, detail="Downloaded file is empty")
+        
+        # Determine file extension
+        if 'video/mp4' in content_type:
+            file_ext = '.mp4'
+        elif 'video/quicktime' in content_type:
+            file_ext = '.mov'
+        elif 'video/webm' in content_type:
+            file_ext = '.webm'
+        else:
+            file_ext = '.mp4'  # Default to mp4
+        
+        # Generate unique filename
+        unique_filename = f"{request.user_id}/{uuid.uuid4()}{file_ext}"
+        
+        # Upload to Supabase Storage
+        supabase = get_supabase_client()
+        storage = get_storage_client()
+        
+        # Ensure bucket exists
+        try:
+            buckets = storage.list_buckets()
+            bucket_exists = any(bucket.name == REELS_BUCKET for bucket in buckets)
+            if not bucket_exists:
+                storage.create_bucket(REELS_BUCKET, options={"public": True})
+        except Exception as bucket_error:
+            print(f"Bucket check/creation warning: {bucket_error}")
+        
+        # Upload file to storage
+        storage.from_(REELS_BUCKET).upload(
+            path=unique_filename,
+            file=file_content,
+            file_options={
+                "content-type": content_type,
+                "cache-control": "3600",
+            }
+        )
+        
+        # Get public URL
+        public_url = storage.from_(REELS_BUCKET).get_public_url(unique_filename)
+        
+        # Insert reel metadata into database
+        reel_data = {
+            "user_id": request.user_id,
+            "title": request.title,
+            "description": request.description,
+            "video_url": public_url,
+            "folder_name": request.folder_name,
+            "tags": request.tags or [],
+            "views": 0,
+            "likes": 0,
+            "created_at": datetime.utcnow().isoformat(),
+        }
+        
+        result = supabase.table("reels").insert(reel_data).execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to save reel metadata")
+        
+        reel = Reel(**result.data[0])
+        
+        return ReelUploadResponse(
+            success=True,
+            message="Reel imported from Google Drive successfully",
+            reel=reel
+        )
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to import from Google Drive: {str(e)}")
+
