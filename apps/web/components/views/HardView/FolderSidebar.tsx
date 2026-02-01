@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"; // ✨ [수정] useEffect 추가
 import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive } from "lucide-react";
+import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -13,6 +14,7 @@ import { useGooglePicker } from "@/hooks/useGooglePicker";
 import { api } from "@/lib/api";
 import { HistoryTimeline } from "@/components/HistoryTimeline";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Checkbox } from "@/components/ui/checkbox"; 
 
 // Color presets for folders
 const FOLDER_COLORS = [
@@ -133,6 +135,7 @@ export function FolderSidebar() {
 
       const uploadedFile = {
         id: response.document_ids[0] || `doc-${Date.now()}`,
+        id: response.document_ids[0] || `doc-${Date.now()}`, 
         name: file.name,
         uploadedAt: Date.now(),
       };
@@ -280,6 +283,7 @@ export function FolderSidebar() {
                         >
                           {/* 체크박스 영역 */}
                           <div
+                          <div 
                             className="shrink-0 cursor-pointer flex items-center justify-center h-4 w-4"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -297,6 +301,17 @@ export function FolderSidebar() {
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
                             <FileText className="h-3 w-3 shrink-0 opacity-70" />
                             <span
+                             {/* 선택 여부에 따라 아이콘 변경 */}
+                             {isSelected ? (
+                               <CheckSquare className="h-3.5 w-3.5 text-primary" />
+                             ) : (
+                               <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
+                             )}
+                          </div>
+                          
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                            <FileText className="h-3 w-3 shrink-0 opacity-70" />
+                            <span 
                               className={cn("truncate cursor-pointer", isSelected && "text-foreground font-medium")}
                               title={file.name}
                             >
@@ -486,6 +501,7 @@ export function FolderSidebar() {
               <div className="text-center space-y-4">
                 <div className="w-64 h-64 border-2 border-dashed rounded-full flex items-center justify-center mx-auto opacity-20">
                   <Network className="h-32 w-32" />
+                   <Network className="h-32 w-32" />
                 </div>
                 <p className="text-muted-foreground">
                   Knowledge Graph visualization will appear here.
@@ -497,12 +513,15 @@ export function FolderSidebar() {
               </div>
             </div>
 
+            
             {/* Modal Footer */}
             <div className="px-6 py-3 border-t bg-muted/20 flex justify-between items-center text-xs text-muted-foreground">
               <span>Selected context: {selectedDocumentIds.length} files</span>
               <div className="flex gap-2">
                 <Button variant="ghost" size="sm">Export</Button>
                 <Button size="sm">Focus Mode</Button>
+                 <Button variant="ghost" size="sm">Export</Button>
+                 <Button size="sm">Focus Mode</Button>
               </div>
             </div>
           </div>

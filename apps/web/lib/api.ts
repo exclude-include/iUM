@@ -76,6 +76,7 @@ export const chatApi = {
   ): Promise<ChatResponse> {
     const url = `${API_BASE_URL}/api/agent/message`; // Endpoint updated to match backend router
 
+    
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -109,6 +110,7 @@ export const chatApi = {
           // SSE 데이터 파싱 (data: {...})
           const lines = chunk.split("\n\n");
 
+          
           for (const line of lines) {
             if (line.startsWith("data: ")) {
               try {
@@ -196,6 +198,7 @@ export const ingestApi = {
 
     const url = `${API_BASE_URL}/api/ingest/upload`; // Endpoint path adjusted based on standard router
 
+    
     try {
       const response = await fetch(url, {
         method: "POST",

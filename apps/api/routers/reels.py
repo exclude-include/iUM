@@ -12,10 +12,24 @@ import uuid
 import os
 import re
 import requests
+from typing import Optional, List
+from datetime import datetime, timezone
+import uuid
+import os
+import numpy as np
 from pathlib import Path
 
-from models.reels import Reel, ReelUploadResponse, ReelListResponse
+from models.reels import (
+    Reel,
+    ReelUploadResponse,
+    ReelListResponse,
+    ReelRecommendResponse,
+    ReelWithSimilarity,
+    ReelCreateWithQuiz,
+    Quiz
+)
 from utils.supabase_client import get_supabase_client, get_storage_client
+from utils.vector_store import get_vector_store, embeddings
 
 router = APIRouter()
 
@@ -132,7 +146,7 @@ async def upload_reel(
             "duration": None,  # TODO: Extract video duration
             "views": 0,
             "likes": 0,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         
         result = supabase.table("reels").insert(reel_data).execute()
@@ -421,3 +435,233 @@ async def import_reel_from_drive(request: DriveImportRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to import from Google Drive: {str(e)}")
 
+def generate_quiz_text(quiz: Quiz) -> str:
+    """
+    Generate searchable text from quiz data for embedding.
+    Combines question and all option texts.
+    """
+    parts = [quiz.question]
+    for opt in quiz.options:
+        parts.append(f"{opt.key}. {opt.text}")
+    return " ".join(parts)
+
+
+@router.post("/create-with-quiz", response_model=ReelUploadResponse)
+async def create_reel_with_quiz(reel_data: ReelCreateWithQuiz):
+    """
+    Create a reel with quiz data and generate quiz embedding.
+
+    This endpoint:
+    1. Creates the reel record
+    2. If quiz is provided, generates embedding from quiz text
+    3. Stores embedding in pgvector column
+
+    Args:
+        reel_data: Reel data including optional quiz
+
+    Returns:
+        ReelUploadResponse: Created reel with quiz
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Prepare reel data for insertion
+        insert_data = {
+            "user_id": reel_data.user_id,
+            "title": reel_data.title,
+            "description": reel_data.description,
+            "video_url": reel_data.video_url,
+            "thumbnail_url": reel_data.thumbnail_url,
+            "duration": reel_data.duration,
+            "tags": reel_data.tags,
+            "folder_name": reel_data.folder_name,
+            "views": 0,
+            "likes": 0,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        # Add quiz data if provided
+        if reel_data.quiz:
+            insert_data["quiz"] = reel_data.quiz.model_dump()
+
+            # Generate embedding from quiz text
+            quiz_text = generate_quiz_text(reel_data.quiz)
+            quiz_embedding = embeddings.embed_query(quiz_text)
+            insert_data["quiz_embedding"] = quiz_embedding
+
+        # Insert into database
+        result = supabase.table("reels").insert(insert_data).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create reel")
+
+        reel = Reel(**result.data[0])
+
+        return ReelUploadResponse(
+            success=True,
+            message="Reel created successfully with quiz",
+            reel=reel
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to create reel: {str(e)}"
+        )
+
+
+@router.patch("/{reel_id}/quiz", response_model=ReelUploadResponse)
+async def update_reel_quiz(
+    reel_id: str,
+    quiz: Quiz,
+    user_id: str = Query(..., description="User ID for authorization"),
+):
+    """
+    Add or update quiz for an existing reel.
+    Generates new embedding for the quiz text.
+
+    Args:
+        reel_id: Reel ID to update
+        quiz: Quiz data to add/update
+        user_id: User ID for authorization
+
+    Returns:
+        ReelUploadResponse: Updated reel
+    """
+    try:
+        supabase = get_supabase_client()
+
+        # Verify reel exists and user owns it
+        existing = supabase.table("reels").select("*").eq("id", reel_id).execute()
+
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Reel not found")
+
+        if existing.data[0]["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
+        # Generate embedding from quiz text
+        quiz_text = generate_quiz_text(quiz)
+        quiz_embedding = embeddings.embed_query(quiz_text)
+
+        # Update reel with quiz and embedding
+        update_data = {
+            "quiz": quiz.model_dump(),
+            "quiz_embedding": quiz_embedding,
+        }
+
+        result = supabase.table("reels").update(update_data).eq("id", reel_id).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to update quiz")
+
+        reel = Reel(**result.data[0])
+
+        return ReelUploadResponse(
+            success=True,
+            message="Quiz updated successfully",
+            reel=reel
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update quiz: {str(e)}"
+        )
+
+
+@router.get("/recommend", response_model=ReelRecommendResponse)
+async def recommend_reel(
+    user_id: str = Query(..., description="User ID requesting recommendation"),
+    folder_ids: str = Query(..., description="Comma-separated list of active folder IDs"),
+    limit: int = Query(1, ge=1, le=10, description="Number of reels to recommend"),
+):
+    """
+    Recommend a reel based on user's active folders.
+
+    The algorithm:
+    1. Get document embeddings from active folders (ChromaDB)
+    2. Calculate centroid (average) of document embeddings
+    3. Find most similar reel using pgvector cosine similarity
+
+    Args:
+        user_id: User ID for context
+        folder_ids: Comma-separated folder IDs (e.g., "folder-1,folder-2")
+        limit: Number of reels to return
+
+    Returns:
+        ReelRecommendResponse: Recommended reel with similarity score
+    """
+    try:
+        # Parse folder IDs from comma-separated string
+        folder_id_list = [fid.strip() for fid in folder_ids.split(",") if fid.strip()]
+
+        if not folder_id_list:
+            return ReelRecommendResponse(
+                success=False,
+                message="No active folders provided"
+            )
+
+        # Step 1: Get document embeddings from ChromaDB for active folders
+        vector_store = get_vector_store("user_knowledge")
+        collection = vector_store._collection
+
+        # Build filter for multiple folders
+        if len(folder_id_list) == 1:
+            where_filter = {"folder_id": folder_id_list[0]}
+        else:
+            where_filter = {"folder_id": {"$in": folder_id_list}}
+
+        # Get embeddings from ChromaDB
+        results = collection.get(
+            where=where_filter,
+            include=["embeddings"]
+        )
+
+        if not results["embeddings"] or len(results["embeddings"]) == 0:
+            return ReelRecommendResponse(
+                success=False,
+                message="No documents found in the active folders"
+            )
+
+        # Step 2: Calculate centroid (average) of document embeddings
+        doc_embeddings = np.array(results["embeddings"])
+        centroid = doc_embeddings.mean(axis=0).tolist()
+
+        # Step 3: Query Supabase pgvector for similar reels
+        supabase = get_supabase_client()
+
+        # Call the RPC function for vector similarity search
+        reel_result = supabase.rpc(
+            "match_reels_by_embedding",
+            {
+                "query_embedding": centroid,
+                "match_count": limit,
+                "similarity_threshold": 0.0
+            }
+        ).execute()
+
+        if not reel_result.data or len(reel_result.data) == 0:
+            return ReelRecommendResponse(
+                success=False,
+                message="No matching reels found"
+            )
+
+        # Step 4: Return the most similar reel
+        reel_data = reel_result.data[0]
+        reel = ReelWithSimilarity(**reel_data)
+
+        return ReelRecommendResponse(
+            success=True,
+            reel=reel
+        )
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to recommend reel: {str(e)}"
+        )

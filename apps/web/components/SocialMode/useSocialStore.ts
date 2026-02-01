@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { supabase } from "@/lib/supabase/client";
+import type { ReelQuiz } from "@/types/api";
 
 export interface ReelItem {
   id: string;
@@ -17,6 +18,8 @@ export interface ReelItem {
   authorAvatar?: string;
   authorUserId?: string; // User ID of the author
   tags?: string[]; // Hashtags for categorization and recommendation
+  duration?: number; // Video duration in seconds
+  quiz?: ReelQuiz; // Interactive quiz data
 }
 
 interface SocialState {
@@ -59,6 +62,46 @@ interface SocialState {
   getSearchResults: () => ReelItem[];
 }
 
+// Mock quiz data for testing
+const mockQuizzes: ReelQuiz[] = [
+  {
+    question: "Maxwell 방정식 중 자기장의 발산이 0임을 나타내는 법칙은?",
+    options: [
+      { key: "A", text: "가우스 법칙 (전기)" },
+      { key: "B", text: "가우스 법칙 (자기)" },
+      { key: "C", text: "패러데이 법칙" },
+      { key: "D", text: "앙페르-맥스웰 법칙" },
+    ],
+    answer: "B",
+    explanation: "자기장의 발산이 항상 0인 것은 자기 단극(magnetic monopole)이 존재하지 않음을 의미합니다.",
+    timestamp_seconds: 5,
+  },
+  {
+    question: "양자 얽힘에서 한 입자의 상태를 측정하면 다른 입자는?",
+    options: [
+      { key: "A", text: "아무 영향이 없다" },
+      { key: "B", text: "즉시 상관된 상태가 결정된다" },
+      { key: "C", text: "시간이 지나면 영향을 받는다" },
+      { key: "D", text: "확률적으로 영향을 받는다" },
+    ],
+    answer: "B",
+    explanation: "양자 얽힘 상태에서는 거리와 관계없이 한 입자의 측정이 다른 입자의 상태를 즉시 결정합니다.",
+    timestamp_seconds: 5,
+  },
+  {
+    question: "텐서의 차수(rank)가 2인 것은 무엇인가요?",
+    options: [
+      { key: "A", text: "스칼라" },
+      { key: "B", text: "벡터" },
+      { key: "C", text: "행렬" },
+      { key: "D", text: "3차원 배열" },
+    ],
+    answer: "C",
+    explanation: "스칼라는 0차, 벡터는 1차, 행렬은 2차 텐서입니다.",
+    timestamp_seconds: 5,
+  },
+];
+
 // Mock data generator
 const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelItem[] => {
   const colors = [
@@ -69,7 +112,7 @@ const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelIt
     "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
     "linear-gradient(135deg, #30cfd0 0%, #330867 100%)",
   ];
-  
+
   const topics = [
     "Maxwell's Equations Explained",
     "Quantum Entanglement Basics",
@@ -80,7 +123,7 @@ const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelIt
     "Linear Algebra Deep Dive",
     "Probability Theory",
   ];
-  
+
   const descriptions = [
     "Understanding electromagnetic fields through Maxwell's equations",
     "Exploring the mysterious world of quantum mechanics",
@@ -91,13 +134,13 @@ const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelIt
     "Vectors, matrices, and transformations",
     "Understanding randomness and probability",
   ];
-  
+
   if (folders.length === 0) {
     return [];
   }
-  
+
   const reels: ReelItem[] = [];
-  
+
   const hashtagPool = [
     "physics", "math", "calculus", "quantum", "programming",
     "algorithms", "neuralnetworks", "ai", "machinelearning", "science",
@@ -107,18 +150,21 @@ const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelIt
   folders.forEach((folder, folderIndex) => {
     for (let i = 0; i < 3; i++) {
       const topicIndex = (folderIndex * 3 + i) % topics.length;
-      
+
       // Generate hashtags: folder name + 2-3 random tags
       const folderTag = folder.name.toLowerCase().replace(/\s+/g, "_");
       const numRandomTags = Math.floor(Math.random() * 2) + 2;
-      const randomTags = [];
+      const randomTags: string[] = [];
       for (let j = 0; j < numRandomTags; j++) {
         const randomTag = hashtagPool[Math.floor(Math.random() * hashtagPool.length)];
         if (!randomTags.includes(randomTag)) {
           randomTags.push(randomTag);
         }
       }
-      
+
+      // Assign quiz to each reel (cycling through mockQuizzes)
+      const quizIndex = (folderIndex * 3 + i) % mockQuizzes.length;
+
       reels.push({
         id: `reel-${folder.id}-${i}`,
         title: topics[topicIndex],
@@ -131,10 +177,12 @@ const generateMockReels = (folders: Array<{ id: string; name: string }>): ReelIt
         author: "MathTutor",
         authorAvatar: undefined,
         tags: [folderTag, ...randomTags],
+        duration: 30, // 30 seconds for mock reels
+        quiz: mockQuizzes[quizIndex],
       });
     }
   });
-  
+
   return reels;
 };
 
@@ -289,6 +337,8 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         authorUserId: reel.user_id,
         authorAvatar: undefined,
         tags: reel.tags || [],
+        duration: reel.duration || undefined,
+        quiz: reel.quiz || undefined,
       }));
 
       set({ reels: transformedReels });
