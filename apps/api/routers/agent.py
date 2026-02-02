@@ -92,7 +92,7 @@ import logging
 from models import ChatMessage
 # query_rag_chain과 generate_study_summary를 가져옵니다.
 from utils.rag_chain import query_rag_chain, generate_study_summary
-from utils.memory_manager import get_memory_manager  # ✨ [Phase 1] 메모리 매니저
+from utils.memory_manager import get_memory_manager_async  # ✨ [Phase 2] 비동기 메모리 매니저
 
 router = APIRouter()
 
@@ -106,6 +106,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     collection_name: Optional[str] = "user_knowledge"
     folder_id: Optional[str] = None
+    user_id: Optional[str] = None  # ✨ [Phase 2] 사용자 ID 추가
 
 # ✨ [핵심 수정] 일반 JSON 반환 대신 StreamingResponse 사용
 # 프론트엔드 api.ts에서 "/api/agent/message"로 요청하므로 경로를 "/message"로 변경했습니다.
@@ -114,7 +115,7 @@ async def chat_with_agent_stream(request: ChatRequest):
     """
     RAG Process Status Streaming Endpoint
     Streams events: Searching -> Analyzing -> Generating -> Final Response
-    Now with multi-turn conversation context (Phase 1)
+    Now with multi-turn conversation context and Supabase persistence (Phase 2)
     """
     
     # Google API Key 체크
@@ -128,11 +129,14 @@ async def chat_with_agent_stream(request: ChatRequest):
             yield f"data: {error_data}\n\n"
         return StreamingResponse(key_error_generator(), media_type="text/event-stream")
 
-    # ✨ [Phase 1] 메모리 매니저 가져오기 (폴더별로 대화 컨텍스트 관리)
-    memory_manager = get_memory_manager(folder_id=request.folder_id)
+    # ✨ [Phase 2] 비동기 메모리 매니저 가져오기 (Supabase 세션 로드 포함)
+    memory_manager = await get_memory_manager_async(
+        folder_id=request.folder_id,
+        user_id=request.user_id
+    )
     
-    # 현재 질문을 메모리에 추가 (컨텍스트 생성 전에)
-    memory_manager.add_user_message(request.message)
+    # 현재 질문을 메모리에 추가 + Supabase에 저장
+    await memory_manager.add_user_message_async(request.message)
     
     # 이전 대화 컨텍스트 가져오기
     conversation_context = memory_manager.get_conversation_context()
@@ -148,7 +152,7 @@ async def chat_with_agent_stream(request: ChatRequest):
                 model_name=MODEL_NAME,
                 k=4,
                 folder_id=request.folder_id,
-                conversation_context=conversation_context  # ✨ [Phase 1] 대화 컨텍스트 전달
+                conversation_context=conversation_context  # ✨ 대화 컨텍스트 전달
             ):
                 # 데이터를 SSE 포맷(data: {...}\n\n)으로 변환하여 전송
                 # ensure_ascii=False로 한글 깨짐 방지
@@ -158,9 +162,9 @@ async def chat_with_agent_stream(request: ChatRequest):
                 if update.get("status") == "complete" and update.get("data"):
                     final_answer = update["data"].get("message", "")
             
-            # ✨ [Phase 1] 응답을 메모리에 추가
+            # ✨ [Phase 2] 응답을 메모리 + Supabase에 저장
             if final_answer:
-                memory_manager.add_assistant_message(final_answer)
+                await memory_manager.add_assistant_message_async(final_answer)
                 
         except Exception as e:
             logging.error(f"Streaming Error: {str(e)}")

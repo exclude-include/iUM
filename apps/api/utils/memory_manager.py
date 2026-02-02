@@ -1,13 +1,20 @@
 """
 Memory Manager for iUM Agent
 Phase 1: Working Memory (Conversation Buffer Window)
+Phase 2: Episodic Memory (Supabase Persistent Storage)
 
-Provides context from recent messages to enable multi-turn conversations.
+Provides context from recent messages to enable multi-turn conversations
+AND persists conversation history to Supabase for durability.
 """
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 import json
+import logging
+import os
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -17,13 +24,15 @@ class ChatMessage:
     content: str
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     sources: Optional[List[Dict[str, Any]]] = None
+    id: Optional[str] = None  # Database ID (for persisted messages)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
             "role": self.role,
             "content": self.content,
             "timestamp": self.timestamp,
-            "sources": self.sources
+            "sources": self.sources,
+            "id": self.id
         }
     
     @classmethod
@@ -31,8 +40,9 @@ class ChatMessage:
         return cls(
             role=data.get("role", "user"),
             content=data.get("content", ""),
-            timestamp=data.get("timestamp", datetime.now().isoformat()),
-            sources=data.get("sources")
+            timestamp=data.get("timestamp") or data.get("created_at") or datetime.now().isoformat(),
+            sources=data.get("sources"),
+            id=data.get("id")
         )
 
 
@@ -42,12 +52,6 @@ class WorkingMemory:
     
     Maintains a sliding window of the most recent K messages.
     This enables multi-turn conversation context without excessive token usage.
-    
-    Usage:
-        memory = WorkingMemory(k=10)
-        memory.add_message(ChatMessage(role="user", content="What is RAG?"))
-        memory.add_message(ChatMessage(role="assistant", content="RAG stands for..."))
-        context = memory.get_context_string()
     """
     
     def __init__(self, k: int = 10):
@@ -83,6 +87,10 @@ class WorkingMemory:
     def get_messages(self) -> List[ChatMessage]:
         """Get all messages in the buffer."""
         return self._messages.copy()
+    
+    def set_messages(self, messages: List[ChatMessage]) -> None:
+        """Set messages (used when loading from Supabase)."""
+        self._messages = messages[-self.k:] if len(messages) > self.k else messages
     
     def get_context_string(self, include_current: bool = False) -> str:
         """
@@ -145,20 +153,224 @@ class WorkingMemory:
         return len(self._messages) == 0
 
 
+class EpisodicMemory:
+    """
+    Phase 2: Episodic Memory
+    
+    Persists conversation sessions and messages to Supabase.
+    Enables conversation history to survive browser refreshes.
+    
+    Usage:
+        episodic = EpisodicMemory(user_id="user-123", folder_id="folder-456")
+        await episodic.load_or_create_session()
+        await episodic.save_message(ChatMessage(role="user", content="Hello"))
+    """
+    
+    def __init__(self, user_id: str, folder_id: str):
+        """
+        Initialize episodic memory for a user/folder combination.
+        
+        Args:
+            user_id: User identifier
+            folder_id: Folder identifier (scopes the conversation)
+        """
+        self.user_id = user_id
+        self.folder_id = folder_id
+        self.session_id: Optional[str] = None
+        self._supabase = None
+    
+    def _get_supabase(self):
+        """Lazy load Supabase client to avoid circular imports."""
+        if self._supabase is None:
+            try:
+                from utils.supabase_client import get_supabase_client
+                self._supabase = get_supabase_client()
+            except Exception as e:
+                logger.warning(f"Failed to initialize Supabase client: {e}")
+                self._supabase = None
+        return self._supabase
+    
+    async def load_or_create_session(self) -> Optional[str]:
+        """
+        Load the most recent session for this user/folder, or create a new one.
+        
+        Returns:
+            Session ID if successful, None otherwise
+        """
+        supabase = self._get_supabase()
+        if not supabase:
+            logger.warning("Supabase not available, skipping session load")
+            return None
+        
+        try:
+            # Try to find an existing recent session (within last 24 hours)
+            result = supabase.table("chat_sessions").select("*").eq(
+                "user_id", self.user_id
+            ).eq(
+                "folder_id", self.folder_id
+            ).order(
+                "updated_at", desc=True
+            ).limit(1).execute()
+            
+            if result.data and len(result.data) > 0:
+                self.session_id = result.data[0]["id"]
+                logger.info(f"Loaded existing session: {self.session_id}")
+                return self.session_id
+            
+            # Create a new session
+            return await self.create_session()
+            
+        except Exception as e:
+            logger.error(f"Error loading session: {e}")
+            return None
+    
+    async def create_session(self) -> Optional[str]:
+        """
+        Create a new chat session.
+        
+        Returns:
+            New session ID if successful, None otherwise
+        """
+        supabase = self._get_supabase()
+        if not supabase:
+            return None
+        
+        try:
+            result = supabase.table("chat_sessions").insert({
+                "user_id": self.user_id,
+                "folder_id": self.folder_id,
+                "metadata": {}
+            }).execute()
+            
+            if result.data and len(result.data) > 0:
+                self.session_id = result.data[0]["id"]
+                logger.info(f"Created new session: {self.session_id}")
+                return self.session_id
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error creating session: {e}")
+            return None
+    
+    async def load_messages(self, limit: int = 20) -> List[ChatMessage]:
+        """
+        Load messages from the current session.
+        
+        Args:
+            limit: Maximum number of messages to load
+            
+        Returns:
+            List of ChatMessage objects
+        """
+        if not self.session_id:
+            return []
+        
+        supabase = self._get_supabase()
+        if not supabase:
+            return []
+        
+        try:
+            result = supabase.table("chat_messages").select("*").eq(
+                "session_id", self.session_id
+            ).order(
+                "created_at", desc=False
+            ).limit(limit).execute()
+            
+            if result.data:
+                messages = [ChatMessage.from_dict(msg) for msg in result.data]
+                logger.info(f"Loaded {len(messages)} messages from session")
+                return messages
+            
+            return []
+            
+        except Exception as e:
+            logger.error(f"Error loading messages: {e}")
+            return []
+    
+    async def save_message(self, message: ChatMessage) -> Optional[str]:
+        """
+        Save a message to the current session.
+        
+        Args:
+            message: ChatMessage to save
+            
+        Returns:
+            Message ID if successful, None otherwise
+        """
+        if not self.session_id:
+            # Try to create a session first
+            await self.load_or_create_session()
+            if not self.session_id:
+                logger.warning("No session available, cannot save message")
+                return None
+        
+        supabase = self._get_supabase()
+        if not supabase:
+            return None
+        
+        try:
+            result = supabase.table("chat_messages").insert({
+                "session_id": self.session_id,
+                "role": message.role,
+                "content": message.content,
+                "sources": message.sources
+            }).execute()
+            
+            if result.data and len(result.data) > 0:
+                message_id = result.data[0]["id"]
+                logger.debug(f"Saved message: {message_id}")
+                return message_id
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error saving message: {e}")
+            return None
+    
+    async def update_session_summary(self, summary: str) -> bool:
+        """
+        Update the session summary.
+        
+        Args:
+            summary: Summary text
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.session_id:
+            return False
+        
+        supabase = self._get_supabase()
+        if not supabase:
+            return False
+        
+        try:
+            supabase.table("chat_sessions").update({
+                "summary": summary
+            }).eq("id", self.session_id).execute()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating session summary: {e}")
+            return False
+
+
 class MemoryManager:
     """
-    Unified Memory Manager for iUM Agent (Phase 1)
+    Unified Memory Manager for iUM Agent
     
-    Currently implements:
-    - Working Memory: Recent N messages for multi-turn context
+    Phase 1: Working Memory - Recent N messages for multi-turn context
+    Phase 2: Episodic Memory - Supabase persistent storage
     
     Future phases will add:
-    - Episodic Memory: Session summaries (Supabase)
     - Semantic Memory: Long-term user profiles
     """
     
-    # In-memory store for session memories (keyed by folder_id)
+    # In-memory store for session memories (keyed by user_id:folder_id)
     _sessions: Dict[str, WorkingMemory] = {}
+    _episodic: Dict[str, EpisodicMemory] = {}
     
     def __init__(
         self, 
@@ -171,25 +383,111 @@ class MemoryManager:
         
         Args:
             folder_id: Folder ID to scope the memory (optional)
-            user_id: User ID for future personalization (optional)
+            user_id: User ID for personalization and persistence (optional)
             window_size: Number of recent messages to keep
         """
         self.folder_id = folder_id or "default"
-        self.user_id = user_id
+        self.user_id = user_id or "anonymous"
         self.window_size = window_size
+        self._session_loaded = False
         
-        # Get or create working memory for this folder
-        if self.folder_id not in MemoryManager._sessions:
-            MemoryManager._sessions[self.folder_id] = WorkingMemory(k=window_size)
+        # Create a unique key for this user/folder combination
+        self._session_key = f"{self.user_id}:{self.folder_id}"
         
-        self.working_memory = MemoryManager._sessions[self.folder_id]
+        # Get or create working memory
+        if self._session_key not in MemoryManager._sessions:
+            MemoryManager._sessions[self._session_key] = WorkingMemory(k=window_size)
+        self.working_memory = MemoryManager._sessions[self._session_key]
+        
+        # Get or create episodic memory (for Supabase persistence)
+        if self._session_key not in MemoryManager._episodic:
+            MemoryManager._episodic[self._session_key] = EpisodicMemory(
+                user_id=self.user_id,
+                folder_id=self.folder_id
+            )
+        self.episodic_memory = MemoryManager._episodic[self._session_key]
+    
+    async def load_session(self) -> bool:
+        """
+        Load existing session from Supabase (Phase 2).
+        Call this when starting a chat to restore previous conversation.
+        
+        Returns:
+            True if session was loaded, False otherwise
+        """
+        if self._session_loaded:
+            return True
+        
+        try:
+            # Initialize Supabase session
+            session_id = await self.episodic_memory.load_or_create_session()
+            
+            if session_id:
+                # Load previous messages
+                messages = await self.episodic_memory.load_messages(limit=self.window_size)
+                if messages:
+                    self.working_memory.set_messages(messages)
+                    logger.info(f"Restored {len(messages)} messages from Supabase")
+            
+            self._session_loaded = True
+            return bool(session_id)
+            
+        except Exception as e:
+            logger.error(f"Error loading session: {e}")
+            self._session_loaded = True  # Mark as loaded to prevent retry loops
+            return False
+    
+    async def add_user_message_async(self, content: str) -> ChatMessage:
+        """
+        Add a user message to memory and persist to Supabase.
+        
+        Args:
+            content: Message content
+            
+        Returns:
+            ChatMessage object
+        """
+        msg = self.working_memory.add_user_message(content)
+        
+        # Persist to Supabase (non-blocking)
+        try:
+            await self.episodic_memory.save_message(msg)
+        except Exception as e:
+            logger.warning(f"Failed to persist user message: {e}")
+        
+        return msg
+    
+    async def add_assistant_message_async(
+        self, 
+        content: str, 
+        sources: Optional[List[Dict]] = None
+    ) -> ChatMessage:
+        """
+        Add an assistant message to memory and persist to Supabase.
+        
+        Args:
+            content: Message content
+            sources: Optional list of source references
+            
+        Returns:
+            ChatMessage object
+        """
+        msg = self.working_memory.add_assistant_message(content, sources)
+        
+        # Persist to Supabase (non-blocking)
+        try:
+            await self.episodic_memory.save_message(msg)
+        except Exception as e:
+            logger.warning(f"Failed to persist assistant message: {e}")
+        
+        return msg
     
     def add_user_message(self, content: str) -> ChatMessage:
-        """Add a user message to memory."""
+        """Add a user message to working memory (synchronous, no persistence)."""
         return self.working_memory.add_user_message(content)
     
     def add_assistant_message(self, content: str, sources: Optional[List[Dict]] = None) -> ChatMessage:
-        """Add an assistant message to memory."""
+        """Add an assistant message to working memory (synchronous, no persistence)."""
         return self.working_memory.add_assistant_message(content, sources)
     
     def get_conversation_context(self) -> str:
@@ -208,7 +506,11 @@ class MemoryManager:
         self.working_memory.clear()
     
     @classmethod
-    def get_or_create(cls, folder_id: Optional[str] = None, user_id: Optional[str] = None) -> "MemoryManager":
+    def get_or_create(
+        cls, 
+        folder_id: Optional[str] = None, 
+        user_id: Optional[str] = None
+    ) -> "MemoryManager":
         """Factory method to get or create a memory manager."""
         return cls(folder_id=folder_id, user_id=user_id)
     
@@ -216,17 +518,45 @@ class MemoryManager:
     def clear_all_sessions(cls) -> None:
         """Clear all session memories (useful for testing)."""
         cls._sessions.clear()
+        cls._episodic.clear()
 
 
 # Singleton accessor for dependency injection
 _default_manager: Optional[MemoryManager] = None
 
 
-def get_memory_manager(folder_id: Optional[str] = None, user_id: Optional[str] = None) -> MemoryManager:
+def get_memory_manager(
+    folder_id: Optional[str] = None, 
+    user_id: Optional[str] = None
+) -> MemoryManager:
     """
     Get a memory manager instance.
     
     Usage in FastAPI:
-        memory = get_memory_manager(folder_id=request.folder_id)
+        memory = get_memory_manager(folder_id=request.folder_id, user_id=request.user_id)
     """
     return MemoryManager.get_or_create(folder_id=folder_id, user_id=user_id)
+
+
+async def get_memory_manager_async(
+    folder_id: Optional[str] = None, 
+    user_id: Optional[str] = None,
+    load_session: bool = True
+) -> MemoryManager:
+    """
+    Get a memory manager instance with session loading.
+    
+    This async version will load existing session data from Supabase.
+    
+    Usage in FastAPI:
+        memory = await get_memory_manager_async(
+            folder_id=request.folder_id, 
+            user_id=request.user_id
+        )
+    """
+    manager = MemoryManager.get_or_create(folder_id=folder_id, user_id=user_id)
+    
+    if load_session:
+        await manager.load_session()
+    
+    return manager
