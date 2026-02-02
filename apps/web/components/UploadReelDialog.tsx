@@ -12,6 +12,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { useGooglePicker } from "@/hooks/useGooglePicker";
+import { Upload, Loader2, FileVideo, Link2, HardDrive } from "lucide-react";
+import { useSocialStore } from "./SocialMode/useSocialStore";
+import { api } from "@/lib/api";
 import { Upload, Loader2, FileVideo, Link2, Plus, Trash2, HelpCircle } from "lucide-react";
 import { useSocialStore } from "./SocialMode/useSocialStore";
 import type { ReelQuiz, ReelQuizOption } from "@/types/api";
@@ -32,6 +36,29 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
   const [folderName, setFolderName] = useState("");
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [hashtagInput, setHashtagInput] = useState("");
+  const [driveUrl, setDriveUrl] = useState("");
+  const [selectedDriveFile, setSelectedDriveFile] = useState<{ id: string; name: string } | null>(null);
+  const { toast } = useToast();
+
+  // Google Picker for video selection
+  const { openPicker, isLoading: isPickerLoading, isReady: isPickerReady } = useGooglePicker({
+    onFilePicked: (file) => {
+      setSelectedDriveFile({ id: file.id, name: file.name });
+      setDriveUrl(`https://drive.google.com/file/d/${file.id}/view`);
+      toast({
+        title: "File selected",
+        description: `Selected: ${file.name}`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Google Drive Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+    mimeTypes: ["video/mp4", "video/quicktime", "video/webm", "video/x-msvideo"],
+  });
 
   // Quiz state
   const [includeQuiz, setIncludeQuiz] = useState(false);
@@ -120,7 +147,7 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
         });
         return;
       }
-      
+
       // Validate file size (max 100MB)
       if (selectedFile.size > 100 * 1024 * 1024) {
         toast({
@@ -130,22 +157,80 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
         });
         return;
       }
-      
+
       setFile(selectedFile);
     }
   };
 
   const handleGoogleDriveImport = async () => {
-    toast({
-      title: "Google Drive Import",
-      description: "Coming soon! This will allow you to import videos from your Google Drive.",
-    });
-    
-    // TODO: Implement Google Drive Picker API
-    // This will require:
-    // 1. Google OAuth authentication (already set up in login)
-    // 2. Google Picker API integration
-    // 3. File download and upload to Supabase storage
+    if (!driveUrl.trim()) {
+      toast({
+        title: "Missing URL",
+        description: "Please enter a Google Drive share URL",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!title.trim()) {
+      toast({
+        title: "Missing title",
+        description: "Please enter a title for your reel",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsUploading(true);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        throw new Error("You must be logged in to upload reels");
+      }
+
+      // Call backend API to import from Drive
+      const response = await api.reels.importFromDrive({
+        driveUrl: driveUrl.trim(),
+        userId: user.id,
+        title: title.trim(),
+        description: description.trim() || undefined,
+        folderName: folderName.trim() || undefined,
+        tags: hashtags.length > 0 ? hashtags : undefined,
+      });
+
+      if (response.success) {
+        // Refresh reels from Supabase
+        await useSocialStore.getState().loadReelsFromSupabase();
+
+        toast({
+          title: "Success!",
+          description: "Your reel has been imported from Google Drive.",
+        });
+
+        // Reset form
+        setTitle("");
+        setDescription("");
+        setDriveUrl("");
+        setFolderName("");
+        setHashtags([]);
+        setHashtagInput("");
+        onClose();
+      } else {
+        throw new Error(response.message || "Import failed");
+      }
+    } catch (error: any) {
+      toast({
+        title: "Import failed",
+        description: error.message || "Failed to import from Google Drive. Make sure the file is publicly shared.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const addHashtag = (tag: string) => {
@@ -253,7 +338,7 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
       // Create reel record in database
       // TODO: Create a 'reels' table in Supabase with columns:
       // - id, title, description, video_url, user_id, folder_id, created_at, likes, comments, tags, folder_name
-      
+
       const { error: insertError } = await supabase.from("reels").insert({
         title: title.trim(),
         description: description.trim(),
@@ -271,7 +356,7 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
       if (insertError) {
         // If the table doesn't exist yet, add to local store only
         console.warn("Database insert failed, adding to local store:", insertError);
-        
+
         // Add to local store
         const { reels } = useSocialStore.getState();
         const newReel = {
@@ -290,6 +375,7 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
           quiz: quizData || undefined,
         };
 
+        useSocialStore.setState({ reels: [...reels, newReel] });
         useSocialStore.setState({ reels: [newReel, ...reels] });
       } else {
         // Refresh reels from Supabase after successful upload
@@ -479,19 +565,23 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
           {uploadMode === "drive" && (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                Import videos directly from your Google Drive
+                Select a video from your Google Drive
               </p>
               <Button
                 variant="outline"
                 className="w-full"
-                onClick={handleGoogleDriveImport}
-                disabled={isUploading}
+                onClick={openPicker}
+                disabled={isUploading || isPickerLoading || !isPickerReady}
               >
-                <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M8.5 4l5.5 9.5H2.5L8.5 4zm7.5 0l5.5 9.5h-11L16 4zM12 14.5L6.5 24h11L12 14.5z" />
-                </svg>
-                Select from Google Drive
+                <HardDrive className="mr-2 h-4 w-4" />
+                {isPickerLoading ? "Loading..." : "Browse Google Drive"}
               </Button>
+              {selectedDriveFile && (
+                <div className="p-3 bg-muted/50 rounded-md">
+                  <p className="text-sm font-medium">{selectedDriveFile.name}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Ready to import</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -624,18 +714,18 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
           {/* Upload Button */}
           <Button
             className="w-full mt-6"
-            onClick={handleUpload}
-            disabled={isUploading || !title.trim() || (uploadMode === "url" && !videoUrl) || (uploadMode === "file" && !file)}
+            onClick={uploadMode === "drive" ? handleGoogleDriveImport : handleUpload}
+            disabled={isUploading || !title.trim() || (uploadMode === "url" && !videoUrl) || (uploadMode === "file" && !file) || (uploadMode === "drive" && !driveUrl)}
           >
             {isUploading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Uploading...
+                {uploadMode === "drive" ? "Importing..." : "Uploading..."}
               </>
             ) : (
               <>
                 <Upload className="mr-2 h-4 w-4" />
-                Upload Reel
+                {uploadMode === "drive" ? "Import from Drive" : "Upload Reel"}
               </>
             )}
           </Button>

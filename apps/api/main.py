@@ -4,15 +4,29 @@ load_dotenv()
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
 # 2. 환경 변수가 로드된 후에 라우터 import
-from routers import feed, workspace, agent, ingest, integrations, reels
+from routers import feed, workspace, agent, ingest, integrations, reels, evaluate
+from utils.opik_config import opik_service
 import os
+
+
+# Lifecycle management for Opik
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize Opik
+    opik_service.initialize()
+    yield
+    # Shutdown: Cleanup Opik
+    opik_service.shutdown()
+
 
 app = FastAPI(
     title="iUM API",
     description="Backend API for iUM learning platform",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
 # CORS middleware
@@ -42,6 +56,7 @@ app.include_router(agent.router, prefix="/api/agent", tags=["agent"])
 app.include_router(ingest.router, prefix="/api/ingest", tags=["ingest"])
 app.include_router(integrations.router, prefix="/api/integrations", tags=["integrations"])
 app.include_router(reels.router, prefix="/api/reels", tags=["reels"])
+app.include_router(evaluate.router, prefix="/api/evaluate", tags=["evaluation"])
 
 
 @app.get("/")

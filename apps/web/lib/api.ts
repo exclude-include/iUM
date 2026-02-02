@@ -27,7 +27,7 @@ async function fetchApi<T>(
   options?: RequestInit
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  
+
   try {
     const response = await fetch(url, {
       ...options,
@@ -75,6 +75,7 @@ export const chatApi = {
     onStatusUpdate?: (status: string) => void
   ): Promise<ChatResponse> {
     const url = `${API_BASE_URL}/api/agent/message`; // Endpoint updated to match backend router
+
     
     try {
       const response = await fetch(url, {
@@ -108,6 +109,7 @@ export const chatApi = {
           const chunk = decoder.decode(value, { stream: true });
           // SSE 데이터 파싱 (data: {...})
           const lines = chunk.split("\n\n");
+
           
           for (const line of lines) {
             if (line.startsWith("data: ")) {
@@ -195,6 +197,7 @@ export const ingestApi = {
     }
 
     const url = `${API_BASE_URL}/api/ingest/upload`; // Endpoint path adjusted based on standard router
+
     
     try {
       const response = await fetch(url, {
@@ -274,11 +277,41 @@ export async function checkHealth(): Promise<{ status: string }> {
   return fetchApi<{ status: string }>("/api/health");
 }
 
+/**
+ * Reels API Functions
+ */
+export const reelsApi = {
+  /**
+   * Import a reel from Google Drive shared URL
+   */
+  async importFromDrive(options: {
+    driveUrl: string;
+    userId: string;
+    title: string;
+    description?: string;
+    folderName?: string;
+    tags?: string[];
+  }): Promise<any> {
+    return fetchApi("/api/reels/import-from-drive", {
+      method: "POST",
+      body: JSON.stringify({
+        drive_url: options.driveUrl,
+        user_id: options.userId,
+        title: options.title,
+        description: options.description,
+        folder_name: options.folderName,
+        tags: options.tags,
+      }),
+    });
+  },
+};
+
 // Export all APIs as a single object for convenience
 export const api = {
   chat: chatApi,
   ingest: ingestApi,
   feed: feedApi,
   workspace: workspaceApi,
+  reels: reelsApi,
   health: checkHealth,
 };
