@@ -274,6 +274,25 @@ export const workspaceApi = {
       `/api/workspace/${workspaceId}/folders`
     );
   },
+
+  async updateFile(workspaceId: string = "default", fileId: string, name: string, token: string): Promise<any> {
+    return fetchApi(`/api/workspace/${workspaceId}/files/${fileId}`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ name })
+    });
+  },
+
+  async deleteFile(workspaceId: string = "default", fileId: string, token: string): Promise<any> {
+    return fetchApi(`/api/workspace/${workspaceId}/files/${fileId}`, {
+      method: "DELETE",
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    });
+  },
 };
 
 /**

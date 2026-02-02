@@ -75,6 +75,10 @@ def add_documents_to_vector_store(
     # Split documents into chunks
     chunks = text_splitter.split_documents(documents)
     
+    if not chunks:
+        print("Warning: No chunks created from documents")
+        return []
+    
     # Get or create vector store
     vector_store = get_vector_store(collection_name, persist_directory)
     

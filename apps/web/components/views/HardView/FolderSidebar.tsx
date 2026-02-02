@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, NotebookPen } from "lucide-react";
+import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, Loader2, Pencil, FileCode, FileImage, FileMusic, FileVideo, FileJson, File, FileType2, NotebookPen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"; // ✨ Import Dialog
 import { cn } from "@/lib/utils";
 import { useAppStore, IumFile } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
@@ -39,7 +40,6 @@ export function FolderSidebar() {
     isMindMapOpen,
     setMindMapOpen,
     fetchFiles,
-    loadTabFromIum,
   } = useAppStore();
 
   const { toast } = useToast();
@@ -48,7 +48,49 @@ export function FolderSidebar() {
   const [newFolderName, setNewFolderName] = useState("");
   const [selectedColor, setSelectedColor] = useState(FOLDER_COLORS[0].value);
   const [isImporting, setIsImporting] = useState(false);
+  // ✨ Upload Status State
+  const [uploadStatus, setUploadStatus] = useState<{ isUploading: boolean; fileName: string; }>({
+    isUploading: false,
+    fileName: ""
+  });
+
+  // ✨ Modal States for File Management
+  const [fileToDelete, setFileToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [fileToRename, setFileToRename] = useState<{ id: string; name: string } | null>(null);
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false); // ✨ Bulk delete dialog state
+  const [renameInput, setRenameInput] = useState("");
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ✨ Dynamic Icon Helper
+  const getFileIcon = (fileName: string) => {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+    switch (ext) {
+      case 'pdf': return <FileType2 className="h-3 w-3 shrink-0 opacity-70 text-red-500" />;
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'gif':
+      case 'webp':
+      case 'svg': return <FileImage className="h-3 w-3 shrink-0 opacity-70 text-blue-500" />;
+      case 'txt':
+      case 'md': return <FileText className="h-3 w-3 shrink-0 opacity-70 text-gray-500" />;
+      case 'ts':
+      case 'tsx':
+      case 'js':
+      case 'jsx':
+      case 'py':
+      case 'html':
+      case 'css': return <FileCode className="h-3 w-3 shrink-0 opacity-70 text-yellow-500" />;
+      case 'mp4':
+      case 'mov':
+      case 'avi': return <FileVideo className="h-3 w-3 shrink-0 opacity-70 text-purple-500" />;
+      case 'mp3':
+      case 'wav': return <FileMusic className="h-3 w-3 shrink-0 opacity-70 text-pink-500" />;
+      case 'json': return <FileJson className="h-3 w-3 shrink-0 opacity-70 text-green-500" />;
+      default: return <File className="h-3 w-3 shrink-0 opacity-70" />;
+    }
+  };
 
   // Google Picker for Drive file selection
   const { openPicker, isLoading: isPickerLoading, isReady: isPickerReady } = useGooglePicker({
@@ -153,6 +195,119 @@ export function FolderSidebar() {
     setSelectedColor(FOLDER_COLORS[0].value);
   };
 
+  /* ✨ Modified handleDeleteFile */
+  const confirmDeleteFile = async () => {
+    if (!fileToDelete) return;
+
+    const { id: fileId, name: fileName } = fileToDelete;
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) throw new Error("Authentication required");
+
+      await api.workspace.deleteFile("default", fileId, token);
+
+      // Update local state (refetch)
+      fetchFiles();
+
+      toast({
+        title: "File deleted",
+        description: `"${fileName}" has been deleted.`,
+      });
+    } catch (error) {
+      console.error("Delete failed:", error);
+      toast({
+        title: "Delete failed",
+        description: "Could not delete the file.",
+        variant: "destructive",
+      });
+    } finally {
+      setFileToDelete(null);
+    }
+  };
+
+  const confirmRenameFile = async () => {
+    if (!fileToRename || !renameInput.trim() || renameInput === fileToRename.name) {
+      setFileToRename(null);
+      return;
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) throw new Error("Authentication required");
+
+      await api.workspace.updateFile("default", fileToRename.id, renameInput, token);
+      fetchFiles();
+
+      toast({
+        title: "File renamed",
+        description: `Renamed to "${renameInput}".`,
+      });
+    } catch (error) {
+      console.error("Rename failed:", error);
+      toast({
+        title: "Rename failed",
+        description: "Could not rename the file.",
+        variant: "destructive",
+      });
+    } finally {
+      setFileToRename(null);
+      setRenameInput("");
+    }
+  };
+
+  // ✨ Handle Select All / Deselect All
+  const handleSelectAll = () => {
+    if (!activeFolder) return;
+
+    if (selectedDocumentIds.length === activeFolder.files.length) {
+      // If all selected, deselect all
+      setSelectedDocuments([]);
+    } else {
+      // Select all
+      setSelectedDocuments(activeFolder.files.map(f => f.id));
+    }
+  };
+
+  // ✨ Handle Bulk Delete
+  const confirmBulkDelete = async () => {
+    if (selectedDocumentIds.length === 0) return;
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) throw new Error("Authentication required");
+
+      // Execute deletes in parallel
+      await Promise.all(
+        selectedDocumentIds.map(id => api.workspace.deleteFile("default", id, token))
+      );
+
+      fetchFiles();
+      setSelectedDocuments([]); // Clear selection
+
+      toast({
+        title: "Files deleted",
+        description: `${selectedDocumentIds.length} files have been deleted.`,
+      });
+    } catch (error) {
+      console.error("Bulk delete failed:", error);
+      toast({
+        title: "Delete failed",
+        description: "Could not delete some files.",
+        variant: "destructive",
+      });
+    } finally {
+      setShowBulkDeleteDialog(false);
+    }
+  };
+
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -173,6 +328,9 @@ export function FolderSidebar() {
       title: "Uploading...",
       description: `Processing ${file.name}`,
     });
+
+    // ✨ Set upload status
+    setUploadStatus({ isUploading: true, fileName: file.name });
 
     try {
       // ✨ Get session token
@@ -208,6 +366,9 @@ export function FolderSidebar() {
             : "Failed to upload file. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      // ✨ Reset upload status
+      setUploadStatus({ isUploading: false, fileName: "" });
     }
 
     if (fileInputRef.current) {
@@ -392,36 +553,62 @@ export function FolderSidebar() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between px-2">
                   <div className="flex items-center gap-2">
-                    <Folder className="h-3 w-3 text-muted-foreground" />
+                    {/* ✨ Select All Checkbox */}
+                    <div
+                      className="cursor-pointer flex items-center justify-center h-4 w-4"
+                      onClick={handleSelectAll}
+                      title="Select All"
+                    >
+                      {activeFolder.files.length > 0 && selectedDocumentIds.length === activeFolder.files.length ? (
+                        <CheckSquare className="h-3.5 w-3.5 text-primary" />
+                      ) : (
+                        <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
+                      )}
+                    </div>
                     <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                      {activeFolder.name}
+                      {selectedDocumentIds.length > 0 ? `${selectedDocumentIds.length} Selected` : activeFolder.name}
                     </p>
                   </div>
                   <div className="flex items-center gap-0.5">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5"
-                      onClick={() => fileInputRef.current?.click()}
-                      title="Upload local file"
-                    >
-                      <UploadCloud className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-5 w-5"
-                      onClick={openPicker}
-                      disabled={!isPickerReady || isPickerLoading || isImporting}
-                      title="Import from Google Drive"
-                    >
-                      <HardDrive className="h-3.5 w-3.5" />
-                    </Button>
+                    {selectedDocumentIds.length > 0 ? (
+                      /* ✨ Bulk Delete Button */
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 text-destructive hover:text-destructive/90 hover:bg-destructive/10"
+                        onClick={() => setShowBulkDeleteDialog(true)}
+                        title="Delete Selected"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5"
+                          onClick={() => fileInputRef.current?.click()}
+                          title="Upload local file"
+                        >
+                          <UploadCloud className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5"
+                          onClick={openPicker}
+                          disabled={!isPickerReady || isPickerLoading || isImporting}
+                          title="Import from Google Drive"
+                        >
+                          <HardDrive className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    )}
                   </div>
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".pdf,.txt,.md,.ium"
+                    accept=".pdf,.txt,.md"
                     className="hidden"
                     onChange={handleFileUpload}
                   />
@@ -436,43 +623,25 @@ export function FolderSidebar() {
                       return (
                         <div
                           key={`${file.id}-${index}`}
-                          className={cn(
-                            "group flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-muted/50 p-1 rounded",
-                            isNotebook && "hover:bg-primary/10"
-                          )}
-                          onClick={() => {
-                            if (isNotebook) {
-                              handleOpenIumFile(file);
-                            }
-                          }}
+                          className="flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-muted/50 p-1 rounded"
                         >
-                          {/* 체크박스 영역 - not for .ium files */}
-                          {!isNotebook ? (
-                            <div
-                              className="shrink-0 cursor-pointer flex items-center justify-center h-4 w-4"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleDocumentSelection(file.id);
-                              }}
-                            >
-                              {isSelected ? (
-                                <CheckSquare className="h-3.5 w-3.5 text-primary" />
-                              ) : (
-                                <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
-                              )}
-                            </div>
-                          ) : (
-                            <div className="shrink-0 flex items-center justify-center h-4 w-4">
-                              <NotebookPen className="h-3.5 w-3.5 text-primary" />
-                            </div>
-                          )}
+                          {/* 체크박스 영역 */}
+                          <div
+                            className="shrink-0 cursor-pointer flex items-center justify-center h-4 w-4"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleDocumentSelection(file.id);
+                            }}
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="h-3.5 w-3.5 text-primary" />
+                            ) : (
+                              <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
+                            )}
+                          </div>
 
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            {isNotebook ? (
-                              <NotebookPen className="h-3 w-3 shrink-0 text-primary" />
-                            ) : (
-                              <FileText className="h-3 w-3 shrink-0 opacity-70" />
-                            )}
+                            <FileText className="h-3 w-3 shrink-0 opacity-70" />
                             <span
                               className={cn(
                                 "truncate cursor-pointer",
@@ -484,18 +653,6 @@ export function FolderSidebar() {
                               {file.name}
                             </span>
                           </div>
-
-                          {/* Delete button - appears on hover */}
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteFile(file);
-                            }}
-                            className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-destructive/10"
-                            title={`Delete "${file.name}"`}
-                          >
-                            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                          </button>
                         </div>
                       );
                     })}
@@ -544,6 +701,22 @@ export function FolderSidebar() {
 
       {/* Section 4: LEARNING STATUS */}
       <div className="shrink-0 border-t bg-card">
+        {uploadStatus.isUploading ? (
+          <div className="p-3 bg-muted/50 border-b animate-in slide-in-from-bottom-2">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-4 w-4 animate-spin text-primary shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium truncate mb-1">
+                  Uploading {uploadStatus.fileName}...
+                </p>
+                <div className="h-1 bg-muted-foreground/20 rounded-full overflow-hidden">
+                  <div className="h-full bg-primary w-full animate-pulse" />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <div className="p-2.5">
           <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
             Learning Status
@@ -714,6 +887,63 @@ export function FolderSidebar() {
           </div>
         </div>
       )}
+      {/* ✨ Delete Confirmation Dialog */}
+      <Dialog open={!!fileToDelete} onOpenChange={(open) => !open && setFileToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete File</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{fileToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFileToDelete(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDeleteFile}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✨ Rename Dialog */}
+      <Dialog open={!!fileToRename} onOpenChange={(open) => !open && setFileToRename(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename File</DialogTitle>
+            <DialogDescription>
+              Enter a new name for the file.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Input
+              value={renameInput}
+              onChange={(e) => setRenameInput(e.target.value)}
+              placeholder="Enter file name"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmRenameFile();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFileToRename(null)}>Cancel</Button>
+            <Button onClick={confirmRenameFile}>Rename</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✨ Bulk Delete Dialog */}
+      <Dialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Files</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedDocumentIds.length} files? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkDeleteDialog(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmBulkDelete}>Delete All</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

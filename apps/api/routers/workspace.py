@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Header
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from models import Workspace, Folder, Tab, HistoryItem, Document
-from utils.supabase_client import get_supabase_client
+from utils.supabase_client import get_supabase_client, get_storage_client
 
 router = APIRouter()
 
@@ -15,6 +15,10 @@ class FolderCreate(BaseModel):
 class FolderUpdate(BaseModel):
     name: Optional[str] = None
     color: Optional[str] = None
+
+
+class FileUpdate(BaseModel):
+    name: Optional[str] = None
 
 
 def get_user_id_from_token(authorization: str) -> str:
@@ -303,3 +307,81 @@ async def get_file_content(file_id: str):
     except Exception as e:
         print(f"Error fetching file content: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch file content: {str(e)}")
+
+
+
+@router.put("/{workspace_id}/files/{file_id}")
+async def update_file(
+    workspace_id: str,
+    file_id: str,
+    file_update: FileUpdate,
+    authorization: str = Header(...)
+):
+    """
+    Update a file (e.g. rename) for the authenticated user.
+    """
+    user_id = get_user_id_from_token(authorization)
+    supabase = get_supabase_client()
+    
+    try:
+        update_data = {}
+        if file_update.name is not None:
+            update_data["name"] = file_update.name
+            
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No update data provided")
+            
+        # RLS will enforce user_id check, but good to be explicit/safe
+        response = supabase.table("files").update(update_data).eq("id", file_id).eq("user_id", user_id).execute()
+        
+        if response.data:
+            return response.data[0]
+        
+        # If no data returned, item might not exist or belong to user
+        raise HTTPException(status_code=404, detail="File not found or access denied")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error updating file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/{workspace_id}/files/{file_id}")
+async def delete_file(
+    workspace_id: str,
+    file_id: str,
+    authorization: str = Header(...)
+):
+    """
+    Delete a file for the authenticated user (DB record + Storage).
+    """
+    user_id = get_user_id_from_token(authorization)
+    supabase = get_supabase_client()
+    storage = get_storage_client()
+    
+    try:
+        # 1. Get file metadata to find storage path
+        file_res = supabase.table("files").select("storage_path").eq("id", file_id).eq("user_id", user_id).execute()
+        if not file_res.data:
+            # Idempotent delete: If file doesn't exist, consider it deleted.
+            return {"success": True, "deleted_id": file_id, "message": "File already deleted or not found"}
+        
+        storage_path = file_res.data[0]['storage_path']
+        
+        # 2. Delete from DB
+        supabase.table("files").delete().eq("id", file_id).eq("user_id", user_id).execute()
+        
+        # 3. Delete from Storage (Best effort)
+        try:
+            storage.from_("documents").remove([storage_path])
+        except Exception as e:
+            print(f"Storage delete warning: {e}")
+            
+        return {"success": True, "deleted_id": file_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

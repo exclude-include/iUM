@@ -131,35 +131,51 @@ async def ingest_document(
 
         # 4. 문서 처리 (텍스트 추출)
         documents: List[Document] = []
-        if file.content_type == "application/pdf" or file.filename.endswith(".pdf"):
-            documents = await process_pdf_file(tmp_file_path, file.filename)
-        else:
-            documents = await process_text_file(tmp_file_path, file.filename)
+        try:
+            # Explicitly check for images to skip
+            if file.content_type.startswith("image/") or file.filename.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg")):
+                print(f"Skipping text extraction for image file: {file.filename}")
             
-        if not documents:
-            raise HTTPException(status_code=400, detail="No content extracted from the file")
+            elif file.content_type == "application/pdf" or file.filename.endswith(".pdf"):
+                documents = await process_pdf_file(tmp_file_path, file.filename)
+            
+            elif file.content_type.startswith("text/") or file.filename.endswith((".txt", ".md", ".py", ".js", ".jsx", ".ts", ".tsx", ".html", ".css", ".json", ".csv")):
+                 # Only process explicitly text-like files
+                documents = await process_text_file(tmp_file_path, file.filename)
+            
+            else:
+                print(f"Skipping text extraction for unsupported type: {file.filename} ({file.content_type})")
+        except Exception as e:
+            print(f"Error processing document: {e}")
+            # 에러가 나도 파일 업로드는 성공으로 처리 (Vector DB만 스킵)
+            pass
+            
+        # ✨ 내용이 있는 경우에만 Vector DB 저장
+        if documents:
+            # 빈 문서 필터링
+            documents = [doc for doc in documents if doc.page_content and doc.page_content.strip()]
+            
+            if documents:
+                # 5. 메타데이터 주입
+                for doc in documents:
+                    doc.metadata["source"] = file.filename
+                    doc.metadata["folder_id"] = folder_id
+                    doc.metadata["type"] = "pdf" if file.filename.endswith(".pdf") else "text"
+                    doc.metadata["document_id"] = new_file_id 
 
-        # 5. 메타데이터 주입 (검색 필터링을 위해 document_id 필수)
-        for doc in documents:
-            doc.metadata["source"] = file.filename
-            doc.metadata["folder_id"] = folder_id
-            doc.metadata["type"] = "pdf" if file.filename.endswith(".pdf") else "text"
-            # ✨ 중요: 이 ID로 나중에 "이 파일에서만 검색해줘" 기능 구현
-            doc.metadata["document_id"] = new_file_id 
-
-        # 6. 벡터 스토어(Chroma)에 저장
-        ids = add_documents_to_vector_store(
-            documents=documents,
-            collection_name=collection_name
-        )
+                # 6. 벡터 스토어(Chroma)에 저장
+                add_documents_to_vector_store(
+                    documents=documents,
+                    collection_name=collection_name
+                )
         
         return JSONResponse(
             status_code=200,
             content={
                 "message": "File processed and saved successfully",
                 "filename": file.filename,
-                "document_ids": [new_file_id], # 프론트엔드는 이 DB ID를 추적함
-                "chunks_created": len(ids),
+                "document_ids": [new_file_id],
+                "chunks_created": len(documents) if documents else 0,
                 "collection": collection_name,
                 "storage_path": storage_path
             }
@@ -168,7 +184,7 @@ async def ingest_document(
     except Exception as e:
         raise HTTPException(
             status_code=500,
-            detail=f"Error processing document: {str(e)}"
+            detail=f"Error processing document (Outer): {str(e)}"
         )
     
     finally:
