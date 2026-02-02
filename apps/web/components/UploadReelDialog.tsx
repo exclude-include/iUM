@@ -13,11 +13,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useGooglePicker } from "@/hooks/useGooglePicker";
-import { Upload, Loader2, FileVideo, Link2, HardDrive } from "lucide-react";
+import { Upload, Loader2, FileVideo, Link2, HardDrive, Plus, Trash2, HelpCircle } from "lucide-react";
 import { useSocialStore } from "./SocialMode/useSocialStore";
 import { api } from "@/lib/api";
-import { Upload, Loader2, FileVideo, Link2, Plus, Trash2, HelpCircle } from "lucide-react";
-import { useSocialStore } from "./SocialMode/useSocialStore";
 import type { ReelQuiz, ReelQuizOption } from "@/types/api";
 import { cn } from "@/lib/utils";
 
@@ -71,8 +69,6 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
   const [quizExplanation, setQuizExplanation] = useState("");
   const [quizTimestamp, setQuizTimestamp] = useState<string>(""); // seconds as string for input
 
-  const { toast } = useToast();
-
   // Quiz helper functions
   const addQuizOption = () => {
     if (quizOptions.length >= 6) return;
@@ -94,7 +90,6 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
       setQuizAnswer("");
     } else {
       // Update answer key if needed
-      const oldKey = quizOptions[index].key;
       const answerIndex = quizOptions.findIndex(o => o.key === quizAnswer);
       if (answerIndex > index) {
         setQuizAnswer(String.fromCharCode(65 + answerIndex - 1));
@@ -254,11 +249,10 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
     }
   };
 
-  // Auto-add folder name as hashtag when it changes
-  const handleFolderNameChange = (value: string) => {
-    setFolderName(value);
-    if (value.trim()) {
-      const folderTag = value.trim().toLowerCase().replace(/\s+/g, "_");
+  // Auto-add folder name as hashtag when input loses focus
+  const handleFolderNameBlur = () => {
+    if (folderName.trim()) {
+      const folderTag = folderName.trim().toLowerCase().replace(/\s+/g, "_");
       if (!hashtags.includes(folderTag)) {
         addHashtag(folderTag);
       }
@@ -482,11 +476,12 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
             <Input
               placeholder="e.g., Math, Physics, Programming"
               value={folderName}
-              onChange={(e) => handleFolderNameChange(e.target.value)}
+              onChange={(e) => setFolderName(e.target.value)}
+              onBlur={handleFolderNameBlur}
               disabled={isUploading}
             />
             <p className="text-xs text-muted-foreground">
-              Auto-generates hashtag for recommendations
+              Auto-generates hashtag when you finish typing (on blur)
             </p>
           </div>
 
