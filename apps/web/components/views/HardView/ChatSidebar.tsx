@@ -256,19 +256,33 @@ export function ChatSidebar() {
     userMessageCountRef.current += 1;
 
     try {
-      // ✨ [핵심 수정] 3번째 인자로 상태 업데이트 콜백 전달
-      const response = await api.chat.sendMessage(
-        input.trim(),
-        {
-          conversationId: conversationId || undefined,
-          collectionName: "user_knowledge",
-          folderId: activeFolderId || undefined,
-        },
-        // Callback: 서버에서 스트리밍으로 오는 상태 메시지를 실시간으로 UI에 반영
-        (statusMessage) => {
-          setLoadingStatus(statusMessage);
-        }
-      );
+      let response;
+
+      // ✨ [NEW] 파일이 있으면 multimodal API 사용
+      if (attachedFile) {
+        response = await api.chat.sendMessageWithFile(
+          input.trim() || "이 이미지에 대해 설명해주세요",
+          attachedFile,
+          (statusMessage) => {
+            setLoadingStatus(statusMessage);
+          }
+        );
+        // 전송 후 파일 초기화
+        removeAttachedFile();
+      } else {
+        // 기존 텍스트 전용 API
+        response = await api.chat.sendMessage(
+          input.trim(),
+          {
+            conversationId: conversationId || undefined,
+            collectionName: "user_knowledge",
+            folderId: activeFolderId || undefined,
+          },
+          (statusMessage) => {
+            setLoadingStatus(statusMessage);
+          }
+        );
+      }
 
       if (response.conversation_id) {
         setConversationId(response.conversation_id);

@@ -82,7 +82,7 @@ async def get_conversation_history(conversation_id: str):
         )
     ]
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File as FastAPIFile, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional
@@ -91,7 +91,7 @@ import os
 import logging
 from models import ChatMessage
 # query_rag_chain과 generate_study_summary를 가져옵니다.
-from utils.rag_chain import query_rag_chain, generate_study_summary
+from utils.rag_chain import query_rag_chain, generate_study_summary, query_rag_chain_multimodal
 
 router = APIRouter()
 
@@ -150,6 +150,56 @@ async def chat_with_agent_stream(request: ChatRequest):
             yield f"data: {error_data}\n\n"
 
     # SSE(Server-Sent Events) 프로토콜 사용
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+# ✨ [NEW] Multimodal Endpoint - 이미지 + 텍스트 처리
+@router.post("/message/multimodal")
+async def chat_with_image(
+    message: str = Form(...),
+    file: Optional[UploadFile] = FastAPIFile(None)
+):
+    """
+    Multimodal chat endpoint - supports image + text.
+    Uses Gemini Vision for image analysis.
+    """
+    
+    # Google API Key 체크
+    if not os.getenv("GOOGLE_API_KEY"):
+        async def key_error_generator():
+            error_data = json.dumps({
+                "status": "error",
+                "message": "[System] Google API Key is missing."
+            })
+            yield f"data: {error_data}\n\n"
+        return StreamingResponse(key_error_generator(), media_type="text/event-stream")
+    
+    # 파일 읽기
+    image_data = None
+    image_mime_type = "image/jpeg"
+    
+    if file:
+        image_data = await file.read()
+        image_mime_type = file.content_type or "image/jpeg"
+        logging.info(f"Received file: {file.filename}, type: {image_mime_type}, size: {len(image_data)} bytes")
+    
+    async def event_generator():
+        try:
+            async for update in query_rag_chain_multimodal(
+                question=message,
+                image_data=image_data,
+                image_mime_type=image_mime_type,
+                model_name=MODEL_NAME,
+            ):
+                yield f"data: {json.dumps(update, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logging.error(f"Multimodal Error: {str(e)}")
+            error_data = json.dumps({
+                "status": "error",
+                "message": f"Server Error: {str(e)}"
+            }, ensure_ascii=False)
+            yield f"data: {error_data}\n\n"
+    
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 

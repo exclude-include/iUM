@@ -27,7 +27,7 @@ async function fetchApi<T>(
   options?: RequestInit
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  
+
   try {
     const response = await fetch(url, {
       ...options,
@@ -75,7 +75,7 @@ export const chatApi = {
     onStatusUpdate?: (status: string) => void
   ): Promise<ChatResponse> {
     const url = `${API_BASE_URL}/api/agent/message`; // Endpoint updated to match backend router
-    
+
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -108,7 +108,7 @@ export const chatApi = {
           const chunk = decoder.decode(value, { stream: true });
           // SSE 데이터 파싱 (data: {...})
           const lines = chunk.split("\n\n");
-          
+
           for (const line of lines) {
             if (line.startsWith("data: ")) {
               try {
@@ -173,6 +173,82 @@ export const chatApi = {
       body: JSON.stringify({ messages: messageDicts }),
     });
   },
+
+  /**
+   * ✨ [NEW] Send a message with optional file attachment (multimodal)
+   * Uses FormData instead of JSON for file upload support
+   */
+  async sendMessageWithFile(
+    message: string,
+    file?: File,
+    onStatusUpdate?: (status: string) => void
+  ): Promise<ChatResponse> {
+    const url = `${API_BASE_URL}/api/agent/message/multimodal`;
+
+    try {
+      const formData = new FormData();
+      formData.append("message", message);
+      if (file) {
+        formData.append("file", file);
+      }
+
+      const response = await fetch(url, {
+        method: "POST",
+        body: formData,
+        // Note: Don't set Content-Type header - browser will set it with boundary
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Request failed: ${response.statusText}`);
+      }
+
+      // Stream reader for SSE
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let finalResult: ChatResponse | null = null;
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split("\n\n");
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const jsonStr = line.replace("data: ", "");
+                const data = JSON.parse(jsonStr);
+
+                if (data.status === "progress") {
+                  if (onStatusUpdate) onStatusUpdate(data.message);
+                } else if (data.status === "complete") {
+                  finalResult = data.data;
+                } else if (data.status === "error") {
+                  throw new Error(data.message);
+                }
+              } catch (e) {
+                // Ignore JSON parse errors for partial chunks
+              }
+            }
+          }
+        }
+      }
+
+      if (!finalResult) {
+        throw new Error("No valid response received from the server.");
+      }
+
+      return finalResult;
+
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error("Unknown error occurred during multimodal request");
+    }
+  },
 };
 
 /**
@@ -195,7 +271,7 @@ export const ingestApi = {
     }
 
     const url = `${API_BASE_URL}/api/ingest/upload`; // Endpoint path adjusted based on standard router
-    
+
     try {
       const response = await fetch(url, {
         method: "POST",

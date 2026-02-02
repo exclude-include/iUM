@@ -5,11 +5,13 @@ Refactored: STRICT JSON Escaping & SAFE MERMAID Rules
 import os
 import json
 import re
-from typing import Optional, Dict, Any, List
+import base64
+from typing import Optional, Dict, Any, List, Union
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.messages import HumanMessage
 from utils.vector_store import get_retriever
 from utils.opik_config import trace
 
@@ -359,3 +361,101 @@ Return JSON: {{"title": "Topic", "category": "concept"}}"""
         return {"title": "General Study", "category": "concept"}
     except:
         return {"title": "General Study", "category": "concept"}
+
+
+# ✨ [NEW] Multimodal Query Function for Image + Text
+MULTIMODAL_PROMPT = """You are an expert AI tutor named iUM. Analyze the provided image and answer the user's question.
+
+If the image contains:
+- **Math/Equations**: Solve step by step
+- **Diagrams/Charts**: Explain the concepts shown
+- **Code**: Analyze and explain the code
+- **Text/Documents**: Summarize and answer based on content
+
+User's question: {question}
+
+Provide a clear, educational response. Use markdown formatting."""
+
+
+@trace
+async def query_rag_chain_multimodal(
+    question: str,
+    image_data: Optional[bytes] = None,
+    image_mime_type: str = "image/jpeg",
+    model_name: str = "models/gemini-2.5-flash",
+):
+    """
+    Query with multimodal input (text + optional image).
+    Yields status updates and finally the result.
+    
+    Args:
+        question: User's text question
+        image_data: Optional image bytes
+        image_mime_type: MIME type of image (image/jpeg, image/png, etc.)
+        model_name: Gemini model to use
+    """
+    
+    # 📡 Status 1: Starting
+    if image_data:
+        yield {"status": "progress", "step": "analyzing", "message": "Analyzing image... 🖼️"}
+    else:
+        yield {"status": "progress", "step": "processing", "message": "Processing question... 🤔"}
+    
+    try:
+        llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=0,
+            google_api_key=os.getenv("GOOGLE_API_KEY")
+        )
+        
+        # Build message content
+        content: List[Dict[str, Any]] = []
+        
+        # Add text
+        prompt_text = MULTIMODAL_PROMPT.format(question=question)
+        content.append({"type": "text", "text": prompt_text})
+        
+        # Add image if provided
+        if image_data:
+            b64_image = base64.standard_b64encode(image_data).decode("utf-8")
+            content.append({
+                "type": "image_url",
+                "image_url": f"data:{image_mime_type};base64,{b64_image}"
+            })
+        
+        # Create HumanMessage with multimodal content
+        message = HumanMessage(content=content)
+        
+        # 📡 Status 2: Generating
+        yield {"status": "progress", "step": "generating", "message": "Generating response... ✍️"}
+        
+        # Invoke LLM
+        response = await llm.ainvoke([message])
+        answer = response.content
+        
+    except Exception as e:
+        yield {
+            "status": "error",
+            "data": {
+                "message": f"Error processing multimodal request: {str(e)}",
+                "sources": [],
+                "reasoning_chain": ["Error"]
+            }
+        }
+        return
+    
+    # Build result
+    result = {
+        "message": answer,
+        "conversation_id": "multimodal-temp",
+        "sources": [],
+        "reasoning_chain": ["Analyzed with Gemini Vision" if image_data else "Text-only response"]
+    }
+    
+    # Try to parse learning unit if present
+    parsed_answer, learning_unit = parse_learning_unit_from_response(answer)
+    if learning_unit:
+        result["message"] = parsed_answer
+        result["learning_unit"] = learning_unit
+    
+    yield {"status": "complete", "data": result}
