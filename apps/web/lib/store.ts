@@ -56,6 +56,14 @@ export interface Cell {
   updatedAt?: number;
 }
 
+// Sync info for tabs linked to Supabase files
+export interface TabSyncInfo {
+  fileId: string;       // Supabase file ID
+  folderId: string;     // Folder where the file is stored
+  fileName: string;     // Current file name in storage
+  lastSyncedAt: number; // Last successful sync timestamp
+}
+
 // NotebookTab interface - container for multiple cells (like .ipynb)
 export interface NotebookTab {
   id: string;
@@ -63,6 +71,7 @@ export interface NotebookTab {
   cells: Cell[];
   createdAt: number;
   updatedAt: number;
+  syncInfo?: TabSyncInfo; // Optional sync info when saved to Supabase
 }
 
 // Bookmark reference for sidebar navigation
@@ -82,6 +91,30 @@ export interface LearningUnitInput {
   diagram_description?: string;
   mermaid_code?: string;
   quiz_data?: QuizQuestion[];
+}
+
+// .ium file format - like .ipynb but for iUM notebooks
+export interface IumFile {
+  version: string; // e.g., "1.0"
+  metadata: {
+    title: string;
+    createdAt: number;
+    updatedAt: number;
+    author?: string;
+  };
+  cells: Array<{
+    id: string;
+    type: CellType;
+    title: string;
+    content: string;
+    equations?: string[];
+    diagram_description?: string;
+    mermaid_code?: string;
+    quiz_data?: QuizQuestion[];
+    isBookmarked: boolean;
+    createdAt: number;
+    updatedAt?: number;
+  }>;
 }
 
 /** @deprecated Use LearningUnitInput for API inputs, Cell for internal state */
@@ -233,6 +266,18 @@ interface AppState {
 
   // ✨ [추가] 서버에서 파일 목록 불러오기 액션
   fetchFiles: () => Promise<void>;
+
+  // .ium file actions - save/load notebook tabs
+  exportTabAsIum: (tabId: string) => IumFile | null;
+  saveTabToSupabase: (tabId: string, folderId: string) => Promise<{ success: boolean; fileId?: string; error?: string }>;
+  loadTabFromIum: (iumData: IumFile, folderId?: string, fileId?: string) => string;
+
+  // Auto-sync actions
+  syncTabToSupabase: (tabId: string) => Promise<void>;
+  setSyncInfo: (tabId: string, syncInfo: TabSyncInfo) => void;
+  _pendingSyncs: Set<string>; // Track tabs that need syncing
+  _syncDebounceTimers: Map<string, NodeJS.Timeout>; // Debounce timers per tab
+  queueTabSync: (tabId: string, immediate?: boolean) => void; // Queue a tab for sync with debounce
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -249,11 +294,29 @@ export const useAppStore = create<AppState>((set, get) => ({
   notebookActiveTabId: null,
   scrollToCellId: null,
 
-  createNotebookTab: (title = "Untitled Notebook") => {
-    const id = `notebook-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  createNotebookTab: (title) => {
+    const state = get();
+    let finalTitle: string;
+
+    // Auto-generate unique title if not provided or is default
+    if (!title || title === "New Notebook" || title === "Untitled Notebook") {
+      const existingTitles = state.notebookTabs.map((t) => t.title);
+      let counter = 1;
+      let candidateTitle = "Notebook 1";
+
+      while (existingTitles.includes(candidateTitle)) {
+        counter++;
+        candidateTitle = `Notebook ${counter}`;
+      }
+      finalTitle = candidateTitle;
+    } else {
+      finalTitle = title;
+    }
+
+    const id = `notebook-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
     const newTab: NotebookTab = {
       id,
-      title,
+      title: finalTitle,
       cells: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -298,6 +361,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         tab.id === tabId ? { ...tab, title: newTitle, updatedAt: Date.now() } : tab
       ),
     }));
+    // Immediate sync for rename (user expects file name to change right away)
+    get().queueTabSync(tabId, true);
   },
 
   appendCellToActiveTab: (unit) => {
@@ -332,6 +397,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       scrollToCellId: cellId,
     }));
 
+    // Queue auto-sync
+    if (tabId) get().queueTabSync(tabId);
+
     return cellId;
   },
 
@@ -357,6 +425,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       }),
     }));
 
+    // Queue auto-sync
+    get().queueTabSync(tabId);
+
     return cellId;
   },
 
@@ -368,6 +439,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           : tab
       ),
     }));
+    // Queue auto-sync
+    get().queueTabSync(tabId);
   },
 
   moveCellToNewTab: (sourceTabId, cellId, newTabTitle) => {
@@ -402,6 +475,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       scrollToCellId: cellId,
     }));
 
+    // Queue auto-sync for source tab (cell was removed)
+    get().queueTabSync(sourceTabId);
+
     return newTabId;
   },
 
@@ -419,6 +495,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           : tab
       ),
     }));
+    // Queue auto-sync
+    get().queueTabSync(tabId);
   },
 
   toggleBookmark: (tabId, cellId) => {
@@ -435,6 +513,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           : tab
       ),
     }));
+    // Queue auto-sync
+    get().queueTabSync(tabId);
   },
 
   getBookmarkedCells: () => {
@@ -898,6 +978,287 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch (error) {
       console.error("Failed to fetch files:", error);
+    }
+  },
+
+  // .ium file actions
+  exportTabAsIum: (tabId) => {
+    const state = get();
+    const tab = state.notebookTabs.find((t) => t.id === tabId);
+
+    if (!tab) {
+      console.error("Tab not found:", tabId);
+      return null;
+    }
+
+    const iumFile: IumFile = {
+      version: "1.0",
+      metadata: {
+        title: tab.title,
+        createdAt: tab.createdAt,
+        updatedAt: tab.updatedAt,
+        author: undefined, // Can be set from user context
+      },
+      cells: tab.cells.map((cell) => ({
+        id: cell.id,
+        type: cell.type,
+        title: cell.title,
+        content: cell.content,
+        equations: cell.equations,
+        diagram_description: cell.diagram_description,
+        mermaid_code: cell.mermaid_code,
+        quiz_data: cell.quiz_data,
+        isBookmarked: cell.isBookmarked,
+        createdAt: cell.createdAt,
+        updatedAt: cell.updatedAt,
+      })),
+    };
+
+    return iumFile;
+  },
+
+  saveTabToSupabase: async (tabId, folderId) => {
+    const state = get();
+    const tab = state.notebookTabs.find((t) => t.id === tabId);
+    const iumFile = state.exportTabAsIum(tabId);
+
+    if (!iumFile || !tab) {
+      return { success: false, error: "Tab not found" };
+    }
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const fileName = `${iumFile.metadata.title.replace(/[^a-zA-Z0-9가-힣]/g, "_")}.ium`;
+      const fileContent = JSON.stringify(iumFile, null, 2);
+      const blob = new Blob([fileContent], { type: "application/json" });
+
+      // Get auth token
+      const { createClient } = await import("@supabase/supabase-js");
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const formData = new FormData();
+      formData.append("file", blob, fileName);
+      formData.append("collection_name", "user_knowledge");
+      formData.append("folder_id", folderId);
+
+      const headers: HeadersInit = {};
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
+      const response = await fetch(`${apiUrl}/api/ingest/upload`, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        return { success: false, error: error.detail || "Upload failed" };
+      }
+
+      const data = await response.json();
+      const fileId = data.document_ids?.[0] || `ium-${Date.now()}`;
+
+      // Add to folder files (check if not already exists)
+      const folder = state.knowledgeFolders.find((f) => f.id === folderId);
+      if (folder && !folder.files.some((f) => f.id === fileId)) {
+        const uploadedFile = {
+          id: fileId,
+          name: fileName,
+          uploadedAt: Date.now(),
+        };
+        get().addFileToFolder(folderId, uploadedFile);
+      }
+
+      // Update tab with sync info
+      const syncInfo: TabSyncInfo = {
+        fileId,
+        folderId,
+        fileName,
+        lastSyncedAt: Date.now(),
+      };
+      get().setSyncInfo(tabId, syncInfo);
+
+      return { success: true, fileId };
+    } catch (error) {
+      console.error("Failed to save .ium file:", error);
+      return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+    }
+  },
+
+  loadTabFromIum: (iumData, folderId, fileId) => {
+    const state = get();
+
+    // Check if this file is already open (by fileId in syncInfo)
+    if (fileId) {
+      const existingTab = state.notebookTabs.find(
+        (tab) => tab.syncInfo?.fileId === fileId
+      );
+      if (existingTab) {
+        // Already open - just focus on it
+        set({ notebookActiveTabId: existingTab.id });
+        return existingTab.id;
+      }
+    }
+
+    const tabId = `notebook-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+    const fileName = `${iumData.metadata.title.replace(/[^a-zA-Z0-9가-힣]/g, "_")}.ium`;
+
+    const newTab: NotebookTab = {
+      id: tabId,
+      title: iumData.metadata.title,
+      cells: iumData.cells.map((cell) => ({
+        id: cell.id || `cell-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
+        type: cell.type,
+        title: cell.title,
+        content: cell.content,
+        equations: cell.equations,
+        diagram_description: cell.diagram_description,
+        mermaid_code: cell.mermaid_code,
+        quiz_data: cell.quiz_data,
+        isBookmarked: cell.isBookmarked || false,
+        createdAt: cell.createdAt || Date.now(),
+        updatedAt: cell.updatedAt,
+      })),
+      createdAt: iumData.metadata.createdAt || Date.now(),
+      updatedAt: Date.now(),
+      // Set syncInfo if fileId is provided (so auto-sync works)
+      syncInfo: fileId ? {
+        fileId,
+        folderId: folderId || "",
+        fileName,
+        lastSyncedAt: Date.now(),
+      } : undefined,
+    };
+
+    set((state) => ({
+      notebookTabs: [...state.notebookTabs, newTab],
+      notebookActiveTabId: tabId,
+    }));
+
+    return tabId;
+  },
+
+  // Auto-sync state
+  _pendingSyncs: new Set<string>(),
+  _syncDebounceTimers: new Map<string, NodeJS.Timeout>(),
+
+  setSyncInfo: (tabId, syncInfo) => {
+    set((state) => ({
+      notebookTabs: state.notebookTabs.map((tab) =>
+        tab.id === tabId ? { ...tab, syncInfo } : tab
+      ),
+    }));
+  },
+
+  // Sync a single tab to Supabase (update existing file)
+  syncTabToSupabase: async (tabId) => {
+    const state = get();
+    const tab = state.notebookTabs.find((t) => t.id === tabId);
+
+    if (!tab || !tab.syncInfo) {
+      // Not synced yet, skip auto-sync
+      return;
+    }
+
+    const { syncInfo } = tab;
+    const iumFile = state.exportTabAsIum(tabId);
+
+    if (!iumFile) return;
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const newFileName = `${iumFile.metadata.title.replace(/[^a-zA-Z0-9가-힣]/g, "_")}.ium`;
+      const fileContent = JSON.stringify(iumFile, null, 2);
+      const blob = new Blob([fileContent], { type: "application/json" });
+
+      // Get auth token
+      const { createClient } = await import("@supabase/supabase-js");
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const formData = new FormData();
+      formData.append("file", blob, newFileName);
+      formData.append("collection_name", "user_knowledge");
+      formData.append("folder_id", syncInfo.folderId);
+      // Signal to backend to update existing file
+      formData.append("file_id", syncInfo.fileId);
+      formData.append("update_existing", "true");
+
+      const headers: HeadersInit = {};
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
+      const response = await fetch(`${apiUrl}/api/ingest/upload`, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
+
+      if (response.ok) {
+        // Update sync info with new timestamp and filename
+        const updatedSyncInfo: TabSyncInfo = {
+          ...syncInfo,
+          fileName: newFileName,
+          lastSyncedAt: Date.now(),
+        };
+        get().setSyncInfo(tabId, updatedSyncInfo);
+
+        // Update file name in folder if changed
+        if (syncInfo.fileName !== newFileName) {
+          set((state) => ({
+            knowledgeFolders: state.knowledgeFolders.map((folder) =>
+              folder.id === syncInfo.folderId
+                ? {
+                    ...folder,
+                    files: folder.files.map((f) =>
+                      f.id === syncInfo.fileId ? { ...f, name: newFileName } : f
+                    ),
+                  }
+                : folder
+            ),
+          }));
+        }
+
+        console.log(`Auto-synced tab "${tab.title}" to Supabase`);
+      }
+    } catch (error) {
+      console.error("Auto-sync failed:", error);
+    }
+  },
+
+  // Queue a tab for sync with debounce (500ms default, can be immediate)
+  queueTabSync: (tabId, immediate = false) => {
+    const state = get();
+    const tab = state.notebookTabs.find((t) => t.id === tabId);
+
+    // Only queue if tab has sync info (has been saved before)
+    if (!tab?.syncInfo) return;
+
+    // Clear existing timer for this tab
+    const existingTimer = state._syncDebounceTimers.get(tabId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    // Immediate sync or debounced
+    if (immediate) {
+      get().syncTabToSupabase(tabId);
+    } else {
+      // Set new debounce timer (500ms for quick feedback)
+      const timer = setTimeout(() => {
+        get().syncTabToSupabase(tabId);
+        get()._syncDebounceTimers.delete(tabId);
+      }, 500);
+
+      state._syncDebounceTimers.set(tabId, timer);
     }
   },
 }));

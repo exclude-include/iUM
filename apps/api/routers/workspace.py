@@ -21,10 +21,10 @@ def get_user_id_from_token(authorization: str) -> str:
     """Extract user_id from Supabase JWT token"""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-    
+
     token = authorization.replace("Bearer ", "")
     supabase = get_supabase_client()
-    
+
     try:
         # Verify and decode the JWT token
         user_response = supabase.auth.get_user(token)
@@ -40,12 +40,12 @@ def get_user_id_from_token(authorization: str) -> str:
 async def get_workspace(workspace_id: str):
     """
     Fetches the workspace structure.
-    (Currently keeps mock structure for folders/history, 
+    (Currently keeps mock structure for folders/history,
      but files will be synced via the get_folders endpoint)
     """
     if workspace_id != "default":
         raise HTTPException(status_code=404, detail="Workspace not found")
-    
+
     # 기본 폴더 구조 (프론트엔드와 동기화됨)
     mock_workspace = Workspace(
         id="default",
@@ -73,7 +73,7 @@ async def get_workspace(workspace_id: str):
         ],
         history=[]
     )
-    
+
     return mock_workspace
 
 
@@ -87,27 +87,27 @@ async def get_folders(
     Returns folders with their associated files.
     """
     supabase = get_supabase_client()
-    
+
     # If no auth header, return empty (user not logged in)
     if not authorization:
         return {"folders": [], "files": []}
-    
+
     try:
         user_id = get_user_id_from_token(authorization)
-        
+
         # Get user's folders from DB
         folders_response = supabase.table("folders").select("*").eq("user_id", user_id).execute()
         folders = folders_response.data or []
-        
+
         # Get user's files from DB
         files_response = supabase.table("files").select("*").execute()
         files = files_response.data or []
-        
+
         return {
             "folders": folders,
             "files": files
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -126,18 +126,18 @@ async def create_folder(
     """
     user_id = get_user_id_from_token(authorization)
     supabase = get_supabase_client()
-    
+
     try:
         response = supabase.table("folders").insert({
             "user_id": user_id,
             "name": folder.name,
             "color": folder.color
         }).execute()
-        
+
         if response.data:
             return response.data[0]
         raise HTTPException(status_code=500, detail="Failed to create folder")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -157,23 +157,23 @@ async def update_folder(
     """
     user_id = get_user_id_from_token(authorization)
     supabase = get_supabase_client()
-    
+
     try:
         update_data = {}
         if folder.name is not None:
             update_data["name"] = folder.name
         if folder.color is not None:
             update_data["color"] = folder.color
-        
+
         if not update_data:
             raise HTTPException(status_code=400, detail="No update data provided")
-        
+
         response = supabase.table("folders").update(update_data).eq("id", folder_id).eq("user_id", user_id).execute()
-        
+
         if response.data:
             return response.data[0]
         raise HTTPException(status_code=404, detail="Folder not found")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -192,12 +192,114 @@ async def delete_folder(
     """
     user_id = get_user_id_from_token(authorization)
     supabase = get_supabase_client()
-    
+
     try:
         response = supabase.table("folders").delete().eq("id", folder_id).eq("user_id", user_id).execute()
-        
+
         return {"success": True, "deleted_id": folder_id}
-        
+
     except Exception as e:
         print(f"Error deleting folder: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/file/{file_id}")
+async def delete_file(
+    file_id: str,
+    authorization: str = Header(...)
+):
+    """
+    Delete a file from both Supabase Storage and DB.
+    Also cleans up vector store entries for the file.
+    """
+    user_id = get_user_id_from_token(authorization)
+    supabase = get_supabase_client()
+
+    try:
+        # 1. Get file metadata to find storage_path
+        # First try to find file by id (user_id might be null for older files)
+        file_response = supabase.table("files").select("*").eq("id", file_id).execute()
+
+        if not file_response.data or len(file_response.data) == 0:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        file_data = file_response.data[0]
+
+        # Verify ownership if user_id exists on the file
+        file_owner = file_data.get("user_id")
+        if file_owner and file_owner != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this file")
+
+        storage_path = file_data.get("storage_path")
+
+        # 2. Delete from Supabase Storage
+        if storage_path:
+            try:
+                supabase.storage.from_("documents").remove([storage_path])
+            except Exception as e:
+                print(f"Warning: Failed to delete from storage: {e}")
+                # Continue even if storage delete fails
+
+        # 3. Delete from files table (DB)
+        supabase.table("files").delete().eq("id", file_id).execute()
+
+        # 4. Clean up vector store entries for this file
+        try:
+            from utils.vector_store import get_vector_store
+            vector_store = get_vector_store(collection_name="user_knowledge")
+            # Delete all chunks with this document_id
+            vector_store._collection.delete(where={"document_id": file_id})
+        except Exception as e:
+            print(f"Warning: Failed to clean up vector store: {e}")
+            # Continue even if vector cleanup fails
+
+        return {
+            "success": True,
+            "deleted_id": file_id,
+            "storage_path": storage_path
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error deleting file: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/file/{file_id}/content")
+async def get_file_content(file_id: str):
+    """
+    Get the content of a file from Supabase Storage.
+    Used for opening .ium notebook files.
+    """
+    supabase = get_supabase_client()
+
+    try:
+        # First get file metadata from DB to get storage_path
+        file_response = supabase.table("files").select("*").eq("id", file_id).execute()
+
+        if not file_response.data or len(file_response.data) == 0:
+            raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
+
+        file_data = file_response.data[0]
+        storage_path = file_data.get("storage_path")
+
+        if not storage_path:
+            raise HTTPException(status_code=404, detail="File storage path not found")
+
+        # Download file content from Supabase Storage
+        file_content = supabase.storage.from_("documents").download(storage_path)
+
+        # For .ium files, parse as JSON and return
+        if storage_path.endswith(".ium") or file_data.get("name", "").endswith(".ium"):
+            import json
+            return json.loads(file_content.decode("utf-8"))
+
+        # For other files, return as text
+        return {"content": file_content.decode("utf-8")}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching file content: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch file content: {str(e)}")

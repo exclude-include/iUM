@@ -40,6 +40,8 @@ async def ingest_document(
     file: UploadFile = File(...),
     collection_name: str = Form("user_knowledge"),
     folder_id: Optional[str] = Form(None),
+    file_id: Optional[str] = Form(None),  # ✨ 기존 파일 ID (업데이트 시 사용)
+    update_existing: Optional[str] = Form(None),  # ✨ "true"면 기존 파일 업데이트
     authorization: Optional[str] = Header(None) # ✨ 인증 토큰 추가
 ):
     """
@@ -81,9 +83,12 @@ async def ingest_document(
 
     try:
         # 2. Supabase Storage에 영구 저장
-        # 경로: folder_id/filename (폴더가 없으면 root/filename)
-        storage_path = f"{folder_id}/{file.filename}" if folder_id else file.filename
-        
+        # 한글 파일명은 Storage에서 InvalidKey 오류 발생하므로 UUID 사용
+        # 원래 파일명은 DB에 저장
+        import uuid
+        safe_filename = f"{uuid.uuid4().hex}{file_ext}"
+        storage_path = f"{folder_id}/{safe_filename}" if folder_id else safe_filename
+
         try:
             # upsert='true'로 설정하여 덮어쓰기 허용
             supabase.storage.from_("documents").upload(
@@ -94,21 +99,35 @@ async def ingest_document(
         except Exception as e:
             print(f"Storage upload warning (might exist): {e}")
 
-        # 3. Supabase DB (files 테이블)에 메타데이터 저장
-        file_data = {
-            "name": file.filename,
-            "folder_id": folder_id or "root",
-            "storage_path": storage_path,
-            "content_type": file.content_type,
-            "size": len(content),
-            "user_id": user_id  # ✨ user_id 추가 (None일 수 있음)
-        }
-        
-        # DB Insert & Return ID
-        db_res = supabase.table("files").insert(file_data).execute()
-        
-        # 새로 생성된 파일 ID (이것이 NotebookLM 기능의 핵심 ID가 됨)
-        new_file_id = db_res.data[0]['id'] if db_res.data else f"temp-{os.urandom(4).hex()}"
+        # 3. Supabase DB (files 테이블)에 메타데이터 저장 또는 업데이트
+        is_update = update_existing == "true" and file_id
+
+        if is_update:
+            # ✨ 기존 파일 업데이트 (이름 변경, 내용 변경 등)
+            update_data = {
+                "name": file.filename,
+                "storage_path": storage_path,
+                "content_type": file.content_type,
+                "size": len(content),
+            }
+            db_res = supabase.table("files").update(update_data).eq("id", file_id).execute()
+            new_file_id = file_id
+        else:
+            # 새 파일 생성
+            file_data = {
+                "name": file.filename,
+                "folder_id": folder_id or "root",
+                "storage_path": storage_path,
+                "content_type": file.content_type,
+                "size": len(content),
+                "user_id": user_id  # ✨ user_id 추가 (None일 수 있음)
+            }
+
+            # DB Insert & Return ID
+            db_res = supabase.table("files").insert(file_data).execute()
+
+            # 새로 생성된 파일 ID (이것이 NotebookLM 기능의 핵심 ID가 됨)
+            new_file_id = db_res.data[0]['id'] if db_res.data else f"temp-{os.urandom(4).hex()}"
 
         # 4. 문서 처리 (텍스트 추출)
         documents: List[Document] = []

@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark } from "lucide-react";
+import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, NotebookPen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/lib/store";
+import { useAppStore, IumFile } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { useGooglePicker } from "@/hooks/useGooglePicker";
 import { api } from "@/lib/api";
@@ -32,12 +32,14 @@ export function FolderSidebar() {
     createFolder,
     deleteFolder,
     addFileToFolder,
+    removeFileFromFolder,
     userStreak,
     selectedDocumentIds,
     toggleDocumentSelection,
     isMindMapOpen,
     setMindMapOpen,
     fetchFiles,
+    loadTabFromIum,
   } = useAppStore();
 
   const { toast } = useToast();
@@ -213,6 +215,109 @@ export function FolderSidebar() {
     }
   };
 
+  // Handle opening .ium files
+  const handleOpenIumFile = async (file: { id: string; name: string; url?: string }) => {
+    if (!file.name.endsWith(".ium")) return;
+
+    // Check if this file is already open (quick check before fetching)
+    const existingTab = useAppStore.getState().notebookTabs.find(
+      (tab) => tab.syncInfo?.fileId === file.id
+    );
+    if (existingTab) {
+      // Already open - just focus on it
+      useAppStore.getState().setNotebookActiveTab(existingTab.id);
+      toast({
+        title: "Notebook focused",
+        description: `"${existingTab.title}" is already open.`,
+      });
+      return;
+    }
+
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      // Fetch the .ium file content from storage
+      const response = await fetch(`${apiUrl}/api/workspace/file/${file.id}/content`);
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch file");
+      }
+
+      const iumData: IumFile = await response.json();
+
+      // Load the tab from the .ium data (pass fileId for sync tracking)
+      loadTabFromIum(iumData, activeFolderId || undefined, file.id);
+
+      toast({
+        title: "Notebook opened",
+        description: `Opened "${iumData.metadata.title}" with ${iumData.cells.length} cells.`,
+      });
+    } catch (error) {
+      console.error("Failed to open .ium file:", error);
+      toast({
+        title: "Failed to open notebook",
+        description: error instanceof Error ? error.message : "Unknown error occurred.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Check if file is a .ium notebook file
+  const isIumFile = (fileName: string) => fileName.endsWith(".ium");
+
+  // Handle file deletion
+  const handleDeleteFile = async (file: { id: string; name: string }) => {
+    if (!activeFolderId) return;
+
+    const confirmed = window.confirm(`Are you sure you want to delete "${file.name}"?`);
+    if (!confirmed) return;
+
+    try {
+      // Get session token
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (session?.access_token) {
+        // Delete from Supabase (Storage + DB + Vector Store)
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const response = await fetch(`${apiUrl}/api/workspace/file/${file.id}`, {
+          method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${session.access_token}`
+          }
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.detail || "Failed to delete from server");
+        }
+      }
+
+      // Remove from local store
+      removeFileFromFolder(activeFolderId, file.name);
+
+      // If it's an .ium file, also close the tab if it's open
+      if (file.name.endsWith(".ium")) {
+        const openTab = useAppStore.getState().notebookTabs.find(
+          (tab) => tab.syncInfo?.fileId === file.id
+        );
+        if (openTab) {
+          useAppStore.getState().closeTab(openTab.id);
+        }
+      }
+
+      toast({
+        title: "File deleted",
+        description: `"${file.name}" has been permanently deleted.`,
+      });
+    } catch (error) {
+      console.error("Failed to delete file:", error);
+      toast({
+        title: "Delete failed",
+        description: error instanceof Error ? error.message : "Could not delete the file.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
     <div className="flex h-full flex-col bg-background border-r">
       {/* Header */}
@@ -316,7 +421,7 @@ export function FolderSidebar() {
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".pdf,.txt,.md"
+                    accept=".pdf,.txt,.md,.ium"
                     className="hidden"
                     onChange={handleFileUpload}
                   />
@@ -327,35 +432,70 @@ export function FolderSidebar() {
                   <div className="space-y-1 ml-2">
                     {activeFolder.files.map((file, index) => {
                       const isSelected = selectedDocumentIds.includes(file.id);
+                      const isNotebook = isIumFile(file.name);
                       return (
                         <div
                           key={`${file.id}-${index}`}
-                          className="flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-muted/50 p-1 rounded"
+                          className={cn(
+                            "group flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-muted/50 p-1 rounded",
+                            isNotebook && "hover:bg-primary/10"
+                          )}
+                          onClick={() => {
+                            if (isNotebook) {
+                              handleOpenIumFile(file);
+                            }
+                          }}
                         >
-                          {/* 체크박스 영역 */}
-                          <div
-                            className="shrink-0 cursor-pointer flex items-center justify-center h-4 w-4"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleDocumentSelection(file.id);
-                            }}
-                          >
-                            {isSelected ? (
-                              <CheckSquare className="h-3.5 w-3.5 text-primary" />
-                            ) : (
-                              <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
-                            )}
-                          </div>
+                          {/* 체크박스 영역 - not for .ium files */}
+                          {!isNotebook ? (
+                            <div
+                              className="shrink-0 cursor-pointer flex items-center justify-center h-4 w-4"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleDocumentSelection(file.id);
+                              }}
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="h-3.5 w-3.5 text-primary" />
+                              ) : (
+                                <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
+                              )}
+                            </div>
+                          ) : (
+                            <div className="shrink-0 flex items-center justify-center h-4 w-4">
+                              <NotebookPen className="h-3.5 w-3.5 text-primary" />
+                            </div>
+                          )}
 
                           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                            <FileText className="h-3 w-3 shrink-0 opacity-70" />
+                            {isNotebook ? (
+                              <NotebookPen className="h-3 w-3 shrink-0 text-primary" />
+                            ) : (
+                              <FileText className="h-3 w-3 shrink-0 opacity-70" />
+                            )}
                             <span
-                              className={cn("truncate cursor-pointer", isSelected && "text-foreground font-medium")}
-                              title={file.name}
+                              className={cn(
+                                "truncate cursor-pointer",
+                                isSelected && "text-foreground font-medium",
+                                isNotebook && "text-primary hover:underline"
+                              )}
+                              title={isNotebook ? `Click to open "${file.name}"` : file.name}
                             >
                               {file.name}
                             </span>
                           </div>
+
+                          {/* Delete button - appears on hover */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteFile(file);
+                            }}
+                            className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-destructive/10"
+                            title={`Delete "${file.name}"`}
+                          >
+                            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                          </button>
                         </div>
                       );
                     })}
