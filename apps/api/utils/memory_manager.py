@@ -2,9 +2,11 @@
 Memory Manager for iUM Agent
 Phase 1: Working Memory (Conversation Buffer Window)
 Phase 2: Episodic Memory (Supabase Persistent Storage)
+Phase 3: Semantic Memory (Long-term User Profiles)
 
-Provides context from recent messages to enable multi-turn conversations
-AND persists conversation history to Supabase for durability.
+Provides context from recent messages to enable multi-turn conversations,
+persists conversation history to Supabase, and personalizes responses
+based on user learning profiles.
 """
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
@@ -363,14 +365,13 @@ class MemoryManager:
     
     Phase 1: Working Memory - Recent N messages for multi-turn context
     Phase 2: Episodic Memory - Supabase persistent storage
-    
-    Future phases will add:
-    - Semantic Memory: Long-term user profiles
+    Phase 3: Semantic Memory - Long-term user profiles
     """
     
     # In-memory store for session memories (keyed by user_id:folder_id)
     _sessions: Dict[str, WorkingMemory] = {}
     _episodic: Dict[str, EpisodicMemory] = {}
+    _semantic: Dict[str, Any] = {}  # SemanticMemory instances
     
     def __init__(
         self, 
@@ -406,11 +407,15 @@ class MemoryManager:
                 folder_id=self.folder_id
             )
         self.episodic_memory = MemoryManager._episodic[self._session_key]
+        
+        # Get or create semantic memory (for user profiles - Phase 3)
+        self.semantic_memory = None  # Lazy loaded to avoid import issues
     
     async def load_session(self) -> bool:
         """
-        Load existing session from Supabase (Phase 2).
-        Call this when starting a chat to restore previous conversation.
+        Load existing session from Supabase (Phase 2 + Phase 3).
+        Call this when starting a chat to restore previous conversation
+        and load user profile.
         
         Returns:
             True if session was loaded, False otherwise
@@ -419,7 +424,7 @@ class MemoryManager:
             return True
         
         try:
-            # Initialize Supabase session
+            # Initialize Supabase session (Phase 2)
             session_id = await self.episodic_memory.load_or_create_session()
             
             if session_id:
@@ -429,6 +434,9 @@ class MemoryManager:
                     self.working_memory.set_messages(messages)
                     logger.info(f"Restored {len(messages)} messages from Supabase")
             
+            # Load user profile (Phase 3)
+            await self._load_semantic_memory()
+            
             self._session_loaded = True
             return bool(session_id)
             
@@ -436,6 +444,23 @@ class MemoryManager:
             logger.error(f"Error loading session: {e}")
             self._session_loaded = True  # Mark as loaded to prevent retry loops
             return False
+    
+    async def _load_semantic_memory(self) -> None:
+        """Load semantic memory (user profile) - Phase 3."""
+        try:
+            from utils.semantic_memory import SemanticMemory
+            
+            if self._session_key not in MemoryManager._semantic:
+                MemoryManager._semantic[self._session_key] = SemanticMemory(
+                    user_id=self.user_id
+                )
+            
+            self.semantic_memory = MemoryManager._semantic[self._session_key]
+            await self.semantic_memory.load_profile()
+            
+        except Exception as e:
+            logger.warning(f"Failed to load semantic memory: {e}")
+            self.semantic_memory = None
     
     async def add_user_message_async(self, content: str) -> ChatMessage:
         """
@@ -497,6 +522,41 @@ class MemoryManager:
         """
         return self.working_memory.get_context_string(include_current=False)
     
+    def get_full_context(self) -> str:
+        """
+        Get full context including user profile and conversation history.
+        This combines semantic memory (profile) with working memory (messages).
+        
+        Returns:
+            Combined context string for LLM prompts
+        """
+        parts = []
+        
+        # Add user profile context (Phase 3)
+        if self.semantic_memory:
+            profile_context = self.semantic_memory.get_context_string()
+            if profile_context:
+                parts.append(profile_context)
+        
+        # Add conversation history (Phase 1)
+        conversation_context = self.working_memory.get_context_string(include_current=False)
+        if conversation_context:
+            parts.append("## Previous Conversation\n" + conversation_context)
+        
+        return "\n\n".join(parts) if parts else ""
+    
+    def get_user_profile(self) -> Optional[Any]:
+        """Get the user profile if loaded."""
+        if self.semantic_memory:
+            return self.semantic_memory.profile
+        return None
+    
+    def get_expertise_level(self) -> str:
+        """Get user's expertise level for response customization."""
+        if self.semantic_memory:
+            return self.semantic_memory.get_expertise_level()
+        return "beginner"
+    
     def get_messages(self) -> List[ChatMessage]:
         """Get all messages in working memory."""
         return self.working_memory.get_messages()
@@ -519,6 +579,7 @@ class MemoryManager:
         """Clear all session memories (useful for testing)."""
         cls._sessions.clear()
         cls._episodic.clear()
+        cls._semantic.clear()
 
 
 # Singleton accessor for dependency injection

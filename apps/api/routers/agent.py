@@ -140,6 +140,9 @@ async def chat_with_agent_stream(request: ChatRequest):
     
     # 이전 대화 컨텍스트 가져오기
     conversation_context = memory_manager.get_conversation_context()
+    
+    # ✨ [Phase 3] 사용자 프로필 컨텍스트 가져오기
+    user_profile_context = memory_manager.get_full_context() if memory_manager.semantic_memory else ""
 
     async def event_generator():
         try:
@@ -152,7 +155,8 @@ async def chat_with_agent_stream(request: ChatRequest):
                 model_name=MODEL_NAME,
                 k=4,
                 folder_id=request.folder_id,
-                conversation_context=conversation_context  # ✨ 대화 컨텍스트 전달
+                conversation_context=conversation_context,
+                user_profile_context=user_profile_context  # ✨ [Phase 3] 프로필 컨텍스트 전달
             ):
                 # 데이터를 SSE 포맷(data: {...}\n\n)으로 변환하여 전송
                 # ensure_ascii=False로 한글 깨짐 방지

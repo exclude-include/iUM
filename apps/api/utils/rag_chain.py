@@ -25,6 +25,7 @@ FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to expl
 **Answering Rules:**
 1. Check `context` first. Cite sources using.
 2. If context is empty, use general knowledge.
+3. **Adapt to user's level:** If user profile is provided, adjust complexity accordingly.
 
 **Learning Unit Generation (CRITICAL):**
 You MUST generate a structured Learning Unit JSON wrapped in <LEARNING_UNIT> tags.
@@ -50,8 +51,8 @@ Used when the user asks "What is...", "Explain...", or creates code/math content
 Used ONLY when the user asks for a "quiz".
 
 * **"type":** "quiz"
-* **"message":** "I've prepared a quiz!"
-* **"content":** "## Quiz Time!\\nTest your knowledge below."
+* **"message": "I've prepared a quiz!"
+* **"content": "## Quiz Time!\\nTest your knowledge below."
 * **"quiz_data":** Generate 3-5 questions (use "question_text", and options list of objects).
 
 ---
@@ -86,6 +87,8 @@ Used ONLY when the user asks for a "quiz".
 }}
 </LEARNING_UNIT>
 
+{user_profile}
+
 ## Previous Conversation (for multi-turn context)
 {conversation_history}
 
@@ -99,7 +102,7 @@ Your response (as iUM):"""
 
 prompt_template = PromptTemplate(
     template=FEYNMAN_TUTOR_PROMPT,
-    input_variables=["context", "question", "conversation_history"]
+    input_variables=["context", "question", "conversation_history", "user_profile"]
 )
 
 
@@ -144,7 +147,8 @@ async def query_rag_chain(
     k: int = 4,
     folder_id: Optional[str] = None,
     document_ids: Optional[List[str]] = None,
-    conversation_context: Optional[str] = None  # ✨ [Phase 1] 대화 컨텍스트 추가
+    conversation_context: Optional[str] = None,  # Phase 1: 대화 컨텍스트
+    user_profile_context: Optional[str] = None   # Phase 3: 사용자 프로필 컨텍스트
 ):
     """
     Query the RAG chain with status streaming.
@@ -208,13 +212,17 @@ async def query_rag_chain(
         
         context_text = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else ""
         
-        # ✨ [Phase 1] 대화 히스토리 컨텍스트 추가 (없으면 빈 문자열)
+        # Phase 1: 대화 히스토리 컨텍스트
         history_text = conversation_context or "No previous conversation."
+        
+        # Phase 3: 사용자 프로필 컨텍스트
+        profile_text = user_profile_context or ""
         
         final_prompt = prompt_template.format(
             context=context_text, 
             question=question,
-            conversation_history=history_text
+            conversation_history=history_text,
+            user_profile=profile_text
         )
         
         # 📡 [상태 전송 3]

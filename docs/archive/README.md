@@ -6,9 +6,11 @@
 
 ```
 docs/archive/
-├── README.md                           # 이 파일
-├── 2026-02-02_phase2_memory_plan.md    # Phase 2 메모리 시스템 구현 계획
-└── 2026-02-02_phase2_memory_walkthrough.md  # Phase 2 구현 완료 워크스루
+├── README.md
+├── 2026-02-02_phase2_memory_plan.md
+├── 2026-02-02_phase2_memory_walkthrough.md
+├── 2026-02-02_phase3_semantic_plan.md
+└── 2026-02-02_phase3_semantic_walkthrough.md
 ```
 
 ## 📋 문서 목록
@@ -17,19 +19,14 @@ docs/archive/
 | 날짜 | 제목 | 상태 |
 |------|------|------|
 | 2026-02-02 | [Phase 2: Supabase Memory Storage](./2026-02-02_phase2_memory_plan.md) | ✅ 완료 |
+| 2026-02-02 | [Phase 3: Semantic Memory](./2026-02-02_phase3_semantic_plan.md) | ✅ 완료 |
 
 ### Walkthroughs
 | 날짜 | 제목 | 관련 Plan |
 |------|------|-----------|
-| 2026-02-02 | [Phase 2 Memory Walkthrough](./2026-02-02_phase2_memory_walkthrough.md) | Phase 2 Plan |
-
-## 📝 참고 사항
-
-- 기존 `MEMORY_SYSTEM_PLAN.md`는 전체 메모리 시스템 설계 문서로 `docs/` 루트에 유지
-- 아카이브된 문서는 날짜_주제_유형.md 형식으로 명명
-- 구현 완료 후에는 반드시 Walkthrough 문서 작성
+| 2026-02-02 | [Phase 2 Walkthrough](./2026-02-02_phase2_memory_walkthrough.md) | Phase 2 |
+| 2026-02-02 | [Phase 3 Walkthrough](./2026-02-02_phase3_semantic_walkthrough.md) | Phase 3 |
 
 ## 🔗 관련 문서
 
-- [MEMORY_SYSTEM_PLAN.md](../MEMORY_SYSTEM_PLAN.md) - 전체 메모리 시스템 설계
-- [IMPLEMENTATION_SUMMARY.md](../IMPLEMENTATION_SUMMARY.md) - 프로젝트 전체 구현 요약
+- [MEMORY_SYSTEM_PLAN.md](./MEMORY_SYSTEM_PLAN.md) - 전체 메모리 시스템 설계
