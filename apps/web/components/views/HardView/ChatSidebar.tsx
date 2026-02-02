@@ -29,13 +29,13 @@ import "katex/dist/katex.min.css";
 
 export function ChatSidebar() {
   const {
-    addLearningTab,
+    appendCellToActiveTab,
     addTimelineEvent,
     knowledgeFolders,
     activeFolderId,
     addMessageToFolder,
     setActiveSources,
-    selectedDocumentIds, // ✨ store에서 가져옴
+    selectedDocumentIds,
   } = useAppStore();
 
   const router = useRouter();
@@ -238,7 +238,7 @@ export function ChatSidebar() {
       }
 
       if (response.learning_unit) {
-        addLearningTab(response.learning_unit);
+        appendCellToActiveTab(response.learning_unit);
       }
 
       const assistantMessage: ChatMessage = {

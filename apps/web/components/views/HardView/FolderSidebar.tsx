@@ -1,9 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react"; // ✨ [수정] useEffect 추가
-import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles } from "lucide-react";
+import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -11,7 +10,7 @@ import { useAppStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { HistoryTimeline } from "@/components/HistoryTimeline";
-import { Checkbox } from "@/components/ui/checkbox"; 
+import { BookmarksSection } from "./BookmarksSection"; 
 
 // Color presets for folders
 const FOLDER_COLORS = [
@@ -263,7 +262,20 @@ export function FolderSidebar() {
 
       <Separator />
 
-      {/* Section 2: HISTORY */}
+      {/* Section 2: BOOKMARKS */}
+      <div className="shrink-0 border-t bg-muted/20">
+        <div className="flex items-center justify-between px-3 py-2 border-b">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+            <Bookmark className="h-3 w-3" />
+            BOOKMARKS
+          </h3>
+        </div>
+        <div className="p-2 max-h-[120px] overflow-y-auto">
+          <BookmarksSection />
+        </div>
+      </div>
+
+      {/* Section 3: HISTORY */}
       <div className="shrink-0 border-t bg-muted/30">
         <div className="flex items-center justify-between px-3 py-2 border-b">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -278,7 +290,7 @@ export function FolderSidebar() {
         </div>
       </div>
 
-      {/* Section 3: LEARNING STATUS */}
+      {/* Section 4: LEARNING STATUS */}
       <div className="shrink-0 border-t bg-card">
         <div className="p-2.5">
           <h3 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">

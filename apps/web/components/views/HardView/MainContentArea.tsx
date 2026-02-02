@@ -1,181 +1,232 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
-import { Moon, Sun, X } from "lucide-react";
+import { Moon, Sun, X, Plus, FileText } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { MathContent } from "./MathContent";
 import { SourcesPanel } from "./SourcesPanel";
-import { QuizView } from "@/components/QuizView";
-import { Mermaid } from "@/components/Mermaid"; // Mermaid 컴포넌트 임포트 확인 필요
+import { CellRenderer } from "./CellRenderer";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
-import ReactMarkdown from "react-markdown";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
-import remarkGfm from "remark-gfm";
-import { BlockMath } from "react-katex";
 import "katex/dist/katex.min.css";
 
-// 헬퍼 함수들은 이제 필요 없으므로 삭제하거나 무시해도 됩니다.
-
 export function MainContentArea() {
-  const { activeDocument, learningTabs, activeTabId, setActiveTab, closeTab } = useAppStore();
+  const {
+    activeDocument,
+    notebookTabs,
+    notebookActiveTabId,
+    setNotebookActiveTab,
+    deleteNotebookTab,
+    createNotebookTab,
+    scrollToCellId,
+    clearScrollTarget,
+  } = useAppStore();
+
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  
-  // 타입 캐스팅
-  const activeLearningUnit = learningTabs.find((tab) => tab.id === activeTabId) as any;
+
+  // Ref map for scroll-to-cell functionality
+  const cellRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  // Get active notebook tab
+  const activeTab = notebookTabs.find((tab) => tab.id === notebookActiveTabId);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  // Handle scroll-to-cell with delay for render completion
+  useEffect(() => {
+    if (scrollToCellId) {
+      // Wait for render to complete before scrolling
+      const timeoutId = setTimeout(() => {
+        const cellElement = cellRefs.current.get(scrollToCellId);
+        if (cellElement) {
+          cellElement.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }
+        clearScrollTarget();
+      }, 100);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [scrollToCellId, notebookActiveTabId, clearScrollTarget]);
+
+  // Callback ref setter for cells
+  const setCellRef = useCallback((cellId: string, element: HTMLDivElement | null) => {
+    if (element) {
+      cellRefs.current.set(cellId, element);
+    } else {
+      cellRefs.current.delete(cellId);
+    }
+  }, []);
+
+  const handleCreateNewTab = () => {
+    createNotebookTab("New Notebook");
+  };
+
   return (
     <div className="flex h-full flex-col bg-background">
-      {/* --- 상단 탭바 (기존 코드 유지) --- */}
+      {/* --- Tab Bar --- */}
       <div className="flex items-center justify-between border-b bg-background">
         <div className="flex-1 overflow-x-auto scrollbar-hide">
           <div className="flex items-center gap-1 px-2 py-1.5 min-w-fit">
-            {learningTabs.map((tab) => (
+            {/* Notebook Tabs */}
+            {notebookTabs.map((tab) => (
               <div
                 key={tab.id}
                 className={cn(
                   "group flex items-center gap-1.5 rounded-t px-3 py-1.5 text-xs font-medium transition-colors border-b-2 border-transparent min-w-0",
-                  activeTabId === tab.id
+                  notebookActiveTabId === tab.id
                     ? "bg-accent text-foreground border-primary"
                     : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                 )}
               >
                 <button
-                  onClick={() => setActiveTab(tab.id)}
-                  className="truncate max-w-[200px] text-left flex-1"
-                  title={tab.title}
+                  onClick={() => setNotebookActiveTab(tab.id)}
+                  className="truncate max-w-[180px] text-left flex-1 flex items-center gap-1.5"
+                  title={`${tab.title} (${tab.cells.length} cells)`}
                 >
-                  {tab.title}
+                  <FileText className="h-3 w-3 flex-shrink-0" />
+                  <span className="truncate">{tab.title}</span>
+                  {tab.cells.length > 0 && (
+                    <span className="text-[10px] text-muted-foreground">
+                      ({tab.cells.length})
+                    </span>
+                  )}
                 </button>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    closeTab(tab.id);
+                    deleteNotebookTab(tab.id);
                   }}
                   className={cn(
                     "opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 hover:bg-background/50",
-                    activeTabId === tab.id && "opacity-100"
+                    notebookActiveTabId === tab.id && "opacity-100"
                   )}
+                  title="Close tab"
                 >
                   <X className="h-3 w-3" />
                 </button>
               </div>
             ))}
+
+            {/* Document Tab (if active) */}
             {activeDocument && (
-              <div className={cn(
+              <div
+                className={cn(
                   "flex items-center gap-1.5 rounded-t px-3 py-1.5 text-xs font-medium transition-colors border-b-2 border-transparent",
-                  !activeTabId && !activeLearningUnit ? "bg-accent text-foreground border-primary" : "text-muted-foreground"
-                )}>
-                <button onClick={() => setActiveTab(null)} className="truncate max-w-[200px]">{activeDocument.title}</button>
+                  !notebookActiveTabId
+                    ? "bg-accent text-foreground border-primary"
+                    : "text-muted-foreground hover:bg-accent/50"
+                )}
+              >
+                <button
+                  onClick={() => setNotebookActiveTab(null)}
+                  className="truncate max-w-[180px]"
+                  title={activeDocument.title}
+                >
+                  {activeDocument.title}
+                </button>
               </div>
             )}
+
+            {/* New Tab Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 flex-shrink-0"
+              onClick={handleCreateNewTab}
+              title="Create new notebook"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
           </div>
         </div>
+
+        {/* Theme Toggle */}
         {mounted && (
           <div className="px-2 border-l">
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-              {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            >
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
             </Button>
           </div>
         )}
       </div>
 
-      {/* --- 메인 콘텐츠 영역 --- */}
+      {/* --- Main Content Area --- */}
       <ScrollArea className="flex-1">
         <div className="p-4">
-          {activeLearningUnit && activeTabId ? (
-            activeLearningUnit.type === "quiz" && activeLearningUnit.quiz_data ? (
-              <QuizView questions={activeLearningUnit.quiz_data} />
+          {/* Active Notebook Tab Content */}
+          {activeTab && notebookActiveTabId ? (
+            activeTab.cells.length > 0 ? (
+              <div className="space-y-4">
+                {activeTab.cells.map((cell) => (
+                  <CellRenderer
+                    key={cell.id}
+                    cell={cell}
+                    tabId={activeTab.id}
+                    ref={(el) => setCellRef(cell.id, el)}
+                  />
+                ))}
+              </div>
             ) : (
-              <Card className="p-6 bg-background border-border">
-                {/* 제목 */}
-                <h1 className="text-2xl font-bold mb-4 text-foreground">
-                  {activeLearningUnit.title}
-                </h1>
-                
-                {/* 타입 뱃지 */}
-                <div className="mb-4">
-                  <span className={cn(
-                    "inline-block px-2.5 py-1 rounded text-xs font-medium",
-                    "bg-primary/10 text-primary uppercase"
-                  )}>
-                    {activeLearningUnit.type}
-                  </span>
-                </div>
-
-                {/* ❌ 삭제됨: 맨 위에 강제로 그리던 Mermaid 블록 삭제 */}
-                
-                {/* 텍스트 콘텐츠 (Markdown) */}
-                <div className="prose prose-sm max-w-none dark:prose-invert">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkMath, remarkGfm]}
-                    rehypePlugins={[rehypeKatex]}
-                    components={{
-                      // ✨✨ [핵심 수정] 코드 블록을 만났을 때, 언어가 'mermaid'면 바로 그리기
-                      code: (props: any) => {
-                        const { inline, className, children, ...rest } = props;
-                        const match = /language-(\w+)/.exec(className || "");
-                        const isMermaid = match && match[1] === "mermaid";
-                        
-                        // 내용 추출
-                        const content = String(children).replace(/\n$/, "");
-
-                        if (!inline && isMermaid) {
-                          // 본문 중간에 Mermaid 컴포넌트 렌더링
-                          return (
-                            <div className="my-6 flex justify-center p-4 bg-white/50 dark:bg-black/20 rounded-lg border border-border/50 overflow-hidden">
-                              <Mermaid chart={content} />
-                            </div>
-                          );
-                        }
-
-                        return !inline ? (
-                          <code className={cn("block rounded bg-muted p-3 text-sm overflow-x-auto font-mono", className)} {...rest}>
-                            {children}
-                          </code>
-                        ) : (
-                          <code className={cn("rounded bg-muted/50 px-1.5 py-0.5 text-sm font-mono", className)} {...rest}>
-                            {children}
-                          </code>
-                        );
-                      }
-                    }}
-                  >
-                    {activeLearningUnit.content || "No content available."}
-                  </ReactMarkdown>
-                </div>
-                
-                {/* 수식 (Equations) */}
-                {activeLearningUnit.equations && activeLearningUnit.equations.length > 0 && (
-                  <div className="mt-6 space-y-4">
-                    {activeLearningUnit.equations.map((equation: string, idx: number) => (
-                      <div key={idx} className="p-4 bg-muted rounded-lg border border-border">
-                        <BlockMath math={equation} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Card>
+              <EmptyTabState tabTitle={activeTab.title} />
             )
-          ) : activeDocument && !activeTabId ? (
-             <MathContent document={activeDocument} />
+          ) : activeDocument && !notebookActiveTabId ? (
+            /* Document View */
+            <MathContent document={activeDocument} />
           ) : (
-             <div className="flex h-full min-h-[400px] flex-col items-center justify-center text-center px-4">
-               <p className="text-muted-foreground">Select content to view</p>
-            </div>
+            /* No Tab Selected State */
+            <NoTabSelectedState onCreateTab={handleCreateNewTab} />
           )}
         </div>
       </ScrollArea>
+
       <SourcesPanel />
+    </div>
+  );
+}
+
+// Empty tab state component
+function EmptyTabState({ tabTitle }: { tabTitle: string }) {
+  return (
+    <div className="flex h-full min-h-[400px] flex-col items-center justify-center text-center px-4">
+      <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
+      <h3 className="text-lg font-medium text-foreground mb-2">{tabTitle}</h3>
+      <p className="text-sm text-muted-foreground max-w-sm">
+        This notebook is empty. Start a conversation with the AI tutor to add learning content here.
+      </p>
+    </div>
+  );
+}
+
+// No tab selected state component
+function NoTabSelectedState({ onCreateTab }: { onCreateTab: () => void }) {
+  return (
+    <div className="flex h-full min-h-[400px] flex-col items-center justify-center text-center px-4">
+      <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
+      <h3 className="text-lg font-medium text-foreground mb-2">No Notebook Selected</h3>
+      <p className="text-sm text-muted-foreground mb-4 max-w-sm">
+        Select a notebook tab or create a new one to start learning.
+      </p>
+      <Button onClick={onCreateTab} variant="outline" size="sm">
+        <Plus className="h-4 w-4 mr-2" />
+        Create New Notebook
+      </Button>
     </div>
   );
 }

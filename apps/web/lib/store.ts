@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type { Document } from "@/types";
 import type { ChatMessage } from "@/types/api";
 
@@ -37,16 +38,64 @@ export interface QuizQuestion {
   explanation: string;
 }
 
+// Cell type for notebook cells
+export type CellType = "concept" | "math" | "code" | "summary" | "quiz";
+
+// Cell interface - a single learning unit within a notebook tab
+export interface Cell {
+  id: string;
+  type: CellType;
+  title: string;
+  content: string; // Markdown text
+  equations?: string[]; // LaTeX strings
+  diagram_description?: string;
+  mermaid_code?: string;
+  quiz_data?: QuizQuestion[];
+  isBookmarked: boolean;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+// NotebookTab interface - container for multiple cells (like .ipynb)
+export interface NotebookTab {
+  id: string;
+  title: string;
+  cells: Cell[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Bookmark reference for sidebar navigation
+export interface BookmarkRef {
+  cellId: string;
+  tabId: string;
+  cellTitle: string;
+  cellType: CellType;
+}
+
+// Input type from API/Chat responses (matches backend contract)
+export interface LearningUnitInput {
+  title: string;
+  type: CellType;
+  content: string; // Markdown text
+  equations?: string[]; // LaTeX strings
+  diagram_description?: string;
+  mermaid_code?: string;
+  quiz_data?: QuizQuestion[];
+}
+
+/** @deprecated Use LearningUnitInput for API inputs, Cell for internal state */
 export interface LearningUnit {
   title: string;
   type: "concept" | "math" | "code" | "summary" | "quiz";
   content: string; // Markdown text
   equations?: string[]; // LaTeX strings
-  diagram_description?: string; 
-  mermaid_code?: string; 
-  quiz_data?: QuizQuestion[]; 
+  diagram_description?: string;
+  mermaid_code?: string;
+  quiz_data?: QuizQuestion[];
 }
 
+/** @deprecated Use NotebookTab instead */
 export interface LearningTab extends LearningUnit {
   id: string;
   timestamp: number;
@@ -97,12 +146,38 @@ interface AppState {
   // View mode state
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
-  
+
   // Active document state
   activeDocument: ActiveDocument | null;
   setActiveDocument: (document: ActiveDocument | null) => void;
-  
-  // Learning tabs state
+
+  // === NEW: Notebook Tabs State (Multi-Cell like .ipynb) ===
+  notebookTabs: NotebookTab[];
+  notebookActiveTabId: string | null;
+  scrollToCellId: string | null;
+
+  // Notebook Tab Actions
+  createNotebookTab: (title?: string) => string;
+  deleteNotebookTab: (tabId: string) => void;
+  setNotebookActiveTab: (tabId: string | null) => void;
+  renameNotebookTab: (tabId: string, newTitle: string) => void;
+
+  // Cell Actions
+  appendCellToActiveTab: (unit: LearningUnitInput) => string;
+  insertCell: (tabId: string, cell: Omit<Cell, "id" | "createdAt" | "isBookmarked">, index?: number) => string;
+  deleteCell: (tabId: string, cellId: string) => void;
+  moveCellToNewTab: (sourceTabId: string, cellId: string, newTabTitle?: string) => string;
+  updateCell: (tabId: string, cellId: string, updates: Partial<Cell>) => void;
+
+  // Bookmark Actions
+  toggleBookmark: (tabId: string, cellId: string) => void;
+  getBookmarkedCells: () => BookmarkRef[];
+
+  // Navigation Actions
+  navigateToCell: (tabId: string, cellId: string) => void;
+  clearScrollTarget: () => void;
+
+  // === DEPRECATED: Legacy Learning Tabs (kept for backward compatibility) ===
   learningTabs: LearningTab[];
   activeTabId: string | null;
   addLearningTab: (unit: LearningUnit) => void;
@@ -160,34 +235,248 @@ interface AppState {
   fetchFiles: () => Promise<void>;
 }
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>((set, get) => ({
   // View mode state
   viewMode: "hard",
   setViewMode: (mode) => set({ viewMode: mode }),
-  
+
   // Active document state
   activeDocument: null,
   setActiveDocument: (document) => set({ activeDocument: document }),
-  
-  // Learning tabs state
-  learningTabs: [],
-  activeTabId: null,
-  
-  addLearningTab: (unit) => {
-    const id = `tab-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    const newTab: LearningTab = {
-      ...unit, 
+
+  // === NEW: Notebook Tabs State ===
+  notebookTabs: [],
+  notebookActiveTabId: null,
+  scrollToCellId: null,
+
+  createNotebookTab: (title = "Untitled Notebook") => {
+    const id = `notebook-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newTab: NotebookTab = {
       id,
-      timestamp: Date.now(),
+      title,
+      cells: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     };
     set((state) => ({
-      learningTabs: [...state.learningTabs, newTab],
-      activeTabId: id, 
+      notebookTabs: [...state.notebookTabs, newTab],
+      notebookActiveTabId: id,
+    }));
+    return id;
+  },
+
+  deleteNotebookTab: (tabId) => {
+    set((state) => {
+      const newTabs = state.notebookTabs.filter((tab) => tab.id !== tabId);
+      let newActiveTabId = state.notebookActiveTabId;
+
+      if (state.notebookActiveTabId === tabId) {
+        if (newTabs.length > 0) {
+          const closedIndex = state.notebookTabs.findIndex((tab) => tab.id === tabId);
+          if (closedIndex > 0) {
+            newActiveTabId = state.notebookTabs[closedIndex - 1].id;
+          } else {
+            newActiveTabId = newTabs[0]?.id || null;
+          }
+        } else {
+          newActiveTabId = null;
+        }
+      }
+
+      return {
+        notebookTabs: newTabs,
+        notebookActiveTabId: newActiveTabId,
+      };
+    });
+  },
+
+  setNotebookActiveTab: (tabId) => set({ notebookActiveTabId: tabId }),
+
+  renameNotebookTab: (tabId, newTitle) => {
+    set((state) => ({
+      notebookTabs: state.notebookTabs.map((tab) =>
+        tab.id === tabId ? { ...tab, title: newTitle, updatedAt: Date.now() } : tab
+      ),
     }));
   },
-  
+
+  appendCellToActiveTab: (unit) => {
+    const state = get();
+    let tabId = state.notebookActiveTabId;
+
+    // If no active tab exists, create one first
+    if (!tabId || !state.notebookTabs.find((t) => t.id === tabId)) {
+      tabId = get().createNotebookTab("Chat Session");
+    }
+
+    const cellId = `cell-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newCell: Cell = {
+      id: cellId,
+      type: unit.type,
+      title: unit.title,
+      content: unit.content,
+      equations: unit.equations,
+      diagram_description: unit.diagram_description,
+      mermaid_code: unit.mermaid_code,
+      quiz_data: unit.quiz_data,
+      isBookmarked: false,
+      createdAt: Date.now(),
+    };
+
+    set((state) => ({
+      notebookTabs: state.notebookTabs.map((tab) =>
+        tab.id === tabId
+          ? { ...tab, cells: [...tab.cells, newCell], updatedAt: Date.now() }
+          : tab
+      ),
+      scrollToCellId: cellId,
+    }));
+
+    return cellId;
+  },
+
+  insertCell: (tabId, cellData, index) => {
+    const cellId = `cell-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newCell: Cell = {
+      ...cellData,
+      id: cellId,
+      isBookmarked: false,
+      createdAt: Date.now(),
+    };
+
+    set((state) => ({
+      notebookTabs: state.notebookTabs.map((tab) => {
+        if (tab.id !== tabId) return tab;
+        const cells = [...tab.cells];
+        if (index !== undefined && index >= 0 && index <= cells.length) {
+          cells.splice(index, 0, newCell);
+        } else {
+          cells.push(newCell);
+        }
+        return { ...tab, cells, updatedAt: Date.now() };
+      }),
+    }));
+
+    return cellId;
+  },
+
+  deleteCell: (tabId, cellId) => {
+    set((state) => ({
+      notebookTabs: state.notebookTabs.map((tab) =>
+        tab.id === tabId
+          ? { ...tab, cells: tab.cells.filter((c) => c.id !== cellId), updatedAt: Date.now() }
+          : tab
+      ),
+    }));
+  },
+
+  moveCellToNewTab: (sourceTabId, cellId, newTabTitle) => {
+    const state = get();
+    const sourceTab = state.notebookTabs.find((t) => t.id === sourceTabId);
+    const cell = sourceTab?.cells.find((c) => c.id === cellId);
+
+    if (!cell) {
+      console.error("Cell not found");
+      return "";
+    }
+
+    const newTabId = `notebook-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newTab: NotebookTab = {
+      id: newTabId,
+      title: newTabTitle || cell.title || "Moved Cell",
+      cells: [{ ...cell }],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    set((state) => ({
+      notebookTabs: [
+        ...state.notebookTabs.map((tab) =>
+          tab.id === sourceTabId
+            ? { ...tab, cells: tab.cells.filter((c) => c.id !== cellId), updatedAt: Date.now() }
+            : tab
+        ),
+        newTab,
+      ],
+      notebookActiveTabId: newTabId,
+      scrollToCellId: cellId,
+    }));
+
+    return newTabId;
+  },
+
+  updateCell: (tabId, cellId, updates) => {
+    set((state) => ({
+      notebookTabs: state.notebookTabs.map((tab) =>
+        tab.id === tabId
+          ? {
+              ...tab,
+              cells: tab.cells.map((cell) =>
+                cell.id === cellId ? { ...cell, ...updates, updatedAt: Date.now() } : cell
+              ),
+              updatedAt: Date.now(),
+            }
+          : tab
+      ),
+    }));
+  },
+
+  toggleBookmark: (tabId, cellId) => {
+    set((state) => ({
+      notebookTabs: state.notebookTabs.map((tab) =>
+        tab.id === tabId
+          ? {
+              ...tab,
+              cells: tab.cells.map((cell) =>
+                cell.id === cellId ? { ...cell, isBookmarked: !cell.isBookmarked } : cell
+              ),
+              updatedAt: Date.now(),
+            }
+          : tab
+      ),
+    }));
+  },
+
+  getBookmarkedCells: () => {
+    const state = get();
+    const bookmarks: BookmarkRef[] = [];
+
+    state.notebookTabs.forEach((tab) => {
+      tab.cells.forEach((cell) => {
+        if (cell.isBookmarked) {
+          bookmarks.push({
+            cellId: cell.id,
+            tabId: tab.id,
+            cellTitle: cell.title,
+            cellType: cell.type,
+          });
+        }
+      });
+    });
+
+    return bookmarks;
+  },
+
+  navigateToCell: (tabId, cellId) => {
+    set({
+      notebookActiveTabId: tabId,
+      scrollToCellId: cellId,
+    });
+  },
+
+  clearScrollTarget: () => set({ scrollToCellId: null }),
+
+  // === DEPRECATED: Legacy Learning Tabs (backward compatibility) ===
+  learningTabs: [],
+  activeTabId: null,
+
+  addLearningTab: (unit) => {
+    // Bridge to new system - append as cell to active notebook tab
+    get().appendCellToActiveTab(unit as LearningUnitInput);
+  },
+
   setActiveTab: (id) => set({ activeTabId: id }),
-  
+
   closeTab: (id) => {
     set((state) => {
       const newTabs = state.learningTabs.filter((tab) => tab.id !== id);
