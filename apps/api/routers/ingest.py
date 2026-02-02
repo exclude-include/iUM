@@ -2,7 +2,7 @@
 Document ingestion endpoint with Supabase Storage integration
 Updated: Persists files to Supabase Storage & DB before VectorDB ingestion
 """
-from fastapi import APIRouter, UploadFile, File, HTTPException, Form
+from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Header
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 from langchain_core.documents import Document
@@ -39,7 +39,8 @@ async def process_text_file(file_path: str, original_filename: str) -> List[Docu
 async def ingest_document(
     file: UploadFile = File(...),
     collection_name: str = Form("user_knowledge"),
-    folder_id: Optional[str] = Form(None)
+    folder_id: Optional[str] = Form(None),
+    authorization: Optional[str] = Header(None) # ✨ 인증 토큰 추가
 ):
     """
     Ingest a document:
@@ -48,6 +49,20 @@ async def ingest_document(
     3. Process & Embed into VectorDB (Search)
     """
     supabase = get_supabase_client()
+    user_id = None
+    
+    # ✨ JWT 토큰에서 user_id 추출
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            token = authorization.replace("Bearer ", "")
+            user_response = supabase.auth.get_user(token)
+            if user_response and user_response.user:
+                user_id = user_response.user.id
+        except Exception as e:
+            print(f"Token verification warning: {e}")
+            # 인증 실패해도 업로드는 허용할지, 막을지 결정 필요.
+            # 현재는 RLS 때문에 user_id 없으면 DB insert 실패할 수 있음.
+            # 하지만 로컬/비로그인 테스트를 위해 예외 처리.
     
     # 1. 파일 내용을 메모리에 읽기 (Storage 업로드 및 처리용)
     content = await file.read()
@@ -85,7 +100,8 @@ async def ingest_document(
             "folder_id": folder_id or "root",
             "storage_path": storage_path,
             "content_type": file.content_type,
-            "size": len(content)
+            "size": len(content),
+            "user_id": user_id  # ✨ user_id 추가 (None일 수 있음)
         }
         
         # DB Insert & Return ID

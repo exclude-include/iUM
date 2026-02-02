@@ -10,6 +10,7 @@ import { useAppStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
 import { useGooglePicker } from "@/hooks/useGooglePicker";
 import { api } from "@/lib/api";
+import { supabase } from "@/lib/supabase/client"; // ✨ Import added
 import { HistoryTimeline } from "@/components/HistoryTimeline";
 import { BookmarksSection } from "./BookmarksSection";
 
@@ -94,10 +95,57 @@ export function FolderSidebar() {
     fetchFiles();
   }, [fetchFiles]);
 
-  const handleCreateFolder = () => {
+  const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
 
-    createFolder(newFolderName.trim(), selectedColor);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        // If not logged in, create locally only
+        createFolder(newFolderName.trim(), selectedColor);
+        toast({
+          title: "Folder created locally",
+          description: "Log in to sync across devices.",
+        });
+      } else {
+        // Create folder via API
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const response = await fetch(`${apiUrl}/api/workspace/default/folders`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session.access_token}`
+          },
+          body: JSON.stringify({
+            name: newFolderName.trim(),
+            color: selectedColor
+          })
+        });
+
+        if (response.ok) {
+          const folder = await response.json();
+          // Add folder to local state with DB id
+          createFolder(folder.name, folder.color);
+          // Refresh to get the actual DB folder
+          fetchFiles();
+          toast({
+            title: "Folder created",
+            description: `"${folder.name}" has been created.`,
+          });
+        } else {
+          throw new Error("Failed to create folder");
+        }
+      }
+    } catch (error) {
+      console.error("Error creating folder:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create folder. Please try again.",
+        variant: "destructive",
+      });
+    }
+
     setShowNewFolderModal(false);
     setNewFolderName("");
     setSelectedColor(FOLDER_COLORS[0].value);
@@ -125,7 +173,16 @@ export function FolderSidebar() {
     });
 
     try {
-      const response = await api.ingest.uploadFile(file, "user_knowledge", activeFolderId);
+      // ✨ Get session token
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await api.ingest.uploadFile(
+        file,
+        "user_knowledge",
+        activeFolderId,
+        token // ✨ Pass token
+      );
 
       const uploadedFile = {
         id: response.document_ids[0] || `doc-${Date.now()}`,

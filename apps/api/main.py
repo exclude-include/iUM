@@ -1,4 +1,7 @@
 # 1. 가장 먼저 환경 변수 로드 (순서 중요!)
+import os
+os.environ["USE_TF"] = "0"  # Disable TensorFlow in transformers
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"  # Suppress warnings
 from dotenv import load_dotenv
 load_dotenv()
 
