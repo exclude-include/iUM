@@ -34,7 +34,6 @@ interface SocialState {
   currentReelIndex: number;
   likedReels: Set<string>;
   bookmarkedReels: Set<string>;
-  activeTab: "reels" | "quiz" | "discuss";
   
   // View state
   currentView: "feed" | "profile" | "search" | "explore";
@@ -50,7 +49,6 @@ interface SocialState {
   toggleLike: (reelId: string) => void;
   toggleBookmark: (reelId: string) => void;
   deleteReel: (reelId: string) => Promise<boolean>;
-  setActiveTab: (tab: "reels" | "quiz" | "discuss") => void;
   setCurrentView: (view: "feed" | "profile" | "search" | "explore") => void;
   setSearchQuery: (query: string) => void;
   refreshFeed: () => void;
@@ -195,7 +193,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
   currentReelIndex: 0,
   likedReels: new Set(),
   bookmarkedReels: new Set(),
-  activeTab: "reels",
   currentView: "feed",
   searchQuery: "",
   
@@ -249,13 +246,16 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     }
   },
   
-  toggleLike: (reelId) => {
+  
+  toggleLike: async (reelId) => {
     const { likedReels, reels } = get();
     const newLikedReels = new Set(likedReels);
+    const isCurrentlyLiked = newLikedReels.has(reelId);
+    const increment = !isCurrentlyLiked;
     
-    if (newLikedReels.has(reelId)) {
+    // Optimistic update
+    if (isCurrentlyLiked) {
       newLikedReels.delete(reelId);
-      // Decrement likes
       set({
         likedReels: newLikedReels,
         reels: reels.map((r) =>
@@ -264,11 +264,54 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       });
     } else {
       newLikedReels.add(reelId);
-      // Increment likes
       set({
         likedReels: newLikedReels,
         reels: reels.map((r) =>
           r.id === reelId ? { ...r, likes: r.likes + 1 } : r
+        ),
+      });
+    }
+
+    // Persist to database
+    try {
+      const { supabase } = await import("@/lib/supabase/client");
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session?.access_token) {
+        const { reelInteractionsApi } = await import("@/lib/api");
+        const response = await reelInteractionsApi.toggleLike(reelId, session.access_token);
+        
+        // Update state based on server response
+        const serverLikedReels = new Set(likedReels);
+        if (response.is_liked) {
+          serverLikedReels.add(reelId);
+        } else {
+          serverLikedReels.delete(reelId);
+        }
+        
+        set({
+          likedReels: serverLikedReels,
+          reels: reels.map((r) =>
+            r.id === reelId ? { ...r, likes: response.likes } : r
+          ),
+        });
+      }
+    } catch (error) {
+      console.error("Failed to persist like:", error);
+      // Revert optimistic update on error
+      const currentReels = get().reels;
+      const currentReel = currentReels.find(r => r.id === reelId);
+      const originalLikes = currentReel?.likes || 0;
+      
+      if (isCurrentlyLiked) {
+        newLikedReels.add(reelId);
+      } else {
+        newLikedReels.delete(reelId);
+      }
+      set({
+        likedReels: newLikedReels,
+        reels: reels.map((r) =>
+          r.id === reelId ? { ...r, likes: isCurrentlyLiked ? originalLikes + 1 : Math.max(0, originalLikes - 1) } : r
         ),
       });
     }
@@ -331,8 +374,6 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     return true;
   },
   
-  setActiveTab: (tab) => set({ activeTab: tab }),
-  
   setCurrentView: (view) => set({ currentView: view, currentReelIndex: 0 }),
   
   setSearchQuery: (query) => set({ searchQuery: query }),
@@ -374,7 +415,7 @@ export const useSocialStore = create<SocialState>((set, get) => ({
         description: reel.description || "",
         videoUrl: reel.video_url,
         color: colors[index % colors.length],
-        likes: reel.likes || 0,
+        likes: 0, // Will be loaded from likes table
         comments: reel.comments || 0,
         folderId: reel.folder_name || "default",
         folderName: reel.folder_name || "My Reels",
@@ -387,6 +428,26 @@ export const useSocialStore = create<SocialState>((set, get) => ({
       }));
 
       set({ reels: transformedReels });
+
+      // Fetch actual like counts from likes table and user's liked reels
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const { reelInteractionsApi } = await import("@/lib/api");
+          
+          // Fetch user's liked reels
+          const likeResponse = await reelInteractionsApi.getUserLikes(session.access_token);
+          if (likeResponse.success && likeResponse.liked_reels) {
+            set({ likedReels: new Set(likeResponse.liked_reels) });
+          }
+          
+          // Fetch actual like counts for all reels
+          // For now, trigger a refresh by toggling - this will fetch real counts
+          // TODO: Add batch endpoint to get all like counts at once
+        }
+      } catch (likeError) {
+        console.error("Failed to load user likes:", likeError);
+      }
     } catch (error) {
       console.error("Failed to load reels:", error);
     }

@@ -13,6 +13,7 @@ import type {
   FeedResponse,
   Workspace,
   ApiError,
+  Comment,
 } from "@/types/api";
 
 // Get API base URL from environment variable
@@ -331,6 +332,110 @@ export const reelsApi = {
   },
 };
 
+/**
+ * Comments API Functions
+ */
+export const commentsApi = {
+  /**
+   * Get all comments for a reel
+   */
+  async getComments(reelId: string): Promise<Comment[]> {
+    return fetchApi<Comment[]>(`/api/comments/${reelId}`);
+  },
+
+  /**
+   * Create a new comment
+   */
+  async createComment(
+    reelId: string,
+    content: string,
+    token: string
+  ): Promise<Comment> {
+    return fetchApi<Comment>("/api/comments", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        reel_id: reelId,
+        content,
+      }),
+    });
+  },
+
+  /**
+   * Delete a comment
+   */
+  async deleteComment(commentId: string, token: string): Promise<{ success: boolean; message: string }> {
+    return fetchApi<{ success: boolean; message: string }>(`/api/comments/${commentId}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  },
+};
+
+/**
+ * Reel Interactions API
+ */
+export const reelInteractionsApi = {
+  /**
+   * Toggle like on a reel
+   */
+  toggleLike: async (reelId: string, token: string) => {
+    return fetchApi<{ success: boolean; likes: number; is_liked: boolean }>("/api/reel-interactions/like", {
+      method: "POST",
+      body: JSON.stringify({ reel_id: reelId }),
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  },
+
+  /**
+   * Increment comment count
+   */
+  incrementCommentCount: async (reelId: string, token: string) => {
+    return fetchApi<{ success: boolean; comments: number }>(
+      `/api/reel-interactions/increment-comment-count/${reelId}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+  },
+
+  /**
+   * Decrement comment count
+   */
+  decrementCommentCount: async (reelId: string, token: string) => {
+    return fetchApi<{ success: boolean; comments: number }>(
+      `/api/reel-interactions/decrement-comment-count/${reelId}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+  },
+
+  /**
+   * Get user's liked reels
+   */
+  getUserLikes: async (token: string) => {
+    return fetchApi<{ success: boolean; liked_reels: string[] }>("/api/reel-interactions/user-likes", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  },
+};
+
 // Export all APIs as a single object for convenience
 export const api = {
   chat: chatApi,
@@ -338,5 +443,7 @@ export const api = {
   feed: feedApi,
   workspace: workspaceApi,
   reels: reelsApi,
+  comments: commentsApi,
+  reelInteractions: reelInteractionsApi,
   health: checkHealth,
 };

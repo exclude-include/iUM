@@ -167,6 +167,18 @@ export interface Workspace {
   updated_at?: string;
 }
 
+// Comment Types
+export interface Comment {
+  id: string;
+  reel_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+  author_name?: string;
+  author_avatar?: string;
+}
+
 // API Error Types
 export interface ApiError {
   detail: string;
