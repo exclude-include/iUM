@@ -13,7 +13,6 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { MathContent } from "./MathContent";
-import { SourcesPanel } from "./SourcesPanel";
 import { CellRenderer } from "./CellRenderer";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
@@ -403,8 +402,6 @@ export function MainContentArea() {
           )}
         </div>
       </ScrollArea>
-
-      <SourcesPanel />
     </div>
   );
 }

@@ -13,6 +13,8 @@ import {
   ThumbsDown,
   Sparkles,
   Search,
+  PanelRightClose,
+  PanelRightOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -44,6 +46,8 @@ export function ChatSidebar() {
     addMessageToFolder,
     setActiveSources,
     selectedDocumentIds,
+    rightPanelMinimized,
+    setRightPanelMinimized,
   } = useAppStore();
 
   const router = useRouter();
@@ -304,11 +308,37 @@ export function ChatSidebar() {
     }
   };
 
+  // 최소화 시 좁은 스트립만 표시 (복원 버튼)
+  if (rightPanelMinimized) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center border-l bg-background py-2">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => setRightPanelMinimized(false)}
+          title="Expand chat"
+        >
+          <PanelRightOpen className="h-4 w-4 text-muted-foreground hover:text-primary" />
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col bg-background">
       {/* Header */}
       <div className="flex items-center justify-between border-b px-3 py-2">
         <h3 className="text-xs font-semibold uppercase tracking-wide">Chat</h3>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-5 w-5"
+          onClick={() => setRightPanelMinimized(true)}
+          title="Minimize chat"
+        >
+          <PanelRightClose className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+        </Button>
       </div>
 
       {/* Messages or Empty State */}

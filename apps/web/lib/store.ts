@@ -264,6 +264,14 @@ interface AppState {
   isMindMapOpen: boolean;
   setMindMapOpen: (isOpen: boolean) => void;
 
+  // 패널 최소화 상태 (Cursor 스타일: 좌측 메뉴, 채팅창, 하단 토글 탭)
+  leftPanelMinimized: boolean;
+  rightPanelMinimized: boolean;
+  bottomPanelMinimized: boolean;
+  setLeftPanelMinimized: (minimized: boolean) => void;
+  setRightPanelMinimized: (minimized: boolean) => void;
+  setBottomPanelMinimized: (minimized: boolean) => void;
+
   // ✨ [추가] 서버에서 파일 목록 불러오기 액션
   fetchFiles: () => Promise<void>;
 
@@ -900,6 +908,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   // 마인드맵 팝업 상태
   isMindMapOpen: false,
   setMindMapOpen: (isOpen) => set({ isMindMapOpen: isOpen }),
+
+  leftPanelMinimized: false,
+  rightPanelMinimized: false,
+  bottomPanelMinimized: false,
+  setLeftPanelMinimized: (minimized) => set({ leftPanelMinimized: minimized }),
+  setRightPanelMinimized: (minimized) => set({ rightPanelMinimized: minimized }),
+  setBottomPanelMinimized: (minimized) => set({ bottomPanelMinimized: minimized }),
 
   // ✨ [추가] 파일 목록 동기화 액션
   fetchFiles: async () => {
