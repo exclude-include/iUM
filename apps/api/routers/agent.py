@@ -134,6 +134,8 @@ class ChatRequest(BaseModel):
     collection_name: Optional[str] = "user_knowledge"
     folder_id: Optional[str] = None
     attachments: Optional[List[dict]] = None # ✨ [추가]
+    use_react: bool = True  # ✨ [추가] ReAct 에이전트 사용 여부 (기본값: True)
+    document_ids: Optional[List[str]] = None  # ✨ [추가] 선택된 문서 ID 목록
 
 # ✨ [핵심 수정] 일반 JSON 반환 대신 StreamingResponse 사용
 # 프론트엔드 api.ts에서 "/api/agent/message"로 요청하므로 경로를 "/message"로 변경했습니다.
@@ -142,6 +144,9 @@ async def chat_with_agent_stream(request: ChatRequest):
     """
     RAG Process Status Streaming Endpoint
     Streams events: Searching -> Analyzing -> Generating -> Final Response
+    
+    use_react=True (기본값): ReAct 에이전트 사용 (다단계 추론)
+    use_react=False: 기존 RAG 체인 사용 (단순 Q&A)
     """
     
     # Google API Key 체크
@@ -182,27 +187,49 @@ async def chat_with_agent_stream(request: ChatRequest):
         final_sources = []
         
         try:
-            # rag_chain.py의 비동기 제너레이터를 구독
-            async for update in query_rag_chain(
-                question=request.message,
-                collection_name=request.collection_name or "user_knowledge",
-                model_name=MODEL_NAME,
-                k=4,
-                folder_id=request.folder_id,
-                session_id=session_id, # ✨ 세션 ID 전달
-                attachments=request.attachments # ✨ [추가] 첨부파일 전달
-            ):
-                # 데이터 처리 및 응답 수정
-                if update.get("status") == "complete":
-                    data = update.get("data", {})
-                    # 실제 세션 ID로 교체
-                    data["conversation_id"] = session_id 
-                    full_answer = data.get("message", "")
-                    final_sources = data.get("sources", [])
-                    update["data"] = data
+            # ✨ [ReAct 모드 분기] use_react 파라미터에 따라 에이전트 선택
+            if request.use_react:
+                # ReAct 에이전트 사용 (다단계 추론)
+                from utils.react_agent import query_with_react_agent
                 
-                # 데이터를 SSE 포맷(data: {...}\n\n)으로 변환하여 전송
-                yield f"data: {json.dumps(update, ensure_ascii=False)}\n\n"
+                async for update in query_with_react_agent(
+                    question=request.message,
+                    folder_id=request.folder_id,
+                    session_id=session_id,
+                    document_ids=request.document_ids
+                ):
+                    # 데이터 처리 및 응답 수정
+                    if update.get("status") == "complete":
+                        data = update.get("data", {})
+                        data["conversation_id"] = session_id
+                        full_answer = data.get("message", "")
+                        final_sources = data.get("sources", [])
+                        update["data"] = data
+                    
+                    # 데이터를 SSE 포맷(data: {...}\n\n)으로 변환하여 전송
+                    yield f"data: {json.dumps(update, ensure_ascii=False)}\n\n"
+            else:
+                # 기존 RAG 체인 사용 (단순 Q&A)
+                async for update in query_rag_chain(
+                    question=request.message,
+                    collection_name=request.collection_name or "user_knowledge",
+                    model_name=MODEL_NAME,
+                    k=4,
+                    folder_id=request.folder_id,
+                    session_id=session_id,
+                    document_ids=request.document_ids,
+                    attachments=request.attachments
+                ):
+                    # 데이터 처리 및 응답 수정
+                    if update.get("status") == "complete":
+                        data = update.get("data", {})
+                        data["conversation_id"] = session_id 
+                        full_answer = data.get("message", "")
+                        final_sources = data.get("sources", [])
+                        update["data"] = data
+                    
+                    # 데이터를 SSE 포맷(data: {...}\n\n)으로 변환하여 전송
+                    yield f"data: {json.dumps(update, ensure_ascii=False)}\n\n"
             
         except Exception as e:
             logging.error(f"Streaming Error: {str(e)}")
@@ -219,8 +246,6 @@ async def chat_with_agent_stream(request: ChatRequest):
             yield f"data: {error_data}\n\n"
             
         finally:
-
-
             # 3. AI 응답 저장 (스트리밍 완료 후)
             if full_answer:
                 try:
