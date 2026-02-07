@@ -38,20 +38,46 @@ async def chat_with_agent(request: ChatRequest):
         )
     
     try:
-        # RAG 체인 호출 (비동기 처리)
+        from utils.memory_manager import get_memory_manager
+        memory = get_memory_manager()
+        
+        # 1. 세션 관리 (없으면 생성)
+        # TODO: 실제 인증된 사용자 ID 사용 필요 (현재는 임시 ID)
+        user_id = "mock-user-id" 
+        session_id = request.conversation_id
+        
+        if not session_id or session_id == "conv-1":
+            # 새 세션 생성
+            session_id = await memory.create_session(
+                user_id=user_id, 
+                folder_id=request.folder_id
+            )
+        
+        # 2. 사용자 메시지 저장
+        await memory.add_user_message(session_id, request.message)
+        
+        # 3. RAG 체인 호출 (비동기 처리)
         # utils/rag_chain.py의 query_rag_chain 함수가 async def여야 합니다.
         result = await query_rag_chain(
             question=request.message,
             collection_name=request.collection_name or "user_knowledge",
             model_name=MODEL_NAME, 
             k=4,
-            folder_id=request.folder_id
+            folder_id=request.folder_id,
+            session_id=session_id  # ✨ 세션 ID 전달 (컨텍스트 조회용)
+        )
+        
+        # 4. AI 응답 저장
+        await memory.add_assistant_message(
+            session_id, 
+            result["answer"],
+            metadata={"sources": result.get("sources", [])}
         )
         
         # 결과 반환
         return ChatResponse(
             message=result["answer"],
-            conversation_id=request.conversation_id or "conv-1",
+            conversation_id=session_id, # 생성된/유지된 세션 ID 반환
             sources=result.get("sources", []),
             reasoning_chain=result.get("reasoning_chain", []),
             confidence_score=0.9,
@@ -126,7 +152,32 @@ async def chat_with_agent_stream(request: ChatRequest):
             yield f"data: {error_data}\n\n"
         return StreamingResponse(key_error_generator(), media_type="text/event-stream")
 
+    # [Memory Integration]
+    try:
+        from utils.memory_manager import get_memory_manager
+        memory = get_memory_manager()
+        
+        # 1. 세션 관리
+        user_id = "mock-user-id" # TODO: Auth
+        session_id = request.conversation_id
+        
+        if not session_id or session_id.startswith("conv-"): # 임시 ID인 경우
+            session_id = await memory.create_session(
+                user_id=user_id,
+                folder_id=request.folder_id
+            )
+            
+        # 2. 사용자 메시지 저장
+        await memory.add_user_message(session_id, request.message)
+        
+    except Exception as e:
+        print(f"Memory Error: {e}")
+        session_id = request.conversation_id or "temp-session"
+
     async def event_generator():
+        full_answer = ""
+        final_sources = []
+        
         try:
             # rag_chain.py의 비동기 제너레이터를 구독
             async for update in query_rag_chain(
@@ -134,20 +185,48 @@ async def chat_with_agent_stream(request: ChatRequest):
                 collection_name=request.collection_name or "user_knowledge",
                 model_name=MODEL_NAME,
                 k=4,
-                folder_id=request.folder_id
+                folder_id=request.folder_id,
+                session_id=session_id # ✨ 세션 ID 전달
             ):
-                # 데이터를 SSE 포맷(data: {...}\n\n)으로 변환하여 전송
-                # ensure_ascii=False로 한글 깨짐 방지
-                yield f"data: {json.dumps(update, ensure_ascii=False)}\n\n"
+                # 데이터 처리 및 응답 수정
+                if update.get("status") == "complete":
+                    data = update.get("data", {})
+                    # 실제 세션 ID로 교체
+                    data["conversation_id"] = session_id 
+                    full_answer = data.get("message", "")
+                    final_sources = data.get("sources", [])
+                    update["data"] = data
                 
+                # 데이터를 SSE 포맷(data: {...}\n\n)으로 변환하여 전송
+                yield f"data: {json.dumps(update, ensure_ascii=False)}\n\n"
+            
         except Exception as e:
             logging.error(f"Streaming Error: {str(e)}")
-            # 에러 발생 시 프론트엔드로 에러 메시지 전송
+            try:
+                with open("error_agent.log", "a", encoding="utf-8") as f:
+                    f.write(f"[ERROR] Streaming Error: {str(e)}\n")
+            except:
+                pass
+                
             error_data = json.dumps({
                 "status": "error", 
                 "message": f"Server Error: {str(e)}"
             }, ensure_ascii=False)
             yield f"data: {error_data}\n\n"
+            
+        finally:
+
+
+            # 3. AI 응답 저장 (스트리밍 완료 후)
+            if full_answer:
+                try:
+                    await memory.add_assistant_message(
+                        session_id,
+                        full_answer,
+                        metadata={"sources": final_sources}
+                    )
+                except Exception as e:
+                    print(f"Failed to save assistant message: {e}")
 
     # SSE(Server-Sent Events) 프로토콜 사용
     return StreamingResponse(event_generator(), media_type="text/event-stream")

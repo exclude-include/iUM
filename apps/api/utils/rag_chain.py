@@ -22,8 +22,9 @@ FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to expl
 3. **Interactive:** Provide quizzes when asked.
 
 **Answering Rules:**
-1. Check `context` first. Cite sources using.
-2. If context is empty, use general knowledge.
+1. Check `Conversation History` and `Context` first.
+2. If the user asks about previous conversation (e.g., "what did I say?"), you MUST use the `Conversation History` to answer.
+3. If context is empty, use general knowledge.
 
 **Learning Unit Generation (CRITICAL):**
 You MUST generate a structured Learning Unit JSON wrapped in <LEARNING_UNIT> tags.
@@ -88,13 +89,16 @@ Used ONLY when the user asks for a "quiz".
 Context:
 {context}
 
+Conversation History:
+{history}
+
 User's question: {question}
 
 Your response (as iUM):"""
 
 prompt_template = PromptTemplate(
     template=FEYNMAN_TUTOR_PROMPT,
-    input_variables=["context", "question"]
+    input_variables=["context", "question", "history"]
 )
 
 
@@ -138,11 +142,12 @@ async def query_rag_chain(
     model_name: str = "models/gemini-2.5-flash",
     k: int = 4,
     folder_id: Optional[str] = None,
-    document_ids: Optional[List[str]] = None # ✨ [추가] 인자 추가
+    document_ids: Optional[List[str]] = None, # ✨ [추가] 인자 추가
+    session_id: Optional[str] = None # ✨ [추가] 세션 ID
 ):
     """
     Query the RAG chain with status streaming.
-    Supports selective context (document_ids).
+    Supports selective context (document_ids) and conversation history.
     """
     
     # 📡 [상태 전송 1]
@@ -150,6 +155,21 @@ async def query_rag_chain(
     if document_ids:
         search_msg = f"Searching in {len(document_ids)} selected files... 🔍"
     yield {"status": "progress", "step": "searching", "message": search_msg}
+
+    # 1.5. 히스토리 로드 (비동기)
+    history_context = ""
+    if session_id:
+        try:
+            from utils.memory_manager import get_memory_manager
+            memory = get_memory_manager()
+            # Working Memory 조회 (최근 대화)
+            history_context = await memory.get_context(session_id)
+            
+            if history_context:
+                yield {"status": "progress", "step": "memory", "message": "Loading conversation history... 🧠"}
+        except Exception as e:
+            print(f"Failed to load history: {e}")
+            history_context = ""
     
     # 1. 문서 검색 시도
     relevant_docs = []
@@ -198,7 +218,15 @@ async def query_rag_chain(
         )
         
         context_text = "\n\n".join([doc.page_content for doc in relevant_docs]) if relevant_docs else ""
-        final_prompt = prompt_template.format(context=context_text, question=question)
+        
+        # ✨ 히스토리 주입 (PromptTemplate 충돌 방지를 위해 중괄호 이스케이프)
+        safe_history = history_context.replace("{", "{{").replace("}", "}}")
+        
+        final_prompt = prompt_template.format(
+            context=context_text, 
+            question=question,
+            history=safe_history
+        )
         
         # 📡 [상태 전송 3]
         yield {"status": "progress", "step": "generating", "message": "Formulating response... ✍️"}
