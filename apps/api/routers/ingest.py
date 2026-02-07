@@ -91,17 +91,20 @@ async def ingest_document(
 
         try:
             # upsert='true'로 설정하여 덮어쓰기 허용
+            print(f"DTO [1/5] Uploading to Supabase Storage: {storage_path}")
             supabase.storage.from_("documents").upload(
                 path=storage_path,
                 file=content,
                 file_options={"content-type": file.content_type, "upsert": "true"}
             )
+            print("DTO [1/5] Storage upload complete")
         except Exception as e:
             print(f"Storage upload warning (might exist): {e}")
 
         # 3. Supabase DB (files 테이블)에 메타데이터 저장 또는 업데이트
         is_update = update_existing == "true" and file_id
 
+        print(f"DTO [2/5] Saving to Supabase DB (files table)")
         if is_update:
             # ✨ 기존 파일 업데이트 (이름 변경, 내용 변경 등)
             update_data = {
@@ -128,13 +131,15 @@ async def ingest_document(
 
             # 새로 생성된 파일 ID (이것이 NotebookLM 기능의 핵심 ID가 됨)
             new_file_id = db_res.data[0]['id'] if db_res.data else f"temp-{os.urandom(4).hex()}"
+        print(f"DTO [2/5] DB save complete. File ID: {new_file_id}")
 
         # 4. 문서 처리 (텍스트 추출)
         documents: List[Document] = []
         try:
-            # Explicitly check for images to skip
+            print(f"DTO [3/5] extracting text from file: {file.filename}")
+            # Explicitly check for image content to skip text processing
             if file.content_type.startswith("image/") or file.filename.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg")):
-                print(f"Skipping text extraction for image file: {file.filename}")
+                 print(f"Skipping text extraction for image file: {file.filename}")
             
             elif file.content_type == "application/pdf" or file.filename.endswith(".pdf"):
                 documents = await process_pdf_file(tmp_file_path, file.filename)
@@ -145,6 +150,8 @@ async def ingest_document(
             
             else:
                 print(f"Skipping text extraction for unsupported type: {file.filename} ({file.content_type})")
+            
+            print(f"DTO [3/5] Extraction complete. {len(documents)} documents found.")
         except Exception as e:
             print(f"Error processing document: {e}")
             # 에러가 나도 파일 업로드는 성공으로 처리 (Vector DB만 스킵)
@@ -163,12 +170,15 @@ async def ingest_document(
                     doc.metadata["type"] = "pdf" if file.filename.endswith(".pdf") else "text"
                     doc.metadata["document_id"] = new_file_id 
 
-                # 6. 벡터 스토어(Chroma)에 저장
+                # 6. 벡터 스토어(Supabase pgvector)에 저장
+                print(f"DTO [4/5] Adding to Vector Store (Supabase)...")
                 add_documents_to_vector_store(
                     documents=documents,
                     collection_name=collection_name
                 )
+                print(f"DTO [4/5] Vector Store add complete")
         
+        print("DTO [5/5] All steps complete. Returning response.")
         return JSONResponse(
             status_code=200,
             content={

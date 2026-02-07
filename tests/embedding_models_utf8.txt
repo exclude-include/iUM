@@ -1,0 +1,10 @@
+Checking embedding models with API Key: AIzaSyCLpg...
+
+Fetching available models...
+
+Found 1 embedding model(s):
+
+Model Name: models/gemini-embedding-001
+   Display Name: Gemini Embedding 001
+   Supported Methods: ['embedContent', 'countTextTokens', 'countTokens', 'asyncBatchEmbedContent']
+

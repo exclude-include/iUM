@@ -20,6 +20,13 @@ iUM/
 │       ├── models/       # Pydantic models
 │       ├── utils/        # RAG chain, vector store, Supabase client
 │       └── migrations/   # Database migrations
+├── docs/                 # 📚 Documentation files
+│   ├── SETUP_GUIDE.md
+│   ├── SUPABASE_SETUP.md
+│   ├── DEPLOY.md
+│   ├── MULTI_AGENT_PROPOSAL.md
+│   └── ...
+├── tests/                # 🧪 Test files and utilities
 ├── package.json          # Monorepo root configuration
 └── README.md
 ```
