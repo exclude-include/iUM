@@ -2,9 +2,17 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { 
-  Send, Loader2, MessageCircle, LogOut, User, Settings, 
-  ThumbsUp, ThumbsDown, Sparkles, Search
+import {
+  Send,
+  Loader2,
+  MessageCircle,
+  LogOut,
+  User,
+  Settings,
+  ThumbsUp,
+  ThumbsDown,
+  Sparkles,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -72,6 +80,7 @@ export function ChatSidebar() {
 
     getUser();
 
+    // Listen for auth state changes
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -103,6 +112,7 @@ export function ChatSidebar() {
     return email.charAt(0).toUpperCase();
   };
 
+  // Load messages from active folder's chat history
   useEffect(() => {
     if (activeFolder) {
       setMessages(
@@ -544,7 +554,7 @@ export function ChatSidebar() {
         </div>
       </div>
 
-      {/* Profile Section */}
+      {/* Profile Section (Bottom Left) */}
       <div className="border-t p-2">
         {user ? (
           <Popover>
@@ -592,6 +602,7 @@ export function ChatSidebar() {
                   variant="ghost"
                   className="w-full justify-start"
                   onClick={() => {
+                    // Placeholder for settings - can be updated later
                     toast({
                       title: "Settings",
                       description: "Settings page coming soon.",
