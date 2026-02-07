@@ -170,8 +170,8 @@ async def ingest_document(
                     doc.metadata["type"] = "pdf" if file.filename.endswith(".pdf") else "text"
                     doc.metadata["document_id"] = new_file_id 
 
-                # 6. 벡터 스토어(Chroma)에 저장
-                print(f"DTO [4/5] Adding to Vector Store (ChromaDB)...")
+                # 6. 벡터 스토어(Supabase pgvector)에 저장
+                print(f"DTO [4/5] Adding to Vector Store (Supabase)...")
                 add_documents_to_vector_store(
                     documents=documents,
                     collection_name=collection_name

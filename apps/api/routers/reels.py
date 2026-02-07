@@ -584,7 +584,7 @@ async def recommend_reel(
     Recommend a reel based on user's active folders.
 
     The algorithm:
-    1. Get document embeddings from active folders (ChromaDB)
+    1. Get document embeddings from active folders (Supabase pgvector)
     2. Calculate centroid (average) of document embeddings
     3. Find most similar reel using pgvector cosine similarity
 
@@ -606,7 +606,7 @@ async def recommend_reel(
                 message="No active folders provided"
             )
 
-        # Step 1: Get document embeddings from ChromaDB for active folders
+        # Step 1: Get document embeddings from Supabase for active folders
         vector_store = get_vector_store("user_knowledge")
         collection = vector_store._collection
 
@@ -616,7 +616,7 @@ async def recommend_reel(
         else:
             where_filter = {"folder_id": {"$in": folder_id_list}}
 
-        # Get embeddings from ChromaDB
+        # Get embeddings from Supabase
         results = collection.get(
             where=where_filter,
             include=["embeddings"]
