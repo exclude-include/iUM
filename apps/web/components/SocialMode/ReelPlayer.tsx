@@ -22,6 +22,22 @@ import { cn } from "@/lib/utils";
 
 const WHEEL_THRESHOLD = 40;
 
+const slideTransition = { duration: 0.35, ease: [0.32, 0.72, 0, 1] as const };
+
+const slideVariants = {
+  initial: (direction: number) => ({
+    y: direction > 0 ? "100%" : "-100%",
+  }),
+  animate: (direction: number) => ({
+    y: 0,
+    transition: slideTransition,
+  }),
+  exit: (direction: number) => ({
+    y: direction > 0 ? "-100%" : "100%",
+    transition: slideTransition,
+  }),
+};
+
 export function ReelPlayer() {
   const { toast } = useToast();
   const store = useSocialStore();
@@ -39,6 +55,17 @@ export function ReelPlayer() {
   } = store;
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const wheelAccumRef = useRef(0);
+  const slideDirectionRef = useRef(1); // 1 = next (slide up), -1 = prev (slide down)
+
+  const handleNextReel = useCallback(() => {
+    slideDirectionRef.current = 1;
+    nextReel();
+  }, [nextReel]);
+
+  const handlePrevReel = useCallback(() => {
+    slideDirectionRef.current = -1;
+    prevReel();
+  }, [prevReel]);
 
   const currentReel = store.getCurrentReel();
   const filteredReels = store.getFilteredReels();
@@ -199,15 +226,15 @@ export function ReelPlayer() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "ArrowUp") {
-        prevReel();
+        handlePrevReel();
       } else if (e.key === "ArrowDown") {
-        nextReel();
+        handleNextReel();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [nextReel, prevReel]);
+  }, [handleNextReel, handlePrevReel]);
 
   // Wheel/touchpad scroll for reels
   const handleWheel = useCallback(
@@ -220,15 +247,15 @@ export function ReelPlayer() {
       if (Math.abs(wheelAccumRef.current) >= WHEEL_THRESHOLD) {
         if (wheelAccumRef.current > 0 && canGoNext) {
           e.preventDefault();
-          nextReel();
+          handleNextReel();
         } else if (wheelAccumRef.current < 0 && canGoPrev) {
           e.preventDefault();
-          prevReel();
+          handlePrevReel();
         }
         wheelAccumRef.current = 0;
       }
     },
-    [nextReel, prevReel, currentReelIndex, filteredReels.length]
+    [handleNextReel, handlePrevReel, currentReelIndex, filteredReels.length]
   );
 
   // Reset wheel accumulation when reel changes
@@ -338,6 +365,16 @@ export function ReelPlayer() {
         className="relative h-[90vh] max-h-[800px] w-full max-w-[400px] rounded-2xl bg-background shadow-2xl overflow-hidden"
         onWheel={handleWheel}
       >
+        <AnimatePresence initial={false} custom={slideDirectionRef.current}>
+          <motion.div
+            key={currentReel.id}
+            custom={slideDirectionRef.current}
+            variants={slideVariants}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="absolute inset-0"
+          >
         {/* Video/Content Background */}
         <div className="absolute inset-0 bg-black" onClick={handleVideoClick}>
           {currentReel.videoUrl ? (
@@ -401,7 +438,7 @@ export function ReelPlayer() {
             variant="ghost"
             size="icon"
             className="absolute left-4 top-1/2 -translate-y-1/2 z-20 h-12 w-12 rounded-full bg-background/50 backdrop-blur-sm hover:bg-background/80"
-            onClick={prevReel}
+            onClick={handlePrevReel}
           >
             <ChevronUp className="h-6 w-6" />
           </Button>
@@ -412,7 +449,7 @@ export function ReelPlayer() {
             variant="ghost"
             size="icon"
             className="absolute right-4 top-1/2 -translate-y-1/2 z-20 h-12 w-12 rounded-full bg-background/50 backdrop-blur-sm hover:bg-background/80"
-            onClick={nextReel}
+            onClick={handleNextReel}
           >
             <ChevronDown className="h-6 w-6" />
           </Button>
@@ -567,6 +604,8 @@ export function ReelPlayer() {
             </div>
           </div>
         )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );
