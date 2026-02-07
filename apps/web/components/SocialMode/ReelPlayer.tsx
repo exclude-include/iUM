@@ -21,6 +21,7 @@ import { QuizOverlay } from "./QuizOverlay";
 import { cn } from "@/lib/utils";
 
 const WHEEL_THRESHOLD = 40;
+const WHEEL_COOLDOWN_MS = 450; // 한 번 넘긴 후 이 시간 동안 휠로 추가 이동 막음 (최대 1개만)
 
 const slideTransition = { duration: 0.35, ease: [0.32, 0.72, 0, 1] as const };
 
@@ -55,6 +56,7 @@ export function ReelPlayer() {
   } = store;
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const wheelAccumRef = useRef(0);
+  const lastWheelNavigateAt = useRef(0);
   const slideDirectionRef = useRef(1); // 1 = next (slide up), -1 = prev (slide down)
 
   const handleNextReel = useCallback(() => {
@@ -236,20 +238,28 @@ export function ReelPlayer() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleNextReel, handlePrevReel]);
 
-  // Wheel/touchpad scroll for reels
+  // Wheel/touchpad scroll for reels (한 번 스크롤에 최대 한 개만 넘어가도록 쿨다운 적용)
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       const canGoNext = currentReelIndex < filteredReels.length - 1;
       const canGoPrev = currentReelIndex > 0;
       if (!canGoNext && !canGoPrev) return;
 
+      const now = Date.now();
+      if (now - lastWheelNavigateAt.current < WHEEL_COOLDOWN_MS) {
+        e.preventDefault();
+        return;
+      }
+
       wheelAccumRef.current += e.deltaY;
       if (Math.abs(wheelAccumRef.current) >= WHEEL_THRESHOLD) {
         if (wheelAccumRef.current > 0 && canGoNext) {
           e.preventDefault();
+          lastWheelNavigateAt.current = now;
           handleNextReel();
         } else if (wheelAccumRef.current < 0 && canGoPrev) {
           e.preventDefault();
+          lastWheelNavigateAt.current = now;
           handlePrevReel();
         }
         wheelAccumRef.current = 0;
