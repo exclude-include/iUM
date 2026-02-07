@@ -49,7 +49,7 @@ interface SocialState {
   prevReel: () => void;
   toggleLike: (reelId: string) => void;
   toggleBookmark: (reelId: string) => void;
-  deleteReel: (reelId: string) => void;
+  deleteReel: (reelId: string) => Promise<boolean>;
   setActiveTab: (tab: "reels" | "quiz" | "discuss") => void;
   setCurrentView: (view: "feed" | "profile" | "search" | "explore") => void;
   setSearchQuery: (query: string) => void;
@@ -287,41 +287,48 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     set({ bookmarkedReels: newBookmarkedReels });
   },
   
-  deleteReel: (reelId) => {
-    set((state) => {
-      const newReels = state.reels.filter((r) => r.id !== reelId);
-      if (newReels.length === state.reels.length) return state;
+  deleteReel: async (reelId) => {
+    const { error } = await supabase.from("reels").delete().eq("id", reelId);
 
-      const oldFiltered =
-        state.showAllFolders || state.activeFolderIds.length === 0
-          ? state.reels
-          : state.reels.filter((r) => state.activeFolderIds.includes(r.folderId));
-      const newFiltered =
-        state.showAllFolders || state.activeFolderIds.length === 0
-          ? newReels
-          : newReels.filter((r) => state.activeFolderIds.includes(r.folderId));
+    if (error) {
+      console.error("Error deleting reel from Supabase:", error);
+      return false;
+    }
 
-      const deletedFilteredIndex = oldFiltered.findIndex((r) => r.id === reelId);
-      let newIndex = state.currentReelIndex;
-      if (deletedFilteredIndex === state.currentReelIndex) {
-        newIndex = Math.min(state.currentReelIndex, newFiltered.length - 1);
-      } else if (deletedFilteredIndex >= 0 && deletedFilteredIndex < state.currentReelIndex) {
-        newIndex = state.currentReelIndex - 1;
-      }
-      newIndex = Math.max(0, Math.min(newIndex, newFiltered.length - 1));
+    const state = get();
+    const newReels = state.reels.filter((r) => r.id !== reelId);
+    if (newReels.length === state.reels.length) return true;
 
-      const newLikedReels = new Set(state.likedReels);
-      const newBookmarkedReels = new Set(state.bookmarkedReels);
-      newLikedReels.delete(reelId);
-      newBookmarkedReels.delete(reelId);
+    const oldFiltered =
+      state.showAllFolders || state.activeFolderIds.length === 0
+        ? state.reels
+        : state.reels.filter((r) => state.activeFolderIds.includes(r.folderId));
+    const newFiltered =
+      state.showAllFolders || state.activeFolderIds.length === 0
+        ? newReels
+        : newReels.filter((r) => state.activeFolderIds.includes(r.folderId));
 
-      return {
-        reels: newReels,
-        currentReelIndex: newIndex,
-        likedReels: newLikedReels,
-        bookmarkedReels: newBookmarkedReels,
-      };
+    const deletedFilteredIndex = oldFiltered.findIndex((r) => r.id === reelId);
+    let newIndex = state.currentReelIndex;
+    if (deletedFilteredIndex === state.currentReelIndex) {
+      newIndex = Math.min(state.currentReelIndex, newFiltered.length - 1);
+    } else if (deletedFilteredIndex >= 0 && deletedFilteredIndex < state.currentReelIndex) {
+      newIndex = state.currentReelIndex - 1;
+    }
+    newIndex = Math.max(0, Math.min(newIndex, newFiltered.length - 1));
+
+    const newLikedReels = new Set(state.likedReels);
+    const newBookmarkedReels = new Set(state.bookmarkedReels);
+    newLikedReels.delete(reelId);
+    newBookmarkedReels.delete(reelId);
+
+    set({
+      reels: newReels,
+      currentReelIndex: newIndex,
+      likedReels: newLikedReels,
+      bookmarkedReels: newBookmarkedReels,
     });
+    return true;
   },
   
   setActiveTab: (tab) => set({ activeTab: tab }),

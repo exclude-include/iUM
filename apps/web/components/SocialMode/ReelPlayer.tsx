@@ -319,14 +319,23 @@ export function ReelPlayer() {
     setIsBookmarked(!isBookmarked);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!currentReel) return;
-    deleteReel(currentReel.id);
+    const title = currentReel.title;
     setShowMoreMenu(false);
-    toast({
-      title: "Reel deleted",
-      description: `"${currentReel.title}" has been removed.`,
-    });
+    const ok = await deleteReel(currentReel.id);
+    if (ok) {
+      toast({
+        title: "Reel deleted",
+        description: `"${title}" has been permanently removed.`,
+      });
+    } else {
+      toast({
+        title: "Delete failed",
+        description: "Could not delete the reel. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleVideoClick = () => {
