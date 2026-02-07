@@ -64,6 +64,7 @@ async def chat_with_agent(request: ChatRequest):
             model_name=MODEL_NAME, 
             k=4,
             folder_id=request.folder_id,
+            document_ids=request.context, # ✨ 선택된 파일 전달 (request.context가 List[str]임)
             session_id=session_id  # ✨ 세션 ID 전달 (컨텍스트 조회용)
         )
         
@@ -186,6 +187,7 @@ async def chat_with_agent_stream(request: ChatRequest):
                 model_name=MODEL_NAME,
                 k=4,
                 folder_id=request.folder_id,
+                document_ids=request.context, # ✨ 선택된 파일 전달
                 session_id=session_id # ✨ 세션 ID 전달
             ):
                 # 데이터 처리 및 응답 수정
