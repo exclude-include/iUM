@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
-import { Moon, Sun, X, Plus, FileText, Save, Download, Pencil, Trash2 } from "lucide-react";
+import { Moon, Sun, X, Plus, FileText, Save, Download, Pencil, Trash2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, PanelBottomClose, PanelBottomOpen } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +34,12 @@ export function MainContentArea() {
     exportTabAsIum,
     saveTabToSupabase,
     activeFolderId,
+    leftPanelMinimized,
+    rightPanelMinimized,
+    bottomPanelMinimized,
+    setLeftPanelMinimized,
+    setRightPanelMinimized,
+    setBottomPanelMinimized,
   } = useAppStore();
 
   const { theme, setTheme } = useTheme();
@@ -353,6 +359,49 @@ export function MainContentArea() {
               <Plus className="h-4 w-4" />
             </Button>
           </div>
+        </div>
+
+        {/* Cursor 스타일: 패널 최소화/복원 버튼 (오른쪽 상단 일렬) */}
+        <div className="flex items-center gap-0.5 border-l px-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setLeftPanelMinimized(!leftPanelMinimized)}
+            title={leftPanelMinimized ? "좌측 패널 펼치기" : "좌측 패널 최소화"}
+          >
+            {leftPanelMinimized ? (
+              <PanelLeftOpen className="h-4 w-4 text-muted-foreground hover:text-primary" />
+            ) : (
+              <PanelLeftClose className="h-4 w-4 text-muted-foreground hover:text-primary" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setRightPanelMinimized(!rightPanelMinimized)}
+            title={rightPanelMinimized ? "채팅 패널 펼치기" : "채팅 패널 최소화"}
+          >
+            {rightPanelMinimized ? (
+              <PanelRightOpen className="h-4 w-4 text-muted-foreground hover:text-primary" />
+            ) : (
+              <PanelRightClose className="h-4 w-4 text-muted-foreground hover:text-primary" />
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setBottomPanelMinimized(!bottomPanelMinimized)}
+            title={bottomPanelMinimized ? "하단 패널 펼치기" : "하단 패널 최소화"}
+          >
+            {bottomPanelMinimized ? (
+              <PanelBottomOpen className="h-4 w-4 text-muted-foreground hover:text-primary" />
+            ) : (
+              <PanelBottomClose className="h-4 w-4 text-muted-foreground hover:text-primary" />
+            )}
+          </Button>
         </div>
 
         {/* Theme Toggle */}

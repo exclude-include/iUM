@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BookOpen, Code, Zap, ExternalLink, FileText, PanelBottomClose, PanelBottomOpen } from "lucide-react";
+import { BookOpen, Code, Zap, ExternalLink, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -13,55 +13,12 @@ export function SourcesPanel() {
   const [activeTab, setActiveTab] = useState<Tab>("sources");
   
   // ✨ [핵심] 전역 스토어에서 AI가 답변에 사용한 출처 목록을 실시간으로 가져옵니다.
-  const { activeSources, bottomPanelMinimized, setBottomPanelMinimized } = useAppStore();
-
-  // 최소화 시 탭 바 + 복원 버튼만 표시
-  if (bottomPanelMinimized) {
-    return (
-      <div className="h-full border-t bg-background flex flex-col min-h-[40px]">
-        <div className="flex items-center justify-between border-b px-2 py-1.5 bg-muted/30 flex-1 min-h-0">
-          <div className="flex items-center gap-0.5">
-            <button
-              onClick={() => setActiveTab("sources")}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground rounded-t"
-            >
-              <BookOpen className="h-3 w-3" />
-              Sources
-            </button>
-            <button
-              onClick={() => setActiveTab("generated")}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground rounded-t"
-            >
-              <Code className="h-3 w-3" />
-              Generated
-            </button>
-            <button
-              onClick={() => setActiveTab("tools")}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground rounded-t"
-            >
-              <Zap className="h-3 w-3" />
-              Quick tools
-            </button>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 shrink-0"
-            onClick={() => setBottomPanelMinimized(false)}
-            title="Expand panel"
-          >
-            <PanelBottomOpen className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  const { activeSources } = useAppStore();
 
   return (
     <div className="h-full min-h-[120px] border-t bg-background flex flex-col">
       {/* --- 탭 헤더 --- */}
-      <div className="flex items-center justify-between border-b px-2 bg-muted/30">
-        <div className="flex items-center">
+      <div className="flex items-center border-b px-2 bg-muted/30">
         <button
           onClick={() => setActiveTab("sources")}
           className={cn(
@@ -103,16 +60,6 @@ export function SourcesPanel() {
           <Zap className="h-3.5 w-3.5" />
           Quick tools
         </button>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 shrink-0"
-          onClick={() => setBottomPanelMinimized(true)}
-          title="Minimize panel"
-        >
-          <PanelBottomClose className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
-        </Button>
       </div>
 
       {/* --- 탭 컨텐츠 영역 --- */}

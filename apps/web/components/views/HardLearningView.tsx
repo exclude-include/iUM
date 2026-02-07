@@ -8,8 +8,6 @@ import { ChatSidebar } from "./HardView/ChatSidebar";
 import { SourcesPanel } from "./HardView/SourcesPanel";
 import { useAppStore } from "@/lib/store";
 
-const COLLAPSED_SIZE = 32;
-
 export function HardLearningView() {
   const leftRef = useRef<ImperativePanelHandle>(null);
   const rightRef = useRef<ImperativePanelHandle>(null);
@@ -59,7 +57,7 @@ export function HardLearningView() {
           minSize={15}
           maxSize={30}
           collapsible
-          collapsedSize={COLLAPSED_SIZE}
+          collapsedSize={0}
           onCollapse={() => setLeftPanelMinimized(true)}
           onExpand={() => setLeftPanelMinimized(false)}
           className="border-r"
@@ -88,7 +86,7 @@ export function HardLearningView() {
               minSize={10}
               maxSize={70}
               collapsible
-              collapsedSize={40}
+              collapsedSize={0}
               onCollapse={() => setBottomPanelMinimized(true)}
               onExpand={() => setBottomPanelMinimized(false)}
               className="min-h-0"
@@ -107,7 +105,7 @@ export function HardLearningView() {
           minSize={20}
           maxSize={35}
           collapsible
-          collapsedSize={COLLAPSED_SIZE}
+          collapsedSize={0}
           onCollapse={() => setRightPanelMinimized(true)}
           onExpand={() => setRightPanelMinimized(false)}
           className="border-l"

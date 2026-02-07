@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, Loader2, Pencil, FileCode, FileImage, FileMusic, FileVideo, FileJson, File, FileType2, NotebookPen, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, Loader2, Pencil, FileCode, FileImage, FileMusic, FileVideo, FileJson, File, FileType2, NotebookPen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -42,8 +42,6 @@ export function FolderSidebar() {
     fetchFiles,
     loadTabFromIum,
     setSelectedDocuments,
-    leftPanelMinimized,
-    setLeftPanelMinimized,
   } = useAppStore();
 
   const { toast } = useToast();
@@ -430,23 +428,6 @@ export function FolderSidebar() {
   const isIumFile = (fileName: string) => fileName.endsWith(".ium");
 
 
-  // 최소화 시 좁은 스트립만 표시 (복원 버튼)
-  if (leftPanelMinimized) {
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center border-r bg-background py-2">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => setLeftPanelMinimized(false)}
-          title="Expand sidebar"
-        >
-          <PanelLeftOpen className="h-4 w-4 text-muted-foreground hover:text-primary" />
-        </Button>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-full flex-col bg-background border-r">
       {/* Header */}
@@ -470,15 +451,6 @@ export function FolderSidebar() {
             title="New Folder"
           >
             <Plus className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-5 w-5"
-            onClick={() => setLeftPanelMinimized(true)}
-            title="Minimize sidebar"
-          >
-            <PanelLeftClose className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
           </Button>
         </div>
       </div>
