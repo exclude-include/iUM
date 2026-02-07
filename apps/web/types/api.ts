@@ -85,6 +85,7 @@ export interface IngestResponse {
   chunks_created: number;
   document_ids: string[];
   collection: string;
+  storage_path?: string;
 }
 
 export interface IngestStatusResponse {

@@ -71,6 +71,7 @@ export const chatApi = {
       conversationId?: string;
       collectionName?: string;
       folderId?: string;
+      attachments?: { type: string; url?: string; file_id?: string; storage_path?: string }[];
     },
     // ✨ [추가] 실시간 상태 업데이트를 위한 콜백 함수
     onStatusUpdate?: (status: string) => void
@@ -90,6 +91,7 @@ export const chatApi = {
           conversation_id: options?.conversationId,
           collection_name: options?.collectionName,
           folder_id: options?.folderId,
+          attachments: options?.attachments,
         }),
       });
 

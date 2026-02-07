@@ -18,6 +18,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     collection_name: Optional[str] = "user_knowledge"  # VectorDB collection name
     folder_id: Optional[str] = None  # Folder ID to filter RAG context
+    attachments: Optional[List[dict]] = None  # ✨ [추가] Uploaded files info
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -64,7 +65,8 @@ async def chat_with_agent(request: ChatRequest):
             model_name=MODEL_NAME, 
             k=4,
             folder_id=request.folder_id,
-            session_id=session_id  # ✨ 세션 ID 전달 (컨텍스트 조회용)
+            session_id=session_id,  # ✨ 세션 ID 전달 (컨텍스트 조회용)
+            attachments=request.attachments  # ✨ [추가] 첨부파일 전달
         )
         
         # 4. AI 응답 저장
@@ -131,6 +133,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     collection_name: Optional[str] = "user_knowledge"
     folder_id: Optional[str] = None
+    attachments: Optional[List[dict]] = None # ✨ [추가]
 
 # ✨ [핵심 수정] 일반 JSON 반환 대신 StreamingResponse 사용
 # 프론트엔드 api.ts에서 "/api/agent/message"로 요청하므로 경로를 "/message"로 변경했습니다.
@@ -186,7 +189,8 @@ async def chat_with_agent_stream(request: ChatRequest):
                 model_name=MODEL_NAME,
                 k=4,
                 folder_id=request.folder_id,
-                session_id=session_id # ✨ 세션 ID 전달
+                session_id=session_id, # ✨ 세션 ID 전달
+                attachments=request.attachments # ✨ [추가] 첨부파일 전달
             ):
                 # 데이터 처리 및 응답 수정
                 if update.get("status") == "complete":

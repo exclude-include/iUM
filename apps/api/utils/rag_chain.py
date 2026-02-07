@@ -10,8 +10,11 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.messages import HumanMessage
 from utils.vector_store import get_retriever
 from utils.opik_config import trace
+from utils.supabase_client import get_supabase_client
+import base64
 
 # ✨ [프롬프트 강화] Mermaid 문법 제한 추가 (No 'note for', No 'linkStyle')
 FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to explain concepts clearly and intuitively in the style of Richard Feynman.
@@ -143,7 +146,8 @@ async def query_rag_chain(
     k: int = 4,
     folder_id: Optional[str] = None,
     document_ids: Optional[List[str]] = None, # ✨ [추가] 인자 추가
-    session_id: Optional[str] = None # ✨ [추가] 세션 ID
+    session_id: Optional[str] = None, # ✨ [추가] 세션 ID
+    attachments: Optional[List[dict]] = None # ✨ [추가] 첨부파일
 ):
     """
     Query the RAG chain with status streaming.
@@ -231,7 +235,37 @@ async def query_rag_chain(
         # 📡 [상태 전송 3]
         yield {"status": "progress", "step": "generating", "message": "Formulating response... ✍️"}
         
-        response_msg = await llm.ainvoke(final_prompt)
+        # ✨ [멀티모달 처리] 첨부파일이 있는 경우
+        if attachments and any(att.get("type") == "image" for att in attachments):
+            supabase = get_supabase_client()
+            content_parts = [{"type": "text", "text": final_prompt}]
+            
+            for att in attachments:
+                if att.get("type") == "image" and att.get("storage_path"):
+                    try:
+                        # Supabase Storage에서 이미지 다운로드
+                        print(f"Downloading image from storage: {att['storage_path']}")
+                        file_bytes = supabase.storage.from_("documents").download(att['storage_path'])
+                        
+                        # Base64 인코딩
+                        b64_data = base64.b64encode(file_bytes).decode("utf-8")
+                        
+                        # LangChain HumanMessage for Vision
+                        # (Mime type은 일단 jpeg로 가정하거나 확장자 확인 필요. Gemini는 mime type에 관대함)
+                        content_parts.append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64_data}"}
+                        })
+                    except Exception as e:
+                        print(f"Failed to process image attachment: {e}")
+                        # 에러 발생 시 텍스트로 알림 추가
+                        content_parts[0]["text"] += f"\n\n[System Error] Failed to load attached image: {att.get('name')}"
+
+            response_msg = await llm.ainvoke([HumanMessage(content=content_parts)])
+        else:
+            # 기존 텍스트 전용 모드
+            response_msg = await llm.ainvoke(final_prompt)
+            
         raw_answer = response_msg.content
         
     except Exception as e:
