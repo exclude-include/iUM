@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart,
@@ -10,11 +10,14 @@ import {
   MoreVertical,
   ChevronUp,
   ChevronDown,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSocialStore } from "./useSocialStore";
 import { cn } from "@/lib/utils";
+
+const WHEEL_THRESHOLD = 40;
 
 export function ReelPlayer() {
   const { toast } = useToast();
@@ -28,8 +31,11 @@ export function ReelPlayer() {
     prevReel,
     toggleLike,
     toggleBookmark,
+    deleteReel,
     setActiveTab,
   } = store;
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const wheelAccumRef = useRef(0);
   
   const currentReel = store.getCurrentReel();
   const filteredReels = store.getFilteredReels();
@@ -58,6 +64,33 @@ export function ReelPlayer() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [nextReel, prevReel]);
+
+  // Wheel/touchpad scroll for reels
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      const canGoNext = currentReelIndex < filteredReels.length - 1;
+      const canGoPrev = currentReelIndex > 0;
+      if (!canGoNext && !canGoPrev) return;
+
+      wheelAccumRef.current += e.deltaY;
+      if (Math.abs(wheelAccumRef.current) >= WHEEL_THRESHOLD) {
+        if (wheelAccumRef.current > 0 && canGoNext) {
+          e.preventDefault();
+          nextReel();
+        } else if (wheelAccumRef.current < 0 && canGoPrev) {
+          e.preventDefault();
+          prevReel();
+        }
+        wheelAccumRef.current = 0;
+      }
+    },
+    [nextReel, prevReel, currentReelIndex, filteredReels.length]
+  );
+
+  // Reset wheel accumulation when reel changes
+  useEffect(() => {
+    wheelAccumRef.current = 0;
+  }, [currentReelIndex]);
 
   if (!currentReel) {
     return (
@@ -105,10 +138,13 @@ export function ReelPlayer() {
     setIsBookmarked(!isBookmarked);
   };
 
-  const handleMore = () => {
+  const handleDelete = () => {
+    if (!currentReel) return;
+    deleteReel(currentReel.id);
+    setShowMoreMenu(false);
     toast({
-      title: "More Options",
-      description: "Additional options coming soon!",
+      title: "Reel deleted",
+      description: `"${currentReel.title}" has been removed.`,
     });
   };
 
@@ -132,8 +168,11 @@ export function ReelPlayer() {
         ))}
       </div>
 
-      {/* Main Container (Mobile Frame) */}
-      <div className="relative h-[90vh] max-h-[800px] w-full max-w-[400px] rounded-2xl bg-background shadow-2xl overflow-hidden">
+      {/* Main Container (Mobile Frame) - wheel for touchpad scroll */}
+      <div
+        className="relative h-[90vh] max-h-[800px] w-full max-w-[400px] rounded-2xl bg-background shadow-2xl overflow-hidden"
+        onWheel={handleWheel}
+      >
         {/* Video/Content Background */}
         <div
           className="absolute inset-0"
@@ -229,9 +268,32 @@ export function ReelPlayer() {
             />
           </button>
 
-          <button onClick={handleMore} className="flex flex-col items-center gap-1">
-            <MoreVertical className="h-7 w-7 text-white" />
-          </button>
+          <div className="relative flex flex-col items-center gap-1">
+            <button
+              onClick={() => setShowMoreMenu((v) => !v)}
+              className="flex flex-col items-center gap-1"
+            >
+              <MoreVertical className="h-7 w-7 text-white" />
+            </button>
+            {showMoreMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  aria-hidden
+                  onClick={() => setShowMoreMenu(false)}
+                />
+                <div className="absolute bottom-full right-0 z-40 mb-2 min-w-[140px] rounded-lg border bg-background py-1 shadow-lg">
+                  <button
+                    onClick={handleDelete}
+                    className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete reel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Reel Counter */}
