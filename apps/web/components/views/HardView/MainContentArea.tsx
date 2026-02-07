@@ -34,8 +34,8 @@ export function MainContentArea() {
     exportTabAsIum,
     saveTabToSupabase,
     activeFolderId,
-    leftPanelMinimized,
     rightPanelMinimized,
+    leftPanelMinimized,
     bottomPanelMinimized,
     setLeftPanelMinimized,
     setRightPanelMinimized,
@@ -361,48 +361,38 @@ export function MainContentArea() {
           </div>
         </div>
 
-        {/* Cursor 스타일: 패널 최소화/복원 버튼 (오른쪽 상단 일렬) */}
-        <div className="flex items-center gap-0.5 border-l px-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setLeftPanelMinimized(!leftPanelMinimized)}
-            title={leftPanelMinimized ? "좌측 패널 펼치기" : "좌측 패널 최소화"}
-          >
-            {leftPanelMinimized ? (
-              <PanelLeftOpen className="h-4 w-4 text-muted-foreground hover:text-primary" />
-            ) : (
-              <PanelLeftClose className="h-4 w-4 text-muted-foreground hover:text-primary" />
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setRightPanelMinimized(!rightPanelMinimized)}
-            title={rightPanelMinimized ? "채팅 패널 펼치기" : "채팅 패널 최소화"}
-          >
-            {rightPanelMinimized ? (
+        {/* 채팅 패널이 최소화된 경우에만: 패널 복원 버튼 표시 (채팅을 다시 펼치려면) */}
+        {rightPanelMinimized && (
+          <div className="flex items-center gap-0.5 border-l px-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setLeftPanelMinimized(!leftPanelMinimized)}
+              title={leftPanelMinimized ? "좌측 패널 펼치기" : "좌측 패널 최소화"}
+            >
+              {leftPanelMinimized ? <PanelLeftOpen className="h-4 w-4 text-muted-foreground hover:text-primary" /> : <PanelLeftClose className="h-4 w-4 text-muted-foreground hover:text-primary" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setRightPanelMinimized(false)}
+              title="채팅 패널 펼치기"
+            >
               <PanelRightOpen className="h-4 w-4 text-muted-foreground hover:text-primary" />
-            ) : (
-              <PanelRightClose className="h-4 w-4 text-muted-foreground hover:text-primary" />
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setBottomPanelMinimized(!bottomPanelMinimized)}
-            title={bottomPanelMinimized ? "하단 패널 펼치기" : "하단 패널 최소화"}
-          >
-            {bottomPanelMinimized ? (
-              <PanelBottomOpen className="h-4 w-4 text-muted-foreground hover:text-primary" />
-            ) : (
-              <PanelBottomClose className="h-4 w-4 text-muted-foreground hover:text-primary" />
-            )}
-          </Button>
-        </div>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setBottomPanelMinimized(!bottomPanelMinimized)}
+              title={bottomPanelMinimized ? "하단 패널 펼치기" : "하단 패널 최소화"}
+            >
+              {bottomPanelMinimized ? <PanelBottomOpen className="h-4 w-4 text-muted-foreground hover:text-primary" /> : <PanelBottomClose className="h-4 w-4 text-muted-foreground hover:text-primary" />}
+            </Button>
+          </div>
+        )}
 
         {/* Theme Toggle */}
         {mounted && (
