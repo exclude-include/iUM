@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useSocialStore } from "./useSocialStore";
 import { QuizOverlay } from "./QuizOverlay";
+import { CommentDrawer } from "./CommentDrawer";
 import { cn } from "@/lib/utils";
 
 const WHEEL_THRESHOLD = 40;
@@ -46,15 +47,14 @@ export function ReelPlayer() {
     currentReelIndex,
     likedReels,
     bookmarkedReels,
-    activeTab,
     nextReel,
     prevReel,
     toggleLike,
     toggleBookmark,
     deleteReel,
-    setActiveTab,
   } = store;
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showCommentDrawer, setShowCommentDrawer] = useState(false);
   const wheelAccumRef = useRef(0);
   const lastWheelNavigateAt = useRef(0);
   const slideDirectionRef = useRef(1); // 1 = next (slide up), -1 = prev (slide down)
@@ -292,10 +292,7 @@ export function ReelPlayer() {
   };
 
   const handleComment = () => {
-    toast({
-      title: "Comments",
-      description: "Comments section coming soon!",
-    });
+    setShowCommentDrawer(true);
   };
 
   const handleShare = async () => {
@@ -361,24 +358,6 @@ export function ReelPlayer() {
 
   return (
     <div className="relative flex h-full w-full flex-col items-center justify-center bg-muted/30">
-      {/* Tabs */}
-      <div className="absolute top-4 z-20 flex gap-1 rounded-full bg-background/80 backdrop-blur-sm border p-1">
-        {(["reels", "quiz", "discuss"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              "px-4 py-1.5 rounded-full text-sm font-medium transition-colors",
-              activeTab === tab
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
-          </button>
-        ))}
-      </div>
-
       {/* Main Container (Mobile Frame) - wheel for touchpad scroll */}
       <div
         className="relative h-[90vh] max-h-[800px] w-full max-w-[400px] rounded-2xl bg-background shadow-2xl overflow-hidden"
@@ -626,6 +605,13 @@ export function ReelPlayer() {
           </motion.div>
         </AnimatePresence>
       </div>
+
+      {/* Comment Drawer */}
+      <CommentDrawer
+        reelId={currentReel.id}
+        isOpen={showCommentDrawer}
+        onClose={() => setShowCommentDrawer(false)}
+      />
     </div>
   );
 }
