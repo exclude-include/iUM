@@ -68,10 +68,10 @@ export function HardLearningView() {
         <PanelResizeHandle className="w-1 bg-border hover:bg-primary/20 transition-colors" />
 
         {/* Zone B: Main Content + 하단 토글 탭 (세로 리사이즈 가능) */}
-        <Panel defaultSize={55} minSize={40}>
+        <Panel defaultSize={55} minSize={40} className="overflow-hidden">
           <PanelGroup direction="vertical" className="h-full">
             {/* 메인 콘텐츠 영역 */}
-            <Panel defaultSize={70} minSize={20} className="min-h-0">
+            <Panel defaultSize={70} minSize={20} className="min-h-0 overflow-hidden">
               <MainContentArea />
             </Panel>
 

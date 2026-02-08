@@ -3,8 +3,10 @@
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import mermaid from "mermaid";
 import { Button } from "@/components/ui/button";
-import { ZoomIn, ZoomOut, RotateCcw, Move } from "lucide-react";
+import { ZoomIn, ZoomOut, RotateCcw, Move, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
+import * as d3 from "d3";
+// import svgPanZoom from "svg-pan-zoom"; // Dynamic import used instead
 
 // Mermaid 초기화
 const initMermaid = () => {
@@ -18,7 +20,21 @@ const initMermaid = () => {
       flowchart: {
         useMaxWidth: false,
         htmlLabels: true,
-        curve: 'basis'
+        curve: 'basis',
+        wrappingWidth: 300,
+        nodeSpacing: 50,
+        rankSpacing: 80,
+        padding: 15
+      },
+      wrap: true,
+      sequence: {
+        wrap: true,
+        width: 300,
+        useMaxWidth: false
+      },
+      mindmap: {
+        useMaxWidth: false,
+        padding: 20
       }
     });
   }
@@ -29,181 +45,161 @@ interface MermaidProps {
 }
 
 export function Mermaid({ chart }: MermaidProps) {
-  const [svg, setSvg] = useState<string>("");
-  const [error, setError] = useState<string | null>(null);
+  const [svgId] = useState(`mermaid-${Math.random().toString(36).substr(2, 9)}`);
   const [isRendering, setIsRendering] = useState(false);
-
-  // Transform State for Pan/Zoom
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
-  const [isDragging, setIsDragging] = useState(false);
-
   const containerRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef({ x: 0, y: 0 });
-  const renderId = useRef(0);
+  const panZoomInstanceRef = useRef<SvgPanZoom.Instance | null>(null);
 
   useEffect(() => {
     initMermaid();
   }, []);
 
-  useEffect(() => {
-    if (!chart) return;
+  const renderChart = useCallback(async () => {
+    if (!chart || !containerRef.current) return;
 
-    const renderChart = async () => {
-      const currentRenderId = ++renderId.current;
-      setIsRendering(true);
-      setError(null);
-
-      try {
-        // [자동 수리 로직]
-        let fixedChart = chart;
-
-        // 1. subgraph 제목에 따옴표 강제 적용
-        fixedChart = fixedChart.replace(/subgraph\s+([^\n"\[]+?)\s*(\n|\[)/g, 'subgraph "$1"$2');
-
-        // 2. 괄호가 포함된 노드 라벨에 따옴표 강제 적용 (Deleted to fix parse errors with inline content)
-        // fixedChart = fixedChart.replace(/([a-zA-Z0-9_]+)(\[|\(|\{)\s*([^"\]\}\)]*?[\(\)][^"\]\}\)]*?)\s*(\]|\)|\})/g, '$1$2"$3"$4');
-
-        const id = `mermaid-${Date.now()}`;
-        // SVG 생성을 위해 임시 div 사용 (DOM에 직접 렌더링하지 않음)
-        const { svg: renderedSvg } = await mermaid.render(id, fixedChart);
-
-        if (renderId.current === currentRenderId) {
-          setSvg(renderedSvg);
-          setIsRendering(false);
-          // 렌더링 후 리셋 (선택적)
-          setTransform({ x: 0, y: 0, scale: 1 });
-        }
-      } catch (err: any) {
-        console.error("Mermaid Render Failed:", err);
-        if (renderId.current === currentRenderId) {
-          const msg = err.message?.split('\n')[0] || "Syntax Error";
-          setError(msg);
-          setIsRendering(false);
-        }
+    setIsRendering(true);
+    try {
+      // SVG Pan Zoom 인스턴스 정리
+      if (panZoomInstanceRef.current) {
+        panZoomInstanceRef.current.destroy();
+        panZoomInstanceRef.current = null;
       }
-    };
 
-    const timer = setTimeout(renderChart, 50);
-    return () => clearTimeout(timer);
-  }, [chart]);
+      const element = containerRef.current;
+      element.innerHTML = ""; // Clear previous chart
 
-  // --- Pan/Zoom Handlers ---
+      // Mermaid 렌더링
+      const { svg: svgContent } = await mermaid.render(svgId, chart);
+      element.innerHTML = svgContent;
+
+      const svgElement = element.querySelector("svg");
+      if (svgElement) {
+        // 스타일 보정
+        svgElement.style.width = "100%";
+        svgElement.style.height = "100%";
+        svgElement.style.minHeight = "300px";
+
+        // 1. Enable Pan/Zoom
+        // Dynamically import svg-pan-zoom to avoid SSR window error
+        const { default: svgPanZoom } = await import("svg-pan-zoom");
+
+        panZoomInstanceRef.current = svgPanZoom(svgElement, {
+          zoomEnabled: true,
+          controlIconsEnabled: false,
+          fit: true,
+          center: true,
+          minZoom: 0.1,
+          maxZoom: 10,
+        });
+
+        // 2. Enable Node Dragging using D3
+        const nodes = d3.select(svgElement).selectAll(".node");
+
+        nodes.call(d3.drag<any, any>()
+          .on("start", function (event) {
+            // Drag 시작 시 PanZoom 비활성화 안 함 (자연스러운 동작 위해)
+            // 하지만 드래그 중에는 Pan이 튀지 않게 조심해야 함
+            // PanZoom 라이브러리가 이벤트를 먼저 먹을 수 있음 -> stopPropagation
+            if (event.sourceEvent) {
+              event.sourceEvent.stopPropagation();
+            }
+          })
+          .on("drag", function (event) {
+            // 현재 transform 파싱
+            const transform = d3.select(this).attr("transform");
+            let x = 0, y = 0;
+
+            // translate(x, y) 파싱
+            if (transform) {
+              const match = /translate\(([^,]+),([^)]+)\)/.exec(transform);
+              if (match) {
+                x = parseFloat(match[1]);
+                y = parseFloat(match[2]);
+              }
+            }
+
+            // SVG의 현재 줌 레벨 고려
+            const zoomLevel = panZoomInstanceRef.current?.getZoom() || 1;
+
+            // 새로운 위치 계산
+            const newX = x + event.dx / zoomLevel;
+            const newY = y + event.dy / zoomLevel;
+
+            d3.select(this).attr("transform", `translate(${newX},${newY})`);
+
+            // 참고: Edge(화살표) 업데이트는 매우 복잡하므로 여기서는 생략.
+            // 노드만 이동됨. 
+          })
+        );
+
+        // 커서 스타일 변경
+        nodes.style("cursor", "move");
+      }
+
+    } catch (error) {
+      console.error("Mermaid render error:", error);
+      if (containerRef.current) {
+        containerRef.current.innerHTML = `<div class="text-destructive text-sm p-2">Failed to render diagram</div>`;
+      }
+    } finally {
+      setIsRendering(false);
+    }
+  }, [chart, svgId]);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    // Debounce rendering
+    const timer = setTimeout(() => {
+      renderChart();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [renderChart]);
 
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault(); // Stop page scrolling
+  // Control Handlers
+  const handleZoomIn = () => panZoomInstanceRef.current?.zoomIn();
+  const handleZoomOut = () => panZoomInstanceRef.current?.zoomOut();
+  const handleReset = () => panZoomInstanceRef.current?.reset();
 
-      const zoomIntensity = 0.001;
-      const delta = -e.deltaY * zoomIntensity;
+  const handleDownload = () => {
+    const svg = containerRef.current?.querySelector("svg");
+    if (!svg) return;
 
-      setTransform(prev => ({
-        ...prev,
-        scale: Math.min(Math.max(0.2, prev.scale + delta), 5)
-      }));
-    };
-
-    // Passive: false is required to generic preventDefault
-    container.addEventListener("wheel", onWheel, { passive: false });
-
-    return () => {
-      container.removeEventListener("wheel", onWheel);
-    };
-  }, []);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    setIsDragging(true);
-    dragStartRef.current = {
-      x: e.clientX - transform.x,
-      y: e.clientY - transform.y
-    };
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "diagram.svg";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging) return;
-    e.preventDefault();
-    setTransform(prev => ({
-      ...prev,
-      x: e.clientX - dragStartRef.current.x,
-      y: e.clientY - dragStartRef.current.y
-    }));
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  const handleReset = () => setTransform({ x: 0, y: 0, scale: 1 });
-  const handleZoomIn = () => setTransform(prev => ({ ...prev, scale: Math.min(prev.scale + 0.2, 5) }));
-  const handleZoomOut = () => setTransform(prev => ({ ...prev, scale: Math.max(prev.scale - 0.2, 0.2) }));
-
-  if (error) {
-    return (
-      <div className="p-4 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800 rounded-lg my-4 text-left">
-        <h3 className="text-sm font-bold text-red-800 dark:text-red-200 mb-1">Diagram Error</h3>
-        <p className="text-xs text-red-600 dark:text-red-300 mb-2">{error}</p>
-        <details className="cursor-pointer">
-          <summary className="text-xs text-gray-500">Show Source Code</summary>
-          <pre className="mt-2 text-[10px] bg-white dark:bg-black p-2 rounded border overflow-auto max-h-32 font-mono">
-            {chart}
-          </pre>
-        </details>
-      </div>
-    );
-  }
 
   return (
-    <div
-      className="relative border rounded-xl bg-white dark:bg-gray-900 shadow-sm overflow-hidden flex flex-col my-4 group select-none w-full h-[60vh] min-h-[400px]"
-    // Fixed height removed, using responsive classes
-    >
-      {/* 툴바 */}
-      <div className="absolute top-2 right-2 flex gap-1 z-20 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm p-1 rounded-lg border shadow-sm">
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleZoomIn} title="Zoom In"><ZoomIn className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleReset} title="Reset View"><RotateCcw className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleZoomOut} title="Zoom Out"><ZoomOut className="h-4 w-4" /></Button>
-        <div className="w-px bg-border mx-1" />
-        <div className="flex items-center justify-center w-7 h-7" title="Drag to Pan, Scroll to Zoom">
-          <Move className="h-4 w-4 text-muted-foreground" />
-        </div>
+    <div className="relative w-full h-full min-h-[300px] border rounded-lg overflow-hidden bg-background group">
+      {/* Controls Overlay */}
+      <div className="absolute top-2 right-2 flex flex-col gap-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 p-1 rounded backdrop-blur-sm border shadow-sm">
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleZoomIn} title="Zoom In">
+          <ZoomIn className="h-3 w-3" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleZoomOut} title="Zoom Out">
+          <ZoomOut className="h-3 w-3" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleReset} title="Reset View">
+          <RotateCcw className="h-3 w-3" />
+        </Button>
+        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleDownload} title="Download SVG">
+          <Download className="h-3 w-3" />
+        </Button>
       </div>
 
+      {/* Diagram Container */}
       <div
         ref={containerRef}
         className={cn(
-          "w-full h-full bg-gray-50/50 dark:bg-gray-950/30 overflow-hidden cursor-grab active:cursor-grabbing",
-          isDragging && "cursor-grabbing"
+          "w-full h-full min-h-[300px] flex items-center justify-center transition-opacity duration-300",
+          isRendering ? "opacity-50" : "opacity-100"
         )}
-        // onWheel removed - handled natively
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        title="Scroll to Zoom, Drag to Pan"
-      >
-        {isRendering ? (
-          <div className="flex items-center justify-center h-full">
-            <span className="text-xs text-muted-foreground animate-pulse">Generating Diagram...</span>
-          </div>
-        ) : (
-          <div
-            ref={contentRef}
-            className="w-full h-full flex items-center justify-center origin-center"
-            style={{
-              transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
-              transition: isDragging ? "none" : "transform 0.1s ease-out"
-            }}
-          >
-            <div
-              className="pointer-events-none [&_svg]:max-w-none [&_svg]:h-auto [&_svg]:w-auto"
-              dangerouslySetInnerHTML={{ __html: svg }}
-            />
-          </div>
-        )}
-      </div>
+      />
     </div>
   );
 }

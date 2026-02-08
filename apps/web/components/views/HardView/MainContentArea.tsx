@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
-import { Moon, Sun, X, Plus, FileText, Save, Download, Pencil, Trash2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, PanelBottomClose, PanelBottomOpen } from "lucide-react";
+import { Moon, Sun, X, Plus, FileText, Save, Download, Pencil, Trash2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, PanelBottomClose, PanelBottomOpen, Sparkles } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,8 +14,11 @@ import {
 } from "@/components/ui/context-menu";
 import { MathContent } from "./MathContent";
 import { CellRenderer } from "./CellRenderer";
+import { DeepModeCursor } from "./DeepModeCursor";
+import { TextSelectionMenu } from "./TextSelectionMenu";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
+import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/supabase/client";
 import "katex/dist/katex.min.css";
@@ -40,6 +43,10 @@ export function MainContentArea() {
     setLeftPanelMinimized,
     setRightPanelMinimized,
     setBottomPanelMinimized,
+    addDeepCard,
+    updateDeepCard,
+    setSidebarMode,
+    sidebarMode,
   } = useAppStore();
 
   const { theme, setTheme } = useTheme();
@@ -49,6 +56,7 @@ export function MainContentArea() {
 
   // Ref map for scroll-to-cell functionality
   const cellRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Get active notebook tab
   const activeTab = notebookTabs.find((tab) => tab.id === notebookActiveTabId);
@@ -56,6 +64,14 @@ export function MainContentArea() {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // ✨ [추가] 폴더가 있는데 탭이 없으면 자동으로 탭 생성
+  useEffect(() => {
+    if (activeFolderId && notebookTabs.length === 0) {
+      console.log("[MainContentArea] Folder exists but no tabs, creating default tab");
+      createNotebookTab("Tab 1");
+    }
+  }, [activeFolderId, notebookTabs.length, createNotebookTab]);
 
   // Auto-save to localStorage every 30 seconds
   useEffect(() => {
@@ -246,8 +262,200 @@ export function MainContentArea() {
     }
   };
 
+  // --- Selection & Hover Logic ---
+  const [isTextSelected, setIsTextSelected] = useState(false);
+  const [selectionMenu, setSelectionMenu] = useState<{ visible: boolean; position: { top: number; left: number } | null; text: string }>({ visible: false, position: null, text: "" });
+  const [hoverCursor, setHoverCursor] = useState<{ visible: boolean; position: { x: number; y: number } | null; progress: number }>({ visible: false, position: null, progress: 0 });
+  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Selection Change Handler
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const selection = window.getSelection();
+      const text = selection?.toString().trim();
+
+      if (text) {
+        setIsTextSelected(true);
+        // Only show menu if sidebar is NOT dragging/resizing (simplified check)
+        const range = selection?.getRangeAt(0);
+        const rect = range?.getBoundingClientRect();
+
+        if (selection && rect && rect.width > 0) {
+          // Check if selection is within Main Container OR Deep Mode View
+          const anchorNode = selection.anchorNode as HTMLElement;
+          const isInMain = containerRef.current && containerRef.current.contains(anchorNode);
+          const isInDeep = anchorNode.parentElement?.closest('.deep-mode-view');
+
+          if (isInMain || isInDeep) {
+            setSelectionMenu({
+              visible: true,
+              position: { top: rect.top + window.scrollY, left: rect.left + rect.width / 2 + window.scrollX },
+              text: text
+            });
+          } else {
+            setSelectionMenu(prev => ({ ...prev, visible: false }));
+          }
+        }
+      } else {
+        setIsTextSelected(false);
+        setSelectionMenu(prev => ({ ...prev, visible: false }));
+      }
+    };
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => document.removeEventListener("selectionchange", handleSelectionChange);
+  }, []);
+
+  // Hover Logic (Deep Mode Only)
+  useEffect(() => {
+    // "deep 모드에서" -> Only active when Sidebar is in Deep Mode
+    if (sidebarMode !== 'deep') {
+      setHoverCursor({ visible: false, position: null, progress: 0 });
+      return;
+    }
+
+    const handleMouseMove = (e: MouseEvent) => {
+      // Reset timers on move
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+
+      setHoverCursor({ visible: false, position: null, progress: 0 });
+
+      const target = e.target as HTMLElement;
+
+      // 1. Restriction: MUST be inside Main Container (Main Tab)
+      if (containerRef.current && !containerRef.current.contains(target)) {
+        return;
+      }
+
+      // 2. Restriction: NO diagrams or interactive elements
+      if (target.closest('svg') || target.closest('.react-flow') || target.closest('.mermaid') || target.closest('button')) {
+        return;
+      }
+
+      // Rough check if hovering text-containing element
+      // (User wants "hover over specific text")
+      const isTextLike = target.matches('p, h1, h2, h3, h4, h5, h6, span, li, td, code, pre, div.prose, .katex');
+
+      // If not explicit text tag, check if it has direct text content
+      if (!isTextLike && !target.innerText?.trim()) return;
+
+      const x = e.clientX;
+      const y = e.clientY;
+
+      // Start Pre-hover Timer (1s wait before showing progress)
+      hoverTimerRef.current = setTimeout(() => {
+        // Show Cursor & Start Progress
+        setHoverCursor({ visible: true, position: { x, y }, progress: 0 });
+
+        let progress = 0;
+        // Fill progress over 4 seconds (Total 5s: 1s wait + 4s fill)
+        progressIntervalRef.current = setInterval(() => {
+          progress += 2.5; // 100 / 40 steps = 2.5
+          setHoverCursor(prev => ({ ...prev, progress }));
+
+          if (progress >= 100) {
+            if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+
+            // Trigger Deep Dive
+            const hoverText = target.innerText?.slice(0, 1000) || "";
+            if (hoverText) {
+              handleDeepDive(hoverText);
+              setHoverCursor({ visible: false, position: null, progress: 0 });
+            }
+          }
+        }, 100); // 40 steps * 100ms = 4000ms
+      }, 1000); // 1s delay
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+    }
+  }, [sidebarMode]);
+
+  const handleCopy = () => {
+    if (selectionMenu.text) {
+      navigator.clipboard.writeText(selectionMenu.text);
+      toast({ description: "Copied to clipboard" });
+      setSelectionMenu(prev => ({ ...prev, visible: false }));
+      // Close menu but keep selection
+    }
+  };
+
+  const handleDeepDive = async (textOverride?: string) => {
+    const text = textOverride || selectionMenu.text || window.getSelection()?.toString().trim();
+
+    if (!text) {
+      toast({
+        description: "Please select some text or hover over text to Deep Dive.",
+      });
+      return;
+    }
+
+    // Switch to Deep Mode and open sidebar
+    setSidebarMode("deep");
+    setRightPanelMinimized(false);
+
+    // Optimistic UI: Add loading card immediately
+    // Note: addDeepCard returns the new cellId
+    const tempCardId = addDeepCard({
+      title: "Analyzing...",
+      type: "concept",
+      content: "Generating explanation...",
+      equations: [],
+      quiz_data: [],
+      diagram_description: "",
+      mermaid_code: "",
+    });
+
+    // Mark as loading
+    updateDeepCard(tempCardId, {
+      status: 'loading',
+      title: `Deep Dive: ${text.slice(0, 30)}${text.length > 30 ? '...' : ''}`
+    });
+
+    try {
+      // Context: Active Document title or Tab title
+      const context = activeDocument ? activeDocument.title : (activeTab ? activeTab.title : "");
+
+      const response = await api.chat.generateDeepExplanation(text, context, activeFolderId || undefined);
+
+      if (response.learning_unit) {
+        updateDeepCard(tempCardId, { ...response.learning_unit, status: 'complete' });
+      } else {
+        // Fallback if no structured unit
+        updateDeepCard(tempCardId, {
+          type: "concept",
+          title: "Explanation",
+          content: response.message,
+          equations: [],
+          quiz_data: [],
+          diagram_description: "",
+          mermaid_code: "",
+          status: 'complete'
+        });
+      }
+    } catch (error) {
+      console.error("Deep dive failed:", error);
+      updateDeepCard(tempCardId, {
+        content: "Failed to generate explanation. Please try again.",
+        status: 'error',
+        title: "Error"
+      });
+      toast({
+        title: "Deep Dive Failed",
+        description: "Could not generate explanation.",
+        variant: "destructive",
+      });
+    }
+  };
+
   return (
-    <div className="flex h-full flex-col bg-background">
+    <div className="flex h-full w-full flex-col bg-background overflow-hidden min-w-0">
       {/* --- Tab Bar --- */}
       <div className="flex items-center justify-between border-b bg-background">
         <div className="flex-1 overflow-x-auto scrollbar-hide">
@@ -414,33 +622,58 @@ export function MainContentArea() {
       </div>
 
       {/* --- Main Content Area --- */}
-      <ScrollArea className="flex-1">
-        <div className="p-4">
-          {/* Active Tab Content */}
-          {activeTab && notebookActiveTabId ? (
-            activeTab.cells.length > 0 ? (
-              <div className="space-y-4">
-                {activeTab.cells.map((cell) => (
-                  <CellRenderer
-                    key={cell.id}
-                    cell={cell}
-                    tabId={activeTab.id}
-                    ref={(el) => setCellRef(cell.id, el)}
-                  />
-                ))}
+      <ContextMenu>
+        <ContextMenuTrigger className="flex-1 min-w-0 flex flex-col overflow-hidden relative" disabled={!isTextSelected}>
+          <div ref={containerRef as React.RefObject<HTMLDivElement>} className="flex-1 min-w-0 flex flex-col h-full">
+            <ScrollArea className="flex-1 min-w-0">
+              <div className="p-4 w-full max-w-full overflow-hidden">
+                {/* Float Elements */}
+                <DeepModeCursor
+                  visible={hoverCursor.visible}
+                  progress={hoverCursor.progress}
+                  position={hoverCursor.position}
+                />
+                <TextSelectionMenu
+                  visible={selectionMenu.visible}
+                  position={selectionMenu.position}
+                  onCopy={handleCopy}
+                  onDeepDive={() => handleDeepDive(selectionMenu.text)}
+                />
+
+                {/* Active Tab Content */}
+                {activeTab && notebookActiveTabId ? (
+                  activeTab.cells.length > 0 ? (
+                    <div className="space-y-4 w-full max-w-full">
+                      {activeTab.cells.map((cell) => (
+                        <CellRenderer
+                          key={cell.id}
+                          cell={cell}
+                          tabId={activeTab.id}
+                          ref={(el) => setCellRef(cell.id, el)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyTabState tabTitle={activeTab.title} />
+                  )
+                ) : activeDocument && !notebookActiveTabId ? (
+                  /* Document View */
+                  <MathContent document={activeDocument} />
+                ) : (
+                  /* No Tab Selected State */
+                  <NoTabSelectedState onCreateTab={handleCreateNewTab} />
+                )}
               </div>
-            ) : (
-              <EmptyTabState tabTitle={activeTab.title} />
-            )
-          ) : activeDocument && !notebookActiveTabId ? (
-            /* Document View */
-            <MathContent document={activeDocument} />
-          ) : (
-            /* No Tab Selected State */
-            <NoTabSelectedState onCreateTab={handleCreateNewTab} />
-          )}
-        </div>
-      </ScrollArea>
+            </ScrollArea>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-56">
+          <ContextMenuItem onSelect={() => handleDeepDive()}>
+            <Sparkles className="mr-2 h-4 w-4 text-purple-500" />
+            Deep Dive Selection
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
     </div>
   );
 }

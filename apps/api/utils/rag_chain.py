@@ -39,12 +39,21 @@ Used when the user asks "What is...", "Explain...", or creates code/math content
 
 * **"message":** Keep it clean and engaging. Example: "I've prepared a detailed explanation in the workspace!"
 * **"content":** The FULL detailed explanation.
-    * **DIAGRAMS (REQUIRED):** Include a Mermaid diagram code block.
-    * **MERMAID RULES (STRICT):** 1. Use `graph TD` or `graph LR`.
-        2. Use double quotes for labels: `A["Label Text"]`.
-        3. ❌ **DO NOT use `note for`** (It crashes the renderer). Use a regular node for notes: `NoteNode["📝 Note: Text"]`.
-        4. ❌ **DO NOT use `linkStyle`** (It is error-prone).
-        5. Keep the graph structure simple and hierarchical.
+    * **DIAGRAMS (REQUIRED):** Include a Reactflow JSON data structure.
+    * **REACTFLOW RULES (STRICT):** 
+        1. Provide strictly valid JSON in `graph_data`.
+        2. `nodes`: List of objects { "id": "1", "label": "Start", "type": "input"|"default"|"output" }.
+        3. `edges`: List of objects { "id": "e1-2", "source": "1", "target": "2", "label": "connection" }.
+        4. Keep labels short and clear.
+    * **MATH/LATEX FORMATTING (CRITICAL):**
+        1. **INLINE MATH** (use `$...$`): For simple, short variables or expressions mentioned within text.
+           * Example: "For any $n$ greater than 2..." or "when $n=2$..."
+           * ⚠️ **Keep inline math ON THE SAME LINE as surrounding text.** Do NOT put `$n$` on its own line.
+        2. **BLOCK MATH** (use `$$...$$`): ONLY for key formulas, theorems, or conclusions that deserve emphasis.
+           * Example: "The famous equation is:\\n$$a^n + b^n = c^n$$\\nThis has no solutions..."
+           * Block math should be on its own line, separated by newlines.
+        3. **RULE OF THUMB:** If it's just a variable name or simple term like $x$, $n$, $n=2$, $E=mc^2$ — use inline.
+           Only use block for the "star" equations that are central to the explanation.
 
 * **"quiz_data":** Leave empty [].
 
@@ -73,7 +82,13 @@ Used ONLY when the user asks for a "quiz".
 {{
   "title": "Topic Title",
   "type": "concept|math|code|quiz",
-  "content": "Markdown content here... \\n\\n```mermaid\\ngraph TD\\nA[\\"Start\\"]-->B[\\"End\\"]\\n```",
+  "title": "Topic Title",
+  "type": "concept|math|code|quiz",
+  "content": "Markdown content here...",
+  "graph_data": {
+     "nodes": [{"id": "1", "label": "Node A", "type": "input"}, {"id": "2", "label": "Node B", "type": "default"}],
+     "edges": [{"id": "e1-2", "source": "1", "target": "2"}]
+  },
   "equations": [],
   "quiz_data": [
     {{
@@ -108,17 +123,39 @@ prompt_template = PromptTemplate(
 def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional[Dict[str, Any]]]:
     """
     Parse the LLM response to extract the conversational message and optional Learning Unit JSON.
+    Handles broken closing tags and markdown code blocks.
     """
+    json_str = ""
+    conversational_message = response_text
+
+    # 1. Try exact tag match
     pattern = r'<LEARNING_UNIT>(.*?)</LEARNING_UNIT>'
     match = re.search(pattern, response_text, re.DOTALL)
     
     if match:
         json_str = match.group(1).strip()
         conversational_message = re.sub(pattern, '', response_text, flags=re.DOTALL).strip()
-        
+    else:
+        # 2. Fallback: Tag typo or missing closing tag
+        # Look for start tag and find the last valid JSON brace
+        start_marker = "<LEARNING_UNIT>"
+        if start_marker in response_text:
+            start_idx = response_text.find(start_marker)
+            content_start = start_idx + len(start_marker)
+            possible_content = response_text[content_start:]
+            
+            # Find the last '}' to guess where JSON ends
+            last_brace = possible_content.rfind('}')
+            if last_brace != -1:
+                json_str = possible_content[:last_brace+1].strip()
+                conversational_message = response_text[:start_idx].strip()
+
+    if json_str:
         try:
             # Common JSON cleanup
-            json_str = match.group(1).strip()
+            # Remove markdown code blocks
+            json_str = re.sub(r'^```(json)?\s*', '', json_str.strip(), flags=re.IGNORECASE).strip()
+            json_str = re.sub(r'\s*```$', '', json_str).strip()
             
             learning_unit_dict = json.loads(json_str)
             
@@ -132,10 +169,11 @@ def parse_learning_unit_from_response(response_text: str) -> tuple[str, Optional
             
         except json.JSONDecodeError as e:
             print(f"JSON Parse Error: {e}")
-            # 파싱 실패 시, 태그만 제거하고 메시지로 반환 (화면 깨짐 방지)
+            # Even if parsing fails, we prefer the separated conversational message behavior
+            # But since we can't show the unit, we return the full text or just the message
             return conversational_message, None
-    else:
-        return response_text, None
+
+    return response_text, None
 
 
 @trace
