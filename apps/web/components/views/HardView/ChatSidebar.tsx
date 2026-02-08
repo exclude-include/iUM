@@ -34,6 +34,7 @@ import { api } from "@/lib/api";
 import type { ChatMessage } from "@/types/api";
 import { useAppStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase/client";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -222,14 +223,18 @@ export function ChatSidebar() {
 
     if (files.length > 0) {
       setIsUploading(true);
-      setLoadingStatus("Uploading files...");
+      setLoadingStatus("Embedding file(s)... Please wait.");
 
       try {
-        const uploadPromises = files.map(file =>
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+
+        const uploadPromises = files.map((file) =>
           api.ingest.uploadFile(
             file,
             "user_knowledge",
-            activeFolderId || undefined
+            activeFolderId || undefined,
+            token
           )
         );
 
@@ -238,16 +243,20 @@ export function ChatSidebar() {
         attachments = uploadResults.map((result, index) => ({
           type: files[index].type.startsWith("image/") ? "image" : "file",
           storage_path: result.storage_path,
-          file_id: result.document_ids[0],
-          name: files[index].name
+          file_id: result.document_ids?.[0] ?? "",
+          name: files[index].name,
         }));
 
+        // Ensure we have valid file_ids for RAG
+        if (attachments.some((a) => !a.file_id)) {
+          throw new Error("File embedding did not return document IDs.");
+        }
       } catch (error) {
         console.error("File upload failed:", error);
         toast({
           title: "Upload failed",
-          description: "Failed to upload attached files.",
-          variant: "destructive"
+          description: "Failed to upload or embed attached files. Please try again.",
+          variant: "destructive",
         });
         setIsUploading(false);
         setLoadingStatus(null);
@@ -740,7 +749,17 @@ export function ChatSidebar() {
           </ScrollArea>
 
           {/* Input Area */}
-          <div className="p-3 border-t bg-background shrink-0">
+          <div className="relative p-3 border-t bg-background shrink-0">
+            {/* Embedding overlay: block interaction and show message until embedding is done */}
+            {(isUploading || (loadingStatus && loadingStatus.startsWith("Embedding"))) && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-[2px] rounded-lg">
+                <div className="flex flex-col items-center gap-2 rounded-lg border bg-background px-4 py-3 shadow-sm">
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="text-sm font-medium text-foreground">Embedding file(s)...</p>
+                  <p className="text-xs text-muted-foreground">Questions are disabled until embedding finishes.</p>
+                </div>
+              </div>
+            )}
             {/* Selected Files Preview */}
             {selectedFiles.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-2">
@@ -792,6 +811,7 @@ export function ChatSidebar() {
                 className="shrink-0 h-9 w-9"
                 onClick={() => fileInputRef.current?.click()}
                 title="Attach files"
+                disabled={!!loadingStatus || isUploading}
               >
                 <Paperclip className="h-4 w-4" />
               </Button>
@@ -799,26 +819,32 @@ export function ChatSidebar() {
               <div className="relative flex-1">
                 <Textarea
                   placeholder={
-                    activeFolderId
-                      ? `Message ${activeFolder?.name}...`
-                      : "Select a folder to chat..."
+                    isUploading
+                      ? "Embedding file(s)..."
+                      : loadingStatus
+                        ? "Please wait..."
+                        : activeFolderId
+                          ? `Message ${activeFolder?.name}...`
+                          : "Select a folder to chat..."
                   }
                   className="w-full min-h-[40px] max-h-[200px] px-3 py-2 text-sm rounded-md border border-input bg-transparent shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none overflow-y-auto"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyPress}
-                  disabled={isUploading}
+                  disabled={!!loadingStatus || isUploading}
                 />
               </div>
               <Button
                 onClick={() => handleSend()}
-                // ✨ [Fixed] Allow queuing even when loading
-                disabled={(!input.trim() && selectedFiles.length === 0) || isUploading}
+                disabled={
+                  (!input.trim() && selectedFiles.length === 0) ||
+                  !!loadingStatus ||
+                  isUploading
+                }
                 size="icon"
                 className="shrink-0 h-9 w-9"
               >
-                {loadingStatus ? (
-                  // Show loading spinner but button is active for queuing
+                {loadingStatus || isUploading ? (
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 ) : (
                   <Send className="h-4 w-4" />

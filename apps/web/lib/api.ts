@@ -73,13 +73,32 @@ export const chatApi = {
       folderId?: string;
       /** Selected file IDs (Files section) + chat attachment file IDs for RAG */
       documentIds?: string[];
-      attachments?: { type: string; url?: string; file_id?: string; storage_path?: string }[];
+      attachments?: { type?: string; url?: string; file_id?: string; storage_path?: string; name?: string }[];
     },
     // ✨ [추가] 실시간 상태 업데이트를 위한 콜백 함수
     onStatusUpdate?: (status: string) => void
   ): Promise<ChatResponse> {
     const url = `${API_BASE_URL}/api/agent/message`; // Endpoint updated to match backend router
 
+    // Build body with only serializable values (avoid 422 validation errors)
+    const documentIds = (options?.documentIds ?? []).filter((id): id is string => typeof id === "string" && id.length > 0);
+    const attachments = (options?.attachments ?? []).map((a) => ({
+      type: typeof a.type === "string" ? a.type : "file",
+      ...(a.file_id != null && { file_id: String(a.file_id) }),
+      ...(a.storage_path != null && { storage_path: String(a.storage_path) }),
+      ...(a.name != null && { name: String(a.name) }),
+    }));
+
+    const body: Record<string, unknown> = {
+      message: String(message ?? "").trim(),
+      use_react: true,
+      collection_name: options?.collectionName ?? "user_knowledge",
+    };
+    if (options?.workspaceId != null) body.workspace_id = options.workspaceId;
+    if (options?.conversationId != null && options.conversationId !== "") body.conversation_id = options.conversationId;
+    if (options?.folderId != null && options.folderId !== "") body.folder_id = options.folderId;
+    if (documentIds.length > 0) body.document_ids = documentIds;
+    if (attachments.length > 0) body.attachments = attachments;
 
     try {
       const response = await fetch(url, {
@@ -87,19 +106,18 @@ export const chatApi = {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          message,
-          workspace_id: options?.workspaceId,
-          conversation_id: options?.conversationId,
-          collection_name: options?.collectionName,
-          folder_id: options?.folderId,
-          document_ids: options?.documentIds ?? undefined,
-          attachments: options?.attachments,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
-        throw new Error(`API Request failed: ${response.statusText}`);
+        const errBody = await response.json().catch(() => null);
+        const detail = errBody?.detail;
+        const msg = typeof detail === "string"
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((e: { msg?: string }) => e?.msg).filter(Boolean).join("; ") || response.statusText
+            : response.statusText;
+        throw new Error(`API Request failed: ${msg}`);
       }
 
       // ✨ 스트림 리더 생성
