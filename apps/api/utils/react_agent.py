@@ -37,8 +37,9 @@ Final Answer: [Final response to the user]
 1. For complex questions, use multiple tools sequentially.
 2. For quiz requests, use the create_quiz_cell tool.
 3. For topics requiring prior knowledge, run check_prerequisites first.
-4. Always start each step with Thought.
-5. Format your Final Answer in markdown.
+4. For file/document summarization, use the create_summary_cell tool.
+5. Always start each step with Thought.
+6. Format your Final Answer in markdown.
 
 ## Example
 User: "Explain calculus and also create a quiz"
@@ -338,6 +339,9 @@ User Question: {question}
                         quiz_data = json.loads(content)
                 except:
                     combined_content += f"\n\n## Quiz\n{unit['content']}"
+            elif unit["type"] == "summary":
+                unit_type = "summary"
+                combined_content += f"\n\n{unit['content']}"
             else:
                 combined_content += f"\n\n{unit['content']}"
         
