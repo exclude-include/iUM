@@ -13,7 +13,7 @@ import { UploadReelDialog } from "@/components/UploadReelDialog";
 
 export function GlobalNavDock() {
   const pathname = usePathname();
-  const isHardMode = pathname?.startsWith("/hard");
+  const isHardMode = pathname === "/" || pathname?.startsWith("/hard");
   const isSoftMode = pathname?.startsWith("/soft");
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
 
@@ -40,10 +40,10 @@ export function GlobalNavDock() {
             </Tooltip>
           </div>
 
-          {/* Fire (Streak) - Hard View */}
+          {/* Fire (Streak) - Hard View (Workspace); home "/" is workspace when logged in */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Link href="/hard">
+              <Link href="/">
                 <Button
                   data-tutorial="tutorial-nav-workspace"
                   variant="ghost"

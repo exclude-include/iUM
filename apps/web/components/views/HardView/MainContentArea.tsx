@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/context-menu";
 import { MathContent } from "./MathContent";
 import { CellRenderer } from "./CellRenderer";
+import { CellListErrorBoundary } from "./CellListErrorBoundary";
 import { DeepModeCursor } from "./DeepModeCursor";
 import { TextSelectionMenu } from "./TextSelectionMenu";
 import { cn } from "@/lib/utils";
@@ -98,23 +99,32 @@ export function MainContentArea() {
     return () => clearInterval(autoSaveInterval);
   }, [notebookTabs, notebookActiveTabId]);
 
-  // Handle scroll-to-cell with delay for render completion
+  // Handle scroll-to-cell after layout settles to avoid Radix "intersectRect" errors when adding cells
   useEffect(() => {
-    if (scrollToCellId) {
-      // Wait for render to complete before scrolling
-      const timeoutId = setTimeout(() => {
-        const cellElement = cellRefs.current.get(scrollToCellId);
-        if (cellElement) {
-          cellElement.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          });
-        }
-        clearScrollTarget();
-      }, 100);
+    if (!scrollToCellId) return;
 
-      return () => clearTimeout(timeoutId);
-    }
+    const id = scrollToCellId;
+    const timeoutId = setTimeout(() => {
+      // Run after paint so Radix/Floating UI have finished any position updates
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          try {
+            const cellElement = cellRefs.current.get(id);
+            if (cellElement) {
+              cellElement.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            }
+          } catch (_) {
+            // Ignore layout/position errors so the new cell still appears
+          }
+          clearScrollTarget();
+        });
+      });
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
   }, [scrollToCellId, notebookActiveTabId, clearScrollTarget]);
 
   // Callback ref setter for cells
@@ -731,16 +741,18 @@ export function MainContentArea() {
                 {/* Active Tab Content */}
                 {activeTab && notebookActiveTabId ? (
                   activeTab.cells.length > 0 ? (
-                    <div className="space-y-4 w-full max-w-full">
-                      {activeTab.cells.map((cell) => (
-                        <CellRenderer
-                          key={cell.id}
-                          cell={cell}
-                          tabId={activeTab.id}
-                          ref={(el) => setCellRef(cell.id, el)}
-                        />
-                      ))}
-                    </div>
+                    <CellListErrorBoundary fallbackTitle="Response was added.">
+                      <div className="space-y-4 w-full max-w-full">
+                        {activeTab.cells.map((cell) => (
+                          <CellRenderer
+                            key={cell.id}
+                            cell={cell}
+                            tabId={activeTab.id}
+                            ref={(el) => setCellRef(cell.id, el)}
+                          />
+                        ))}
+                      </div>
+                    </CellListErrorBoundary>
                   ) : (
                     <EmptyTabState tabTitle={activeTab.title} />
                   )
