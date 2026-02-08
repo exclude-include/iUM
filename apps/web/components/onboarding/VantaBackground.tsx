@@ -22,7 +22,9 @@ export function VantaBackground() {
         const THREE = (mod as { default?: unknown }).default ?? mod;
         window.THREE = THREE;
 
-        const VANTA = await import("vanta/dist/vanta.clouds.min");
+        // Use require to bypass static analysis issues
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const VANTA = await import("vanta/dist/vanta.clouds.min.js");
         const VANTADefault = (VANTA as { default: (opts: Record<string, unknown>) => { destroy: () => void } }).default;
 
         vantaEffect.current = VANTADefault({

@@ -148,11 +148,19 @@ interface IumFile {
 - **Theme System**: Light/Dark/System with next-themes
 - **Feedback System**: Like/dislike buttons for AI responses
 - **Opik Integration**: Observability and tracing for RAG pipeline
-- **Reels Tab Enhancements**:
-  - Vertical scroll with smooth animations
-  - Wheel scroll support for desktop navigation
-  - Delete functionality with Supabase synchronization
-  - Improved popover UI for reel actions
+- **Reels Tab Enhancements (Social Mode)**:
+  - **Feed Architecture**: Infinite scroll with sliding window (pagination + prefetching)
+  - **URL Routing**: Deep linking for individual reels (`/soft/reels/[id]`)
+  - **Performance**: Virtualized list logic for memory efficiency
+  - **UI**: Vertical scroll animations, author name resolution, delete functionality
+- **Deep Mode (Beta)**:
+  - **Drag & Drop Panel**: Draggable floating panel for advanced tools
+  - **Vanta.js Backgrounds**: Interactive "Net" and "Cloud" background effects
+  - **Status Badges**: Visual indicators for AI analysis depth
+- **Agentic Capabilities (New)**:
+  - **ReAct Agent**: Autonomous reasoning agent with tool use
+  - **File Summarization**: Dedicated tool for summarizing uploaded documents
+  - **Memory System V2**: Enhanced persistent memory for user context
 - **File System Synchronization**:
   - Notebook-to-file bidirectional sync
   - Auto-save with conflict resolution
@@ -161,17 +169,15 @@ interface IumFile {
 
 ### 🚧 In Progress
 
-- **Quick Tools Panel**: Rapid access to common actions
-- **Content Format Expansion**: Enhanced quiz types, flashcards, interactive diagrams
+- **Deep Research Mode**: Advanced multi-step research workflows (partially implemented in Deep Mode)
 - **PDF Viewer Integration**: In-app PDF reading with scrollable containers
+- **Recommendation System**: VectorDB-based reel recommendations
 
 ### 📋 Planned Features
 
 - **Highlights Tab**: Key concept extraction and highlighting
-- **Onboarding Flow**: First-time user experience
-- **Deep Research Mode**: Multi-step research workflows
-- **Quiz Enhancements**: Time limits, "I don't know" option
-- **Advanced PDF Features**: Annotations, highlighting, note-taking
+- **Advanced Quiz Features**: Time limits, "I don't know" option
+- **YouTube Integration**: Import content from YouTube URLs
 
 ---
 
@@ -206,13 +212,22 @@ apps/
 │   ├── components/
 │   │   ├── ui/                  # shadcn/ui components
 │   │   ├── views/
-│   │   │   └── HardView/        # Main workspace view
-│   │   │       ├── MainContentArea.tsx    # Notebook tab renderer
-│   │   │       ├── ChatSidebar.tsx        # AI chat interface
-│   │   │       ├── FolderSidebar.tsx      # File manager
-│   │   │       ├── CellRenderer.tsx       # Individual cell display
-│   │   │       ├── CellToolbar.tsx        # Cell actions
-│   │   │       └── BookmarksSection.tsx   # Bookmarks sidebar
+│   │   │   ├── HardView/        # Main workspace view
+│   │   │   │   ├── MainContentArea.tsx    # Notebook tab renderer
+│   │   │   │   ├── ChatSidebar.tsx        # AI chat interface
+│   │   │   │   ├── DeepModeView.tsx       # Drag & Drop Deep Mode Panel
+│   │   │   │   ├── DeepModeCursor.tsx     # Deep mode cursor effects
+│   │   │   │   ├── FolderSidebar.tsx      # File manager
+│   │   │   │   ├── CellRenderer.tsx       # Individual cell display
+│   │   │   │   ├── CellToolbar.tsx        # Cell actions
+│   │   │   │   └── BookmarksSection.tsx   # Bookmarks sidebar
+│   │   │   ├── SoftView/        # Social/Reels view
+│   │   │   │   └── SoftLearningView.tsx   # Main container
+│   │   ├── SocialMode/          # Reels implementation
+│   │   │   ├── ReelPlayer.tsx       # Video player & interactions
+│   │   │   ├── ExploreView.tsx      # Grid view of reels
+│   │   │   ├── useFeedStore.ts      # Feed state & sliding window
+│   │   │   └── useSocialStore.ts    # Social actions state
 │   │   ├── QuizView.tsx         # Quiz renderer
 │   │   └── Mermaid.tsx          # Diagram renderer
 │   ├── lib/
@@ -520,6 +535,36 @@ async sendMessage(message: string, options, onStatusUpdate?: (status: string) =>
 }
 ```
 
+### ReAct Agent Architecture (New)
+
+**Location**: [apps/api/routers/agent_react.py](apps/api/routers/agent_react.py) (implied) & [apps/api/utils/agent_tools.py](apps/api/utils/agent_tools.py)
+
+The new **ReAct (Reasoning + Acting)** agent enables autonomous tool usage for complex tasks.
+
+1.  **Architecture**:
+    - Uses `LangChain`'s ReAct agent pattern.
+    - **Tools**:
+      - `create_summary_cell`: Summarizes uploaded files and creates a notebook cell.
+      - `rag_search`: Queries the vector database for information.
+      - `create_note_cell`: Generates standard learning cells.
+    - **Memory**: Maintains conversation history and context.
+
+2.  **Flow**:
+
+    ```python
+    # 1. User Input -> Agent Executor
+    # 2. Agent reasons: "I need to summarize this file first."
+    # 3. Agent calls Tool: create_summary_cell(file_id=...)
+    # 4. Tool executes: Reads file -> Summarizes -> Returns result
+    # 5. Agent reasons: "Now I have the summary, I'll present it."
+    # 6. Agent Output -> User
+    ```
+
+3.  **Frontend Integration**:
+    - Separates "Chat Messages" from "Cell Content".
+    - Chat acts as the "Thinking/Reasoning" log.
+    - Cells are the "Artifacts" generated by the agent.
+
 ### Auto-Sync System
 
 **Location**: [apps/web/lib/store.ts](apps/web/lib/store.ts)
@@ -607,13 +652,15 @@ if (response.learning_unit) {
 
 ### Phase 1: Core Feature Completion (Current)
 
-| Priority  | Task                                           | Owner    | Status               |
-| --------- | ---------------------------------------------- | -------- | -------------------- |
-| 🔴 High   | Generated Contents → Notebook Cells            | Daehan   | ✅ Implemented       |
-| 🔴 High   | Content Format Implementation (Quiz, Diagrams) | Daehan   | ✅ Done              |
-| 🔴 High   | File System Synchronization                    | Daehan   | ✅ Completed (Feb 2) |
-| 🟡 Medium | Reels Tab Enhancements (Scroll, Delete, UI)    | Donghyuk | ✅ Completed (Feb 7) |
-| 🟡 Medium | Quick Tools Panel + File Drag                  | Daehan   | 📋 To Do             |
+| Priority  | Task                                           | Owner  | Status               |
+| --------- | ---------------------------------------------- | ------ | -------------------- |
+| 🔴 High   | Generated Contents → Notebook Cells            | Daehan | ✅ Implemented       |
+| 🔴 High   | Content Format Implementation (Quiz, Diagrams) | Daehan | ✅ Done              |
+| 🔴 High   | File System Synchronization                    | Daehan | ✅ Completed (Feb 2) |
+| 🟡 Medium | Reels Tab Architecture Redesign                | Minjun | ✅ Completed (Feb 8) |
+| 🟡 Medium | Onboarding Flow & Tutorials                    | All    | ✅ Completed (Feb 8) |
+| 🟡 Medium | Deep Mode UI (Drag Panel, Vanta.js)            | All    | ✅ Completed (Feb 8) |
+| 🟡 Medium | ReAct Agent & Memory V2                        | Sihyun | ✅ Completed (Feb 8) |
 
 ### Phase 2: UX Improvements
 
@@ -626,11 +673,11 @@ if (response.learning_unit) {
 
 ### Phase 3: Advanced Features
 
-| Priority  | Task                          | Owner  | Status   |
-| --------- | ----------------------------- | ------ | -------- |
-| 🟡 Medium | YouTube Integration for Reels | Sihyun | 📋 To Do |
-| 🟢 Low    | Deep Research / Overlay Mode  | Daehan | 📋 To Do |
-| 🟢 Low    | Advanced PDF Annotations      | Daehan | 📋 To Do |
+| Priority  | Task                             | Owner  | Status         |
+| --------- | -------------------------------- | ------ | -------------- |
+| 🟡 Medium | Recommendation System (VectorDB) | Minjun | 🚧 In Progress |
+| 🟡 Medium | YouTube Integration for Reels    | Sihyun | 📋 To Do       |
+| 🟢 Low    | Advanced PDF Annotations         | Daehan | 📋 To Do       |
 
 ---
 
