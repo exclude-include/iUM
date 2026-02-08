@@ -22,7 +22,7 @@ export function VantaBackground() {
         const THREE = (mod as { default?: unknown }).default ?? mod;
         window.THREE = THREE;
 
-        const VANTA = await import("vanta/dist/vanta.net.min");
+        const VANTA = await import("vanta/dist/vanta.clouds.min");
         const VANTADefault = (VANTA as { default: (opts: Record<string, unknown>) => { destroy: () => void } }).default;
 
         vantaEffect.current = VANTADefault({
@@ -33,16 +33,13 @@ export function VantaBackground() {
           gyroControls: false,
           minHeight: 200,
           minWidth: 200,
-          scale: 1,
-          scaleMobile: 1,
-          color: 0x93c5fd,
-          backgroundColor: 0xf0f7ff,
-          points: 10,
-          maxDistance: 20,
-          spacing: 15,
-          showDots: true,
-          mouseCoeffX: 0.3,
-          mouseCoeffY: 0.3,
+          skyColor: 0x68b8d7,
+          cloudColor: 0xadc1de,
+          cloudShadowColor: 0x183550,
+          sunColor: 0xff9919,
+          sunGlareColor: 0xff6633,
+          sunlightColor: 0xff9933,
+          speed: 1,
         });
       } catch (e) {
         console.warn("Vanta background failed to load:", e);

@@ -42,41 +42,16 @@ const features = [
 
 export function OnboardingLanding() {
   return (
-    <div className="fixed inset-0 z-[100] flex min-h-screen flex-col overflow-hidden bg-[#f0f7ff]">
-      {/* Vanta NET background (dots + lines, mouse-reactive) */}
+    <div className="fixed inset-0 z-[100] flex min-h-screen flex-col overflow-hidden bg-[#ffffff]">
+      {/* Vanta CLOUDS background (sky + clouds, mouse-reactive) */}
       <VantaBackground />
-      {/* Pastel blue gradient layers */}
-      <div className="absolute inset-0 bg-gradient-to-br from-[#e8f4fd]/80 via-[#f0f7ff]/70 to-[#e0effe]/80" />
+      {/* Light sky/cloud tone overlay */}
       <div
-        className="absolute inset-0 opacity-70"
+        className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 90% 60% at 50% -10%, rgba(147, 197, 253, 0.35), transparent 55%)",
+            "linear-gradient(to bottom, rgba(104, 184, 215, 0.12) 0%, transparent 40%, rgba(173, 193, 222, 0.08) 100%)",
         }}
-      />
-      <div
-        className="absolute bottom-0 left-0 right-0 h-1/2 opacity-60"
-        style={{
-          background:
-            "radial-gradient(ellipse 80% 50% at 50% 100%, rgba(191, 219, 254, 0.4), transparent 60%)",
-        }}
-      />
-      {/* Soft floating orbs */}
-      <motion.div
-        className="absolute left-[15%] top-[25%] h-64 w-64 rounded-full bg-[#bfdbfe]/40 blur-3xl"
-        animate={{
-          scale: [1, 1.1, 1],
-          opacity: [0.4, 0.55, 0.4],
-        }}
-        transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-      />
-      <motion.div
-        className="absolute right-[10%] top-[50%] h-72 w-72 rounded-full bg-[#93c5fd]/30 blur-3xl"
-        animate={{
-          scale: [1.1, 1, 1.1],
-          opacity: [0.3, 0.5, 0.3],
-        }}
-        transition={{ duration: 7, repeat: Infinity, ease: "easeInOut" }}
       />
 
       <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-16">
