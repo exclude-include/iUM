@@ -76,13 +76,13 @@ export function OnboardingLanding() {
 
           <motion.h1
             variants={fadeUp}
-            className="mb-3 text-3xl font-bold tracking-tight text-slate-800 sm:text-4xl md:text-5xl"
+            className="mb-3 text-3xl font-bold tracking-tight text-white sm:text-4xl md:text-5xl"
           >
             Insight, Understanding, Mastery
           </motion.h1>
           <motion.p
             variants={fadeUp}
-            className="mb-14 max-w-lg text-lg text-slate-600"
+            className="mb-14 max-w-lg text-lg text-white"
           >
             A learning ecosystem powered by AI. Notes, chat, and reels to deepen your understanding.
           </motion.p>
@@ -139,7 +139,7 @@ export function OnboardingLanding() {
 
           <motion.p
             variants={fadeUp}
-            className="mt-8 text-sm text-slate-500"
+            className="mt-8 text-sm text-white"
           >
             Already have an account? Sign in. New here? Sign up to get started.
           </motion.p>
@@ -153,9 +153,9 @@ export function OnboardingLanding() {
         transition={{ delay: 0.6, duration: 0.4 }}
         className="relative z-10 flex shrink-0 items-center justify-center gap-2.5 py-8"
       >
-        <span className="text-sm text-slate-500">powered by</span>
+        <span className="text-sm text-white">powered by</span>
         <span
-          className="inline-flex items-center rounded-lg bg-slate-700/90 px-2.5 py-1 font-semibold tracking-tight text-white"
+          className="inline-flex items-center rounded-lg bg-black px-2.5 py-1 font-semibold tracking-tight text-white"
           style={{ letterSpacing: "0.08em", fontSize: "0.8rem" }}
         >
           OPIK
