@@ -76,9 +76,11 @@ export function ChatSidebar() {
   const [isSaved, setIsSaved] = useState(false);
   const [lastSavedMessageId, setLastSavedMessageId] = useState<string | null>(null);
 
-  // ✨ [추가] 파일 업로드 및 복사 상태
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
+  // ✨ 파일: 선택 시 즉시 임베딩 (질문 전에 완료)
+  type FileWithId = { id: string; file: File };
+  const [selectedFiles, setSelectedFiles] = useState<FileWithId[]>([]);
+  const [embeddedByFileId, setEmbeddedByFileId] = useState<Record<string, { type: string; file_id: string; storage_path?: string; name?: string }>>({});
+  const [isEmbeddingFiles, setIsEmbeddingFiles] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [responseType, setResponseType] = useState<"auto" | "concept" | "diagram" | "quiz">("auto");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -184,102 +186,96 @@ export function ChatSidebar() {
     }
   };
 
-  // ✨ [추가] 파일 선택 핸들러
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      const newFiles = Array.from(e.target.files);
-      // 최대 3개까지만 허용
-      if (selectedFiles.length + newFiles.length > 3) {
-        toast({
-          title: "Too many files",
-          description: "You can upload up to 3 files at once.",
-          variant: "destructive"
-        });
-        return;
-      }
-      setSelectedFiles(prev => [...prev, ...newFiles]);
+  // ✨ 파일 선택 시 즉시 업로드/임베딩 시작 (질문 전에 완료)
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawFiles = e.target.files ? Array.from(e.target.files) : [];
+    if (rawFiles.length === 0) return;
+    if (selectedFiles.length + rawFiles.length > 3) {
+      toast({
+        title: "Too many files",
+        description: "You can upload up to 3 files at once.",
+        variant: "destructive",
+      });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
     }
-    // Reset input value to allow selecting same file again
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
+    const newEntries: FileWithId[] = rawFiles.map((file) => ({
+      id: `file-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      file,
+    }));
+    setSelectedFiles((prev) => [...prev, ...newEntries]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
 
-  // ✨ [추가] 파일 제거 핸들러
-  const handleRemoveFile = (index: number) => {
-    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // ✨ [Added] Message Queue State
-  const queueRef = useRef<{ content: string; files: File[] }[]>([]);
-  const isProcessingRef = useRef(false);
-
-  // ✨ [Refactored] Actual execution logic (previously handleSend)
-  const executeMessageTask = async (content: string, files: File[]) => {
-    // Note: We use arguments instead of state because state might have changed
-
-    // ✨ [수정] 파일 업로드 처리
-    let attachments: { type: string; url?: string; file_id?: string; storage_path?: string; name?: string }[] = [];
-
-    if (files.length > 0) {
-      setIsUploading(true);
-      setLoadingStatus("Embedding file(s)... Please wait.");
-
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token;
-
-        const uploadPromises = files.map((file) =>
-          api.ingest.uploadFile(
+    setIsEmbeddingFiles(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      for (const { id, file } of newEntries) {
+        try {
+          const result = await api.ingest.uploadFile(
             file,
             "user_knowledge",
             activeFolderId || undefined,
             token
-          )
-        );
-
-        const uploadResults = await Promise.all(uploadPromises);
-
-        attachments = uploadResults.map((result, index) => ({
-          type: files[index].type.startsWith("image/") ? "image" : "file",
-          storage_path: result.storage_path,
-          file_id: result.document_ids?.[0] ?? "",
-          name: files[index].name,
-        }));
-
-        // Ensure we have valid file_ids for RAG
-        if (attachments.some((a) => !a.file_id)) {
-          throw new Error("File embedding did not return document IDs.");
+          );
+          const fileId = result.document_ids?.[0];
+          if (!fileId) throw new Error("No document ID returned");
+          setEmbeddedByFileId((prev) => ({
+            ...prev,
+            [id]: {
+              type: file.type.startsWith("image/") ? "image" : "file",
+              file_id: fileId,
+              storage_path: result.storage_path,
+              name: file.name,
+            },
+          }));
+        } catch (err) {
+          console.error("Embedding failed for", file.name, err);
+          toast({
+            title: "Embedding failed",
+            description: `${file.name}: ${err instanceof Error ? err.message : "Unknown error"}`,
+            variant: "destructive",
+          });
+          setSelectedFiles((prev) => prev.filter((e) => e.id !== id));
         }
-      } catch (error) {
-        console.error("File upload failed:", error);
-        toast({
-          title: "Upload failed",
-          description: "Failed to upload or embed attached files. Please try again.",
-          variant: "destructive",
-        });
-        setIsUploading(false);
-        setLoadingStatus(null);
-        return;
-      } finally {
-        setIsUploading(false);
       }
+    } finally {
+      setIsEmbeddingFiles(false);
     }
+  };
 
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles((prev) => {
+      const entry = prev[index];
+      if (entry) {
+        setEmbeddedByFileId((p) => {
+          const next = { ...p };
+          delete next[entry.id];
+          return next;
+        });
+        return prev.filter((_, i) => i !== index);
+      }
+      return prev;
+    });
+  };
+
+  type QueuedAttachments = { type: string; file_id?: string; storage_path?: string; name?: string }[];
+  const queueRef = useRef<{ content: string; attachments: QueuedAttachments }[]>([]);
+  const isProcessingRef = useRef(false);
+
+  const executeMessageTask = async (content: string, attachments: QueuedAttachments) => {
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
       content: content.trim(),
       timestamp: new Date().toISOString(),
-      // ✨ [추가] 사용자 의도 저장
       intent: responseType,
-      // ✨ [추가] 첨부파일 메타데이터 (UI 표시용)
-      sources: attachments.map(att => ({
+      sources: attachments.map((att) => ({
         title: att.name || "Attached File",
         id: att.file_id || "",
         content: "",
-        relevance_score: 1
-      }))
+        relevance_score: 1,
+      })),
     };
 
     setMessages((prev) => [...prev, userMessage]);
@@ -383,29 +379,26 @@ export function ChatSidebar() {
     }
   };
 
-  // ✨ [Added] Queue Processor
   const processQueue = async () => {
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
-
     while (queueRef.current.length > 0) {
       const task = queueRef.current.shift();
       if (task) {
-        await executeMessageTask(task.content, task.files);
+        await executeMessageTask(task.content, task.attachments);
       }
     }
-
     isProcessingRef.current = false;
   };
 
-  // ✨ [Modified] New handleSend pushes to queue
   const handleSend = async (manualContent?: string) => {
     let contentToSend = manualContent || input;
-    const filesToSend = [...selectedFiles];
+    const attachmentsToSend = selectedFiles
+      .map(({ id }) => embeddedByFileId[id])
+      .filter((a): a is NonNullable<typeof a> => Boolean(a?.file_id));
 
-    if ((!contentToSend.trim() && filesToSend.length === 0)) return;
+    if (!contentToSend.trim() && attachmentsToSend.length === 0) return;
 
-    // ✨ [추가] 답변 유형별 지침 추가
     if (!manualContent) {
       if (responseType === "concept") {
         contentToSend = `[Instruction: Provide a detailed conceptual explanation] ${contentToSend}`;
@@ -422,20 +415,21 @@ export function ChatSidebar() {
         description: "Chatting without a folder will search all documents. Create or select a folder for focused learning.",
         variant: "default",
       });
-      // Allow sending anyway for general chat? The original logic didn't return.
     }
 
-    // Clear Input Immediately
     if (!manualContent) {
       setInput("");
+      const idsToClear = new Set(selectedFiles.map((e) => e.id));
       setSelectedFiles([]);
+      setEmbeddedByFileId((prev) => {
+        const next = { ...prev };
+        idsToClear.forEach((id) => delete next[id]);
+        return next;
+      });
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
 
-    // Push to Queue
-    queueRef.current.push({ content: contentToSend, files: filesToSend });
-
-    // Trigger Processor
+    queueRef.current.push({ content: contentToSend, attachments: attachmentsToSend });
     processQueue();
   };
 
@@ -750,23 +744,27 @@ export function ChatSidebar() {
 
           {/* Input Area */}
           <div className="relative p-3 border-t bg-background shrink-0">
-            {/* Embedding overlay: block interaction and show message until embedding is done */}
-            {(isUploading || (loadingStatus && loadingStatus.startsWith("Embedding"))) && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-[2px] rounded-lg">
-                <div className="flex flex-col items-center gap-2 rounded-lg border bg-background px-4 py-3 shadow-sm">
-                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                  <p className="text-sm font-medium text-foreground">Embedding file(s)...</p>
-                  <p className="text-xs text-muted-foreground">Questions are disabled until embedding finishes.</p>
-                </div>
+            {/* 작은 로딩 표시: 입력창 가리지 않고 위에 표시 */}
+            {isEmbeddingFiles && (
+              <div className="flex items-center gap-2 mb-2 py-1.5 px-2 rounded-md bg-muted/60 border border-border/50 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                <span>Embedding file(s)... You can type your question below.</span>
               </div>
             )}
             {/* Selected Files Preview */}
             {selectedFiles.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-2">
-                {selectedFiles.map((file, index) => (
-                  <div key={index} className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-xs border">
-                    <span className="truncate max-w-[100px]">{file.name}</span>
-                    <button onClick={() => handleRemoveFile(index)} className="hover:text-destructive">
+                {selectedFiles.map((entry, index) => (
+                  <div key={entry.id} className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-xs border">
+                    {embeddedByFileId[entry.id] ? (
+                      <span className="truncate max-w-[100px]">{entry.file.name}</span>
+                    ) : (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+                        <span className="truncate max-w-[80px]">{entry.file.name}</span>
+                      </>
+                    )}
+                    <button onClick={() => handleRemoveFile(index)} className="hover:text-destructive shrink-0">
                       <X className="h-3 w-3" />
                     </button>
                   </div>
@@ -811,7 +809,7 @@ export function ChatSidebar() {
                 className="shrink-0 h-9 w-9"
                 onClick={() => fileInputRef.current?.click()}
                 title="Attach files"
-                disabled={!!loadingStatus || isUploading}
+                disabled={!!loadingStatus}
               >
                 <Paperclip className="h-4 w-4" />
               </Button>
@@ -819,32 +817,30 @@ export function ChatSidebar() {
               <div className="relative flex-1">
                 <Textarea
                   placeholder={
-                    isUploading
-                      ? "Embedding file(s)..."
-                      : loadingStatus
-                        ? "Please wait..."
-                        : activeFolderId
-                          ? `Message ${activeFolder?.name}...`
-                          : "Select a folder to chat..."
+                    loadingStatus
+                      ? "Please wait..."
+                      : activeFolderId
+                        ? `Message ${activeFolder?.name}...`
+                        : "Select a folder to chat..."
                   }
                   className="w-full min-h-[40px] max-h-[200px] px-3 py-2 text-sm rounded-md border border-input bg-transparent shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none overflow-y-auto"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyPress}
-                  disabled={!!loadingStatus || isUploading}
+                  disabled={!!loadingStatus}
                 />
               </div>
               <Button
                 onClick={() => handleSend()}
                 disabled={
-                  (!input.trim() && selectedFiles.length === 0) ||
+                  (!input.trim() && !selectedFiles.some((e) => embeddedByFileId[e.id]?.file_id)) ||
                   !!loadingStatus ||
-                  isUploading
+                  (selectedFiles.length > 0 && selectedFiles.some((e) => !embeddedByFileId[e.id]?.file_id))
                 }
                 size="icon"
                 className="shrink-0 h-9 w-9"
               >
-                {loadingStatus || isUploading ? (
+                {loadingStatus ? (
                   <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 ) : (
                   <Send className="h-4 w-4" />
