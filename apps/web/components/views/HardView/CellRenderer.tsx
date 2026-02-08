@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef } from "react";
+import { forwardRef, useRef, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { QuizView } from "@/components/QuizView";
 import { Mermaid } from "@/components/Mermaid";
@@ -13,22 +13,21 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import { BlockMath, InlineMath } from "react-katex";
+import { Sparkles } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import "katex/dist/katex.min.css";
 
-// Custom Markdown Renderer Component to reuse logic
-// ✨ [Performance] Memoize components object to prevent ReactMarkdown from re-creating DOM on every render
-const MARKDOWN_COMPONENTS = {
-  p: ({ children }: any) => <p className="my-4 leading-relaxed">{children}</p>,
-  h1: ({ children }: any) => <h1 className="text-2xl font-bold mt-8 mb-4">{children}</h1>,
-  h2: ({ children }: any) => <h2 className="text-xl font-bold mt-6 mb-3">{children}</h2>,
-  h3: ({ children }: any) => <h3 className="text-lg font-semibold mt-5 mb-2">{children}</h3>,
+// Custom Markdown Renderer Component to reuse logic (no block wrapper)
+const MARKDOWN_COMPONENTS_BASE = {
   strong: ({ children }: any) => <strong className="font-bold text-foreground">{children}</strong>,
   ul: ({ children }: any) => <ul className="my-4 space-y-2 list-disc list-outside pl-5">{children}</ul>,
   ol: ({ children }: any) => <ol className="my-4 space-y-2 list-decimal list-outside pl-5">{children}</ol>,
   li: ({ children }: any) => <li className="my-1.5 leading-relaxed pl-1">{children}</li>,
-  blockquote: ({ children }: any) => (
-    <blockquote className="my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground">{children}</blockquote>
-  ),
   code: (props: any) => {
     const { inline, className, children, ...rest } = props;
     const match = /language-(\w+)/.exec(className || "");
@@ -50,30 +49,140 @@ const MARKDOWN_COMPONENTS = {
   },
 };
 
-const CellMarkdownContent = ({ content }: { content: string }) => (
-  <div className={cn(
-    "prose prose-base max-w-none dark:prose-invert break-words min-w-0 cell-content",
-    "overflow-x-auto overflow-y-visible w-full",
-    "[&_.katex-display]:max-w-full [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden",
-    "[&_pre]:max-w-full [&_pre]:overflow-x-auto",
-    "[&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto",
-    "prose-p:my-4 prose-p:leading-relaxed",
-    "prose-headings:mt-8 prose-headings:mb-4",
-    "prose-ul:my-4 prose-ol:my-4",
-    "prose-li:my-2",
-    "prose-blockquote:my-6",
-    "prose-pre:my-6",
-    "prose-hr:my-8"
-  )}>
-    <ReactMarkdown
-      remarkPlugins={[remarkMath, remarkGfm]}
-      rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
-      components={MARKDOWN_COMPONENTS}
+function CellMarkdownContent({ content, cellId, tabId }: { content: string; cellId: string; tabId: string }) {
+  const blockIndexRef = useRef(0);
+  const deepHistory = useAppStore((s) => s.deepHistory);
+  const setSidebarMode = useAppStore((s) => s.setSidebarMode);
+  const setRightPanelMinimized = useAppStore((s) => s.setRightPanelMinimized);
+  const setScrollToDeepCardId = useAppStore((s) => s.setScrollToDeepCardId);
+
+  const cardsForThisCell = useMemo(
+    () => deepHistory.filter((c) => c.sourceCellId === cellId && c.sourceTabId === tabId),
+    [deepHistory, cellId, tabId]
+  );
+
+  const blockComponents = useMemo(() => {
+    const wrapBlock = (Tag: keyof JSX.IntrinsicElements, className: string, props: any, children: React.ReactNode) => {
+      const blockIdx = blockIndexRef.current++;
+      const deepCard = cardsForThisCell.find((c) => c.sourceBlockIndex === blockIdx);
+      const handleOpenDeep = () => {
+        if (deepCard) {
+          setScrollToDeepCardId(deepCard.id);
+          setSidebarMode("deep");
+          setRightPanelMinimized(false);
+        }
+      };
+      return (
+        <div
+          key={`block-${blockIdx}`}
+          className="relative group/block"
+          data-cell-id={cellId}
+          data-tab-id={tabId}
+          data-block-index={blockIdx}
+        >
+          {deepCard && (
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={handleOpenDeep}
+                    className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-0 group-hover/block:opacity-100"
+                    aria-label="View Deep explanation"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  View Deep explanation
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          <Tag className={className} {...props}>{children}</Tag>
+        </div>
+      );
+    };
+    return {
+      ...MARKDOWN_COMPONENTS_BASE,
+      p: (props: any) => wrapBlock("p", "my-4 leading-relaxed", props, props.children),
+      h1: (props: any) => wrapBlock("h1", "text-2xl font-bold mt-8 mb-4", props, props.children),
+      h2: (props: any) => wrapBlock("h2", "text-xl font-bold mt-6 mb-3", props, props.children),
+      h3: (props: any) => wrapBlock("h3", "text-lg font-semibold mt-5 mb-2", props, props.children),
+      blockquote: (props: any) => {
+        const blockIdx = blockIndexRef.current++;
+        const deepCard = cardsForThisCell.find((c) => c.sourceBlockIndex === blockIdx);
+        const handleOpenDeep = () => {
+          if (deepCard) {
+            setScrollToDeepCardId(deepCard.id);
+            setSidebarMode("deep");
+            setRightPanelMinimized(false);
+          }
+        };
+        return (
+          <div
+            key={`block-${blockIdx}`}
+            className="relative group/block"
+            data-cell-id={cellId}
+            data-tab-id={tabId}
+            data-block-index={blockIdx}
+          >
+            {deepCard && (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={handleOpenDeep}
+                      className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-0 group-hover/block:opacity-100"
+                      aria-label="View Deep explanation"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    View Deep explanation
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+            <blockquote className="my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground" {...props} />
+          </div>
+        );
+      },
+    };
+  }, [cellId, tabId, cardsForThisCell, setScrollToDeepCardId, setSidebarMode, setRightPanelMinimized]);
+
+  // Reset block index at start of each render so order is stable
+  blockIndexRef.current = 0;
+
+  return (
+    <div
+      className={cn(
+        "prose prose-base max-w-none dark:prose-invert break-words min-w-0 cell-content",
+        "overflow-x-auto overflow-y-visible w-full",
+        "[&_.katex-display]:max-w-full [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden",
+        "[&_pre]:max-w-full [&_pre]:overflow-x-auto",
+        "[&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto",
+        "prose-p:my-4 prose-p:leading-relaxed",
+        "prose-headings:mt-8 prose-headings:mb-4",
+        "prose-ul:my-4 prose-ol:my-4",
+        "prose-li:my-2",
+        "prose-blockquote:my-6",
+        "prose-pre:my-6",
+        "prose-hr:my-8"
+      )}
     >
-      {preprocessContent(content) || "No content available."}
-    </ReactMarkdown>
-  </div>
-);
+      <ReactMarkdown
+        remarkPlugins={[remarkMath, remarkGfm]}
+        rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
+        components={blockComponents}
+      >
+        {preprocessContent(content) || "No content available."}
+      </ReactMarkdown>
+    </div>
+  );
+}
 
 interface CellRendererProps {
   cell: Cell;
@@ -118,7 +227,7 @@ export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
           {cell.type === "quiz" && cell.quiz_data ? (
             <QuizView questions={cell.quiz_data} />
           ) : (
-            <CellContent cell={cell} />
+            <CellContent cell={cell} tabId={tabId} />
           )}
         </Card>
       </div>
@@ -187,7 +296,7 @@ function preprocessContent(content: string): string {
 // Custom Markdown Renderer Component to reuse logic
 
 
-function CellContent({ cell }: { cell: Cell }) {
+function CellContent({ cell, tabId }: { cell: Cell; tabId: string }) {
   // 1. GraphData (New Reactflow)
   if (cell.graph_data) {
     return (
@@ -197,7 +306,7 @@ function CellContent({ cell }: { cell: Cell }) {
           <p className="text-sm text-muted-foreground mb-4">{cell.diagram_description}</p>
         )}
         <FlowChart data={cell.graph_data} />
-        {cell.content && <div className="mt-8"><CellMarkdownContent content={cell.content} /></div>}
+        {cell.content && <div className="mt-8"><CellMarkdownContent content={cell.content} cellId={cell.id} tabId={tabId} /></div>}
       </div>
     );
   }
@@ -213,7 +322,7 @@ function CellContent({ cell }: { cell: Cell }) {
         <div className="my-6 flex justify-center p-4 bg-white/50 dark:bg-black/20 rounded-lg border border-border/50 overflow-hidden">
           <Mermaid chart={cell.mermaid_code} />
         </div>
-        {cell.content && <div className="mt-8"><CellMarkdownContent content={cell.content} /></div>}
+        {cell.content && <div className="mt-8"><CellMarkdownContent content={cell.content} cellId={cell.id} tabId={tabId} /></div>}
       </div>
     );
   }
@@ -222,7 +331,7 @@ function CellContent({ cell }: { cell: Cell }) {
   return (
     <>
       <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>
-      <CellMarkdownContent content={cell.content} />
+      <CellMarkdownContent content={cell.content} cellId={cell.id} tabId={tabId} />
 
       {/* Equations */}
       {cell.equations && cell.equations.length > 0 && (

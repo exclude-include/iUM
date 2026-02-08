@@ -77,6 +77,12 @@ export interface Cell {
   createdAt: number;
   updatedAt?: number;
   status?: 'loading' | 'complete' | 'error';
+  /** Deep card: source in main tab that triggered this card */
+  sourceTabId?: string;
+  sourceCellId?: string;
+  sourceBlockIndex?: number;
+  /** Notebook cell: added from Deep sidebar */
+  fromDeep?: boolean;
 }
 
 // Sync info for tabs linked to Supabase files
@@ -103,6 +109,8 @@ export interface BookmarkRef {
   tabId: string;
   cellTitle: string;
   cellType: CellType;
+  /** e.g. ['deep'] when cell was added from Deep */
+  tags?: string[];
 }
 
 // Input type from API/Chat responses (matches backend contract)
@@ -115,6 +123,8 @@ export interface LearningUnitInput {
   mermaid_code?: string;
   graph_data?: GraphData;
   quiz_data?: QuizQuestion[];
+  /** When true, cell is marked as added from Deep (for bookmark tag) */
+  fromDeep?: boolean;
 }
 
 // .ium file format - like .ipynb but for iUM notebooks
@@ -301,9 +311,12 @@ interface AppState {
   // ✨ Deep Mode State
   sidebarMode: "chat" | "deep";
   deepHistory: Cell[];
+  scrollToDeepCardId: string | null;
   setSidebarMode: (mode: "chat" | "deep") => void;
   addDeepCard: (unit: LearningUnitInput) => string;
   updateDeepCard: (id: string, updates: Partial<Cell>) => void;
+  setScrollToDeepCardId: (id: string | null) => void;
+  clearScrollToDeepCardTarget: () => void;
   clearDeepHistory: () => void;
 
   // ✨ [추가] 서버에서 파일 목록 불러오기 액션
@@ -485,6 +498,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       quiz_data: unit.quiz_data,
       isBookmarked: false,
       createdAt: Date.now(),
+      fromDeep: unit.fromDeep ?? false,
     };
 
     console.log("[Store] Adding cell to tab:", tabId, "cell:", newCell.title);
@@ -630,6 +644,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             tabId: tab.id,
             cellTitle: cell.title,
             cellType: cell.type,
+            tags: cell.fromDeep ? ["deep"] : undefined,
           });
         }
       });
@@ -1038,7 +1053,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ✨ Deep Mode Implementation
   sidebarMode: "chat",
   deepHistory: [],
+  scrollToDeepCardId: null,
   setSidebarMode: (mode) => set({ sidebarMode: mode }),
+  setScrollToDeepCardId: (id) => set({ scrollToDeepCardId: id }),
+  clearScrollToDeepCardTarget: () => set({ scrollToDeepCardId: null }),
 
   addDeepCard: (unit) => {
     const cellId = `deep-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -1069,7 +1087,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
-  clearDeepHistory: () => set({ deepHistory: [] }),
+  clearDeepHistory: () => set({ deepHistory: [], scrollToDeepCardId: null }),
 
   // ✨ [추가] 파일 목록 동기화 액션
   fetchFiles: async () => {

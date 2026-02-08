@@ -39,6 +39,7 @@ export function BookmarksSection() {
             tabId: tab.id,
             cellTitle: cell.title,
             cellType: cell.type,
+            tags: cell.fromDeep ? ["deep"] : undefined,
           });
         }
       });
@@ -68,6 +69,11 @@ export function BookmarksSection() {
           <span className="text-[10px] text-muted-foreground uppercase flex-shrink-0">
             {bookmark.cellType}
           </span>
+          {bookmark.tags?.includes("deep") && (
+            <span className="text-[10px] text-primary font-medium flex-shrink-0" title="Added from Deep">
+              deep
+            </span>
+          )}
         </button>
       ))}
     </div>

@@ -364,10 +364,10 @@ export function MainContentArea() {
           if (progress >= 100) {
             if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
 
-            // Trigger Deep Dive
+            // Trigger Deep Dive (pass target so we can set source block for badge)
             const hoverText = target.innerText?.slice(0, 1000) || "";
             if (hoverText) {
-              handleDeepDive(hoverText);
+              handleDeepDive(hoverText, target as HTMLElement);
               setHoverCursor({ visible: false, position: null, progress: 0 });
             }
           }
@@ -392,7 +392,7 @@ export function MainContentArea() {
     }
   };
 
-  const handleDeepDive = async (textOverride?: string) => {
+  const handleDeepDive = async (textOverride?: string, sourceElement?: HTMLElement | null) => {
     const text = textOverride || selectionMenu.text || window.getSelection()?.toString().trim();
 
     if (!text) {
@@ -417,6 +417,23 @@ export function MainContentArea() {
       diagram_description: "",
       mermaid_code: "",
     });
+
+    // Link deep card to source block in main tab (for badge + hover-to-open)
+    if (sourceElement) {
+      const blockWrapper = sourceElement.closest?.("[data-cell-id][data-tab-id][data-block-index]") as HTMLElement | null;
+      if (blockWrapper) {
+        const sourceTabId = blockWrapper.getAttribute("data-tab-id");
+        const sourceCellId = blockWrapper.getAttribute("data-cell-id");
+        const sourceBlockIndex = blockWrapper.getAttribute("data-block-index");
+        if (sourceTabId && sourceCellId && sourceBlockIndex !== null) {
+          updateDeepCard(tempCardId, {
+            sourceTabId,
+            sourceCellId,
+            sourceBlockIndex: parseInt(sourceBlockIndex, 10),
+          });
+        }
+      }
+    }
 
     // Mark as loading
     updateDeepCard(tempCardId, {

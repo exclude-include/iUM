@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -14,19 +15,38 @@ import { cn } from "@/lib/utils";
 import { Mermaid } from "@/components/Mermaid";
 
 export function DeepModeView() {
-    const { deepHistory, appendCellToActiveTab, createNotebookTab } = useAppStore();
+    const { deepHistory, scrollToDeepCardId, clearScrollToDeepCardTarget, appendCellToActiveTab, createNotebookTab } = useAppStore();
+    const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+    useEffect(() => {
+        if (!scrollToDeepCardId) return;
+        const el = cardRefs.current[scrollToDeepCardId];
+        if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+        clearScrollToDeepCardTarget();
+    }, [scrollToDeepCardId, clearScrollToDeepCardTarget]);
+
+    const toUnit = (item: any) => ({
+        title: item.title,
+        type: item.type,
+        content: item.content,
+        equations: item.equations,
+        diagram_description: item.diagram_description,
+        mermaid_code: item.mermaid_code,
+        graph_data: item.graph_data,
+        quiz_data: item.quiz_data,
+        fromDeep: true,
+    });
 
     const handleAddToTab = (item: any) => {
-        appendCellToActiveTab(item);
+        appendCellToActiveTab(toUnit(item));
     };
 
     const handleNewTab = (item: any) => {
-        // 1. Create new tab
-        const tabId = createNotebookTab(item.title || "Deep Dive");
-        // 2. Add cell to it (store automatically handles active tab switch usually, but appendCellToActiveTab relies on notebookActiveTabId)
-        // createNotebookTab sets the new tab as active, so this should work.
+        createNotebookTab(item.title || "Deep Dive");
         setTimeout(() => {
-            appendCellToActiveTab(item);
+            appendCellToActiveTab(toUnit(item));
         }, 100);
     };
 
@@ -48,7 +68,11 @@ export function DeepModeView() {
                 ) : (
                     <div className="space-y-4">
                         {deepHistory.map((item) => (
-                            <Card key={item.id} className="overflow-hidden border-primary/20 shadow-sm">
+                            <div
+                                key={item.id}
+                                ref={(el) => { cardRefs.current[item.id] = el; }}
+                            >
+                                <Card className="overflow-hidden border-primary/20 shadow-sm">
                                 <div className="bg-primary/5 p-2 px-3 flex items-center justify-between border-b border-primary/10">
                                     <h3 className="font-semibold text-xs truncate flex-1 text-primary">
                                         {item.title}
@@ -107,7 +131,8 @@ export function DeepModeView() {
                                         {item.content}
                                     </ReactMarkdown>
                                 </div>
-                            </Card>
+                                </Card>
+                            </div>
                         ))}
                     </div>
                 )}
