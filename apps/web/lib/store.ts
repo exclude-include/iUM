@@ -486,6 +486,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const cellId = `cell-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // Normalize graph_data so ReactFlow receives valid shape (nodes/edges arrays)
+    let graph_data = unit.graph_data;
+    if (graph_data && typeof graph_data === "object") {
+      const nodes = Array.isArray(graph_data.nodes) ? graph_data.nodes : [];
+      const edges = Array.isArray(graph_data.edges) ? graph_data.edges : [];
+      if (nodes.length === 0 && edges.length === 0) graph_data = undefined;
+      else graph_data = { nodes, edges };
+    }
     const newCell: Cell = {
       id: cellId,
       type: unit.type,
@@ -494,7 +502,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       equations: unit.equations,
       diagram_description: unit.diagram_description,
       mermaid_code: unit.mermaid_code,
-      graph_data: unit.graph_data, // ✨ [Fix] Correctly map graph_data
+      graph_data,
       quiz_data: unit.quiz_data,
       isBookmarked: false,
       createdAt: Date.now(),

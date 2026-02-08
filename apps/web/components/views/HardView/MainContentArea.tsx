@@ -412,12 +412,20 @@ export function MainContentArea() {
       return;
     }
 
+    // Resolve source block for badge: use passed element or current selection's anchor
+    let blockForBadge = sourceElement;
+    if (!blockForBadge) {
+      const sel = window.getSelection();
+      const anchor = sel?.anchorNode;
+      const node = anchor?.nodeType === Node.ELEMENT_NODE ? (anchor as HTMLElement) : anchor?.parentElement;
+      blockForBadge = node?.closest?.("[data-cell-id][data-tab-id][data-block-index]") as HTMLElement | null ?? undefined;
+    }
+
     // Switch to Deep Mode and open sidebar
     setSidebarMode("deep");
     setRightPanelMinimized(false);
 
-    // Optimistic UI: Add loading card immediately
-    // Note: addDeepCard returns the new cellId
+    // Optimistic UI: Add loading card immediately (badge appears as soon as we set source)
     const tempCardId = addDeepCard({
       title: "Analyzing...",
       type: "concept",
@@ -428,20 +436,17 @@ export function MainContentArea() {
       mermaid_code: "",
     });
 
-    // Link deep card to source block in main tab (for badge + hover-to-open)
-    if (sourceElement) {
-      const blockWrapper = sourceElement.closest?.("[data-cell-id][data-tab-id][data-block-index]") as HTMLElement | null;
-      if (blockWrapper) {
-        const sourceTabId = blockWrapper.getAttribute("data-tab-id");
-        const sourceCellId = blockWrapper.getAttribute("data-cell-id");
-        const sourceBlockIndex = blockWrapper.getAttribute("data-block-index");
-        if (sourceTabId && sourceCellId && sourceBlockIndex !== null) {
-          updateDeepCard(tempCardId, {
-            sourceTabId,
-            sourceCellId,
-            sourceBlockIndex: parseInt(sourceBlockIndex, 10),
-          });
-        }
+    // Link deep card to source block in main tab (for badge) — do this immediately so badge shows right away
+    if (blockForBadge) {
+      const sourceTabId = blockForBadge.getAttribute("data-tab-id");
+      const sourceCellId = blockForBadge.getAttribute("data-cell-id");
+      const sourceBlockIndex = blockForBadge.getAttribute("data-block-index");
+      if (sourceTabId && sourceCellId && sourceBlockIndex !== null) {
+        updateDeepCard(tempCardId, {
+          sourceTabId,
+          sourceCellId,
+          sourceBlockIndex: parseInt(sourceBlockIndex, 10),
+        });
       }
     }
 

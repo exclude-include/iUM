@@ -79,10 +79,11 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
               type="button"
               onClick={handleOpenDeep}
               title="View Deep explanation"
-              className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-90 group-hover/block:opacity-100"
+              className="absolute -top-0.5 right-0 z-10 flex items-center gap-1 px-2 py-1 rounded-md bg-primary text-primary-foreground shadow-sm border border-primary/30 hover:bg-primary/90 transition-colors"
               aria-label="View Deep explanation"
             >
-              <Sparkles className="h-3.5 w-3.5" />
+              <Sparkles className="h-4 w-4 shrink-0" />
+              <span className="text-[10px] font-medium leading-none">Deep</span>
             </button>
           )}
           <Tag className={className} {...props}>{children}</Tag>
@@ -118,10 +119,11 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
                 type="button"
                 onClick={handleOpenDeep}
                 title="View Deep explanation"
-                className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-90 group-hover/block:opacity-100"
+                className="absolute -top-0.5 right-0 z-10 flex items-center gap-1 px-2 py-1 rounded-md bg-primary text-primary-foreground shadow-sm border border-primary/30 hover:bg-primary/90 transition-colors"
                 aria-label="View Deep explanation"
               >
-                <Sparkles className="h-3.5 w-3.5" />
+                <Sparkles className="h-4 w-4 shrink-0" />
+                <span className="text-[10px] font-medium leading-none">Deep</span>
               </button>
             )}
             <blockquote className="my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground" {...props} />
@@ -227,10 +229,43 @@ CellRenderer.displayName = "CellRenderer";
 function preprocessContent(content: string): string {
   if (!content) return content;
 
+  let s = content.trim();
+
+  // 0a. If content is raw JSON (e.g. {"text_content": "..."}), extract the text so we don't display JSON
+  if (s.startsWith("{") && (s.includes('"text_content"') || s.includes("text_content"))) {
+    try {
+      const firstBrace = s.indexOf("{");
+      const lastBrace = s.lastIndexOf("}");
+      if (lastBrace > firstBrace) {
+        const jsonStr = s.slice(firstBrace, lastBrace + 1);
+        const parsed = JSON.parse(jsonStr);
+        if (typeof parsed.text_content === "string") {
+          s = parsed.text_content;
+        }
+      }
+    } catch (_) {
+      // Not valid JSON, use as-is
+    }
+  }
+
+  // 0. Convert literal \n, \r, \t to actual newlines/tabs so content is properly formatted
+  s = s
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t");
+
+  // 0b. Unescape math delimiters so $...$ and \(...\) render (API may send \$ or \\( \\))
+  s = s
+    .replace(/\\\$/g, "$")
+    .replace(/\\\\\(/g, "\\(")
+    .replace(/\\\\\)/g, "\\)");
+
+  // 0b. Normalize inline math: remove spaces right after $ or before $ so " $ CO_2 $ " parses
+  s = s.replace(/\$\s+/g, "$").replace(/\s+\$/g, "$");
+
   // 1. Remove space after opening ** (e.g. "** text" -> "**text")
-  const fixedContent = content
-    .replace(/\*\*[ \t]+/g, '**') // Only remove spaces/tabs, NOT newlines
-    // REMOVED: .replace(/\s+\*\*/g, '**') -> This broke "* **bold**" lists!
+  const fixedContent = s
+    .replace(/\*\*[ \t]+/g, '**')
     .replace(/\\\*\\\*/g, '**'); // \*\* -> **
 
   const lines = fixedContent.split('\n');
@@ -275,15 +310,16 @@ function preprocessContent(content: string): string {
 
 
 function CellContent({ cell, tabId }: { cell: Cell; tabId: string }) {
-  // 1. GraphData (New Reactflow)
-  if (cell.graph_data) {
+  // 1. GraphData (Reactflow) - require valid nodes/edges so diagram renders
+  const hasGraphData = cell.graph_data && Array.isArray(cell.graph_data.nodes) && Array.isArray(cell.graph_data.edges) && (cell.graph_data.nodes.length > 0 || cell.graph_data.edges.length > 0);
+  if (hasGraphData) {
     return (
       <div className="w-full">
         <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>
         {cell.diagram_description && (
           <p className="text-sm text-muted-foreground mb-4">{cell.diagram_description}</p>
         )}
-        <FlowChart data={cell.graph_data} />
+        <FlowChart data={cell.graph_data!} />
         {cell.content && <div className="mt-8"><CellMarkdownContent content={cell.content} cellId={cell.id} tabId={tabId} /></div>}
       </div>
     );
