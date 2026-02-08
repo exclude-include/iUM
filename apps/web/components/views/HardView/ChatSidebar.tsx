@@ -284,12 +284,24 @@ export function ChatSidebar() {
     setLoadingStatus("Starting agent...");
 
     try {
+      // RAG: selected files (Files section) + chat-added attachment file IDs
+      const attachmentFileIds = attachments.map((a) => a.file_id).filter(Boolean) as string[];
+      const documentIdsForRag = [
+        ...attachmentFileIds,
+        ...(activeFolderId
+          ? selectedDocumentIds.filter(
+              (id) => activeFolder?.files?.some((f) => f.id === id)
+            )
+          : selectedDocumentIds),
+      ].filter((id, i, arr) => arr.indexOf(id) === i);
+
       const response = await api.chat.sendMessage(
         userMessage.content,
         {
           conversationId: conversationId || undefined,
           collectionName: "user_knowledge",
           folderId: activeFolderId || undefined,
+          documentIds: documentIdsForRag.length > 0 ? documentIdsForRag : undefined,
           attachments: attachments,
         },
         (statusMessage) => {

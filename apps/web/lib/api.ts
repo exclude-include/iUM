@@ -71,6 +71,8 @@ export const chatApi = {
       conversationId?: string;
       collectionName?: string;
       folderId?: string;
+      /** Selected file IDs (Files section) + chat attachment file IDs for RAG */
+      documentIds?: string[];
       attachments?: { type: string; url?: string; file_id?: string; storage_path?: string }[];
     },
     // ✨ [추가] 실시간 상태 업데이트를 위한 콜백 함수
@@ -91,6 +93,7 @@ export const chatApi = {
           conversation_id: options?.conversationId,
           collection_name: options?.collectionName,
           folder_id: options?.folderId,
+          document_ids: options?.documentIds ?? undefined,
           attachments: options?.attachments,
         }),
       });
