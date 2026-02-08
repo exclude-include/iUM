@@ -14,12 +14,6 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import { BlockMath, InlineMath } from "react-katex";
 import { Sparkles } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import "katex/dist/katex.min.css";
 
 // Custom Markdown Renderer Component to reuse logic (no block wrapper)
@@ -81,23 +75,15 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
           data-block-index={blockIdx}
         >
           {deepCard && (
-            <TooltipProvider delayDuration={300}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={handleOpenDeep}
-                    className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-0 group-hover/block:opacity-100"
-                    aria-label="View Deep explanation"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  View Deep explanation
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <button
+              type="button"
+              onClick={handleOpenDeep}
+              title="View Deep explanation"
+              className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-0 group-hover/block:opacity-100"
+              aria-label="View Deep explanation"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+            </button>
           )}
           <Tag className={className} {...props}>{children}</Tag>
         </div>
@@ -128,23 +114,15 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
             data-block-index={blockIdx}
           >
             {deepCard && (
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={handleOpenDeep}
-                      className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-0 group-hover/block:opacity-100"
-                      aria-label="View Deep explanation"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">
-                    View Deep explanation
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <button
+                type="button"
+                onClick={handleOpenDeep}
+                title="View Deep explanation"
+                className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-0 group-hover/block:opacity-100"
+                aria-label="View Deep explanation"
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+              </button>
             )}
             <blockquote className="my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground" {...props} />
           </div>
