@@ -19,26 +19,16 @@ import {
   Check,
   Paperclip,
   X,
-  Settings,
-  LogOut,
-  User,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { ChatMessage } from "@/types/api";
 import { useAppStore } from "@/lib/store";
 import { useToast } from "@/hooks/use-toast";
-import { createClient } from "@/lib/supabase/client";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -67,27 +57,8 @@ export function ChatSidebar() {
   } = useAppStore();
 
   const { toast } = useToast();
-  const router = useRouter();
-  const supabase = createClient();
   const activeFolder = knowledgeFolders.find((f) => f.id === activeFolderId);
 
-  const getInitials = (email: string) => {
-    if (!email) return "U";
-    const part = email.split("@")[0];
-    return part ? part.slice(0, 2).toUpperCase() : "U";
-  };
-
-  const handleSignOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      toast({ title: "Signed out", description: "You have been successfully signed out." });
-      router.push("/");
-      router.refresh();
-    } catch (err: any) {
-      toast({ title: "Error", description: err?.message || "Failed to sign out", variant: "destructive" });
-    }
-  };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   // ✨ [수정] 단순 boolean 대신 현재 진행 상태 메시지를 저장 (null이면 로딩 아님)
@@ -105,35 +76,8 @@ export function ChatSidebar() {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [user, setUser] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const userMessageCountRef = useRef(0);
-
-  // Fetch user and listen for auth changes
-  useEffect(() => {
-    const getUser = async () => {
-      try {
-        const {
-          data: { user: currentUser },
-        } = await supabase.auth.getUser();
-        setUser(currentUser);
-      } catch (error) {
-        console.error("Error fetching user:", error);
-        setUser(null);
-      }
-    };
-
-    getUser();
-
-    // Listen for auth state changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [supabase]);
 
   // Load messages from active folder's chat history
   useEffect(() => {
@@ -819,80 +763,6 @@ export function ChatSidebar() {
               <Sparkles className="h-3 w-3 text-yellow-500" />
               AI can make mistakes. Check important info.
             </p>
-
-            {/* User Profile Section */}
-            <div className="mt-2 pt-2 border-t flex items-center justify-between">
-              {user ? (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="ghost" className="w-full justify-start gap-2 h-auto p-1 hover:bg-muted">
-                      <div className="flex items-center gap-2 w-full overflow-hidden">
-                        <Avatar className="h-6 w-6">
-                          {user.user_metadata?.avatar_url ? (
-                            <AvatarImage src={user.user_metadata.avatar_url} alt={user.email || "User"} />
-                          ) : null}
-                          <AvatarFallback className="bg-primary text-primary-foreground text-[10px]">
-                            {getInitials(user.email || "U")}
-                          </AvatarFallback>
-                        </Avatar>
-                        <span className="text-xs truncate flex-1 text-left">{user.email}</span>
-                      </div>
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-56" align="end" side="top">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 mb-2 pb-2 border-b px-1">
-                        <Avatar className="h-8 w-8">
-                          {user.user_metadata?.avatar_url ? (
-                            <AvatarImage
-                              src={user.user_metadata.avatar_url}
-                              alt={user.email || "User"}
-                            />
-                          ) : null}
-                          <AvatarFallback className="bg-primary text-primary-foreground">
-                            {getInitials(user.email || "U")}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{user.email}</p>
-                          <p className="text-xs text-muted-foreground">Signed in</p>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start"
-                        onClick={() => {
-                          toast({
-                            title: "Settings",
-                            description: "Settings page coming soon.",
-                          });
-                        }}
-                      >
-                        <Settings className="mr-2 h-4 w-4" />
-                        Settings
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={handleSignOut}
-                      >
-                        <LogOut className="mr-2 h-4 w-4" />
-                        Sign Out
-                      </Button>
-                    </div>
-                  </PopoverContent>
-                </Popover>
-              ) : (
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start gap-2 h-auto p-2 hover:bg-accent"
-                  onClick={() => router.push("/login")}
-                >
-                  <User className="h-8 w-8 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Log In</span>
-                </Button>
-              )}
-            </div>
           </div>
         </>
       )}
