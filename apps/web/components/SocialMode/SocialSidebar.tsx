@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Home, Search, Compass, Video, RefreshCw } from "lucide-react";
+import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
+import { User, Search, Compass, Video, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -11,6 +12,7 @@ import { useSocialStore, initializeSocialReels } from "./useSocialStore";
 
 export function SocialSidebar() {
   const router = useRouter();
+  const pathname = usePathname();
   const { knowledgeFolders } = useAppStore();
   const {
     activeFolderIds,
@@ -18,8 +20,6 @@ export function SocialSidebar() {
     toggleFolder,
     setShowAllFolders,
     refreshFeed,
-    currentView,
-    setCurrentView,
   } = useSocialStore();
 
   // Load reels from Supabase on mount
@@ -38,28 +38,24 @@ export function SocialSidebar() {
 
   const navItems = [
     { 
-      icon: Home, 
-      label: "Home", 
-      action: () => setCurrentView("profile"),
-      view: "profile" as const
+      icon: User, 
+      label: "Profile", 
+      href: "/soft/profile"
     },
     { 
       icon: Search, 
       label: "Search", 
-      action: () => setCurrentView("search"),
-      view: "search" as const
+      href: "/soft/search"
     },
     { 
       icon: Compass, 
       label: "Explore", 
-      action: () => setCurrentView("explore"),
-      view: "explore" as const
+      href: "/soft/explore"
     },
     { 
       icon: Video, 
       label: "Reels", 
-      action: () => setCurrentView("feed"),
-      view: "feed" as const
+      href: "/soft"
     },
   ];
 
@@ -77,11 +73,11 @@ export function SocialSidebar() {
       <nav className="flex-1 space-y-1 p-2">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive = currentView === item.view;
+          const isActive = pathname === item.href;
           return (
-            <button
-              key={item.view}
-              onClick={() => setCurrentView(item.view)}
+            <Link
+              key={item.href}
+              href={item.href}
               className={cn(
                 "relative w-full flex items-center gap-3 rounded-lg p-3 transition-all duration-200",
                 "hover:bg-accent",
@@ -105,7 +101,7 @@ export function SocialSidebar() {
               >
                 {item.label}
               </span>
-            </button>
+            </Link>
           );
         })}
       </nav>
