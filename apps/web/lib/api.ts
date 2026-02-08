@@ -178,6 +178,46 @@ export const chatApi = {
       body: JSON.stringify({ messages: messageDicts }),
     });
   },
+
+  /**
+   * ✨ [추가] 딥 다이브 설명 생성 요청
+   */
+  async generateDeepExplanation(
+    text: string,
+    context: string,
+    activeFolderId?: string
+  ): Promise<ChatResponse> {
+    const prompt = `
+[DEEP EXPLANATION REQUEST]
+Target Text: "${text}"
+Context: "${context}"
+
+Please provide a deep, detailed explanation of the "Target Text" considering the provided "Context". 
+Explain it as if you are teaching a student who wants to master this specific concept.
+IMPORTANT: Respond in the same language as the "Target Text" and "Context". If the text is Korean, the explanation MUST be in Korean.
+
+Include:
+1. Definition and Core Concept
+2. Detailed Explanation (Why? How?)
+3. Examples or Analogies
+4. Related Concepts
+5. Flowchart Data for Reactflow (NOT Mermaid). Provide strictly valid JSON:
+   "graph_data": {
+     "nodes": [{ "id": "1", "label": "Start", "type": "input" }, ...],
+     "edges": [{ "id": "e1-2", "source": "1", "target": "2", "label": "next" }, ...]
+   }
+   - Use short, clear labels.
+   - Node IDs must be strings.
+   - Edges connect source ID to target ID.
+
+ Output format should be the standard Learning Unit JSON.
+`;
+
+    return this.sendMessage(prompt, {
+      folderId: activeFolderId,
+      collectionName: "user_knowledge"
+    });
+  },
 };
 
 /**

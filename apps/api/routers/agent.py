@@ -196,7 +196,8 @@ async def chat_with_agent_stream(request: ChatRequest):
                     question=request.message,
                     folder_id=request.folder_id,
                     session_id=session_id,
-                    document_ids=request.document_ids
+                    document_ids=request.document_ids,
+                    attachments=request.attachments
                 ):
                     # 데이터 처리 및 응답 수정
                     if update.get("status") == "complete":

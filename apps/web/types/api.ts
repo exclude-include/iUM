@@ -27,6 +27,7 @@ export interface ChatRequest {
   conversation_id?: string;
   collection_name?: string;
   folder_id?: string; // Folder ID to filter RAG context
+  attachments?: Array<any>; // Uploaded files info
 }
 
 export interface QuizOption {
@@ -67,6 +68,7 @@ export interface LearningUnitResponse {
 
 export interface ChatResponse {
   message: string;
+  chat_message?: string; // Short status for chat sidebar (Cursor-like UX)
   conversation_id: string;
   sources?: Array<{
     id: string;

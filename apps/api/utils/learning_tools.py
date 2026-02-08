@@ -31,7 +31,8 @@ class LearningToolkit:
         llm: Optional[ChatGoogleGenerativeAI] = None,
         folder_id: Optional[str] = None, 
         session_id: Optional[str] = None,
-        document_ids: Optional[List[str]] = None
+        document_ids: Optional[List[str]] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None
     ):
         self.llm = llm or ChatGoogleGenerativeAI(
             model="models/gemini-2.5-flash",
@@ -41,7 +42,79 @@ class LearningToolkit:
         self.folder_id = folder_id
         self.session_id = session_id
         self.document_ids = document_ids
+        self.attachments = attachments or []
         self.tools = self._init_tools()
+
+    # ... (skipping _init_tools and other methods) ...
+
+    async def _create_summary_cell(self, topic: str = "document") -> str:
+        """Summarize uploaded document content"""
+        doc_content = ""
+        source_names = []
+        
+        # 1. Check attachments first
+        if self.attachments:
+            for att in self.attachments:
+                # Assuming attachment has 'content' or 'text' field from frontend parsing
+                # If not, we might need to handle file_id if it was processed by backend
+                content = att.get("content") or att.get("text") or ""
+                if content:
+                    doc_content += f"\n\n--- Attachment: {att.get('name', 'Unknown File')} ---\n{content}"
+                    source_names.append(att.get("name", "Attached File"))
+        
+        # 2. If no sufficient content from attachments, search in vector store
+        if len(doc_content) < 100:
+            try:
+                from utils.vector_store import get_retriever
+                
+                retriever = get_retriever(
+                    collection_name="user_knowledge", 
+                    k=5, 
+                    folder_id=self.folder_id,
+                    document_ids=self.document_ids
+                )
+                docs = retriever.invoke(topic)
+                
+                if docs:
+                    doc_content += "\n\n--- Retrieved Documents ---\n"
+                    doc_content += "\n\n".join([doc.page_content for doc in docs])
+                    source_names.extend(list(set([doc.metadata.get("source", "Unknown") for doc in docs])))
+            except Exception as e:
+                pass # Ignore retrieval errors if we have attachments or just fail gracefully
+            
+        if not doc_content:
+             return "No document content found to summarize. Please upload a document first."
+
+        prompt = f"""Based on the following document content, create a comprehensive summary.
+
+Document Content:
+{doc_content[:4000]}
+
+Please write the summary in the following format:
+## Summary: {topic}
+
+### Key Points
+- Point 1
+- Point 2
+- Point 3
+
+### Main Concepts
+Brief explanation of the main concepts covered.
+
+### Important Details
+Any critical details or data mentioned.
+
+Write your response in markdown format."""
+
+        response = await self.llm.ainvoke(prompt)
+        
+        # Append source info
+        if source_names:
+            unique_sources = list(set(source_names))
+            sources_note = f"\n\n---\n*Sources: {', '.join(unique_sources)}*"
+            return response.content + sources_note
+        
+        return response.content
     
     def _init_tools(self) -> Dict[str, Tool]:
         return {
@@ -56,6 +129,12 @@ class LearningToolkit:
                 description="Generate a concept explanation Learning Unit for the topic",
                 func=self._generate_concept_cell,
                 params=["topic"]
+            ),
+            "create_summary_cell": Tool(
+                name="create_summary_cell",
+                description="Summarize the uploaded document content. Use this when user asks to summarize a file or document.",
+                func=self._create_summary_cell,
+                params=["topic(optional)"]
             ),
             "create_quiz_cell": Tool(
                 name="create_quiz_cell",
@@ -141,6 +220,8 @@ Write your response in markdown format."""
 
         response = await self.llm.ainvoke(prompt)
         return response.content
+    
+
     
     async def _create_quiz_cell(self, topic: str, num_questions: int = 3) -> str:
         """Generate quiz cell"""
@@ -238,11 +319,13 @@ Please respond in the following format:
 def get_learning_toolkit(
     folder_id: Optional[str] = None,
     session_id: Optional[str] = None,
-    document_ids: Optional[List[str]] = None
+    document_ids: Optional[List[str]] = None,
+    attachments: Optional[List[Dict[str, Any]]] = None
 ) -> LearningToolkit:
     """LearningToolkit instance creation helper"""
     return LearningToolkit(
         folder_id=folder_id,
         session_id=session_id,
-        document_ids=document_ids
+        document_ids=document_ids,
+        attachments=attachments
     )
