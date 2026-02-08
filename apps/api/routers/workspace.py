@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Header
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from models import Workspace, Folder, Tab, HistoryItem, Document
-from utils.supabase_client import get_supabase_client, get_storage_client, get_user_id_from_token
+from utils.supabase_client import get_supabase_client, get_supabase_client_with_user_jwt, get_storage_client, get_user_id_from_token
 
 router = APIRouter()
 
@@ -79,6 +79,9 @@ async def get_folders(
 
     try:
         user_id = get_user_id_from_token(authorization)
+        token = authorization.replace("Bearer ", "").strip()
+        # Use client with user JWT so RLS sees auth.uid() (fixes RLS violation when using anon key)
+        supabase = get_supabase_client_with_user_jwt(token)
 
         # Get user's folders from DB
         folders_response = supabase.table("folders").select("*").eq("user_id", user_id).execute()
@@ -110,7 +113,9 @@ async def create_folder(
     Create a new folder for the authenticated user.
     """
     user_id = get_user_id_from_token(authorization)
-    supabase = get_supabase_client()
+    token = authorization.replace("Bearer ", "").strip()
+    # Use client with user JWT so RLS sees auth.uid() (fixes "row-level security policy" violation)
+    supabase = get_supabase_client_with_user_jwt(token)
 
     try:
         response = supabase.table("folders").insert({
@@ -147,7 +152,8 @@ async def update_folder(
     Update a folder for the authenticated user.
     """
     user_id = get_user_id_from_token(authorization)
-    supabase = get_supabase_client()
+    token = authorization.replace("Bearer ", "").strip()
+    supabase = get_supabase_client_with_user_jwt(token)
 
     try:
         update_data = {}
@@ -182,7 +188,8 @@ async def delete_folder(
     Delete a folder for the authenticated user.
     """
     user_id = get_user_id_from_token(authorization)
-    supabase = get_supabase_client()
+    token = authorization.replace("Bearer ", "").strip()
+    supabase = get_supabase_client_with_user_jwt(token)
 
     try:
         response = supabase.table("folders").delete().eq("id", folder_id).eq("user_id", user_id).execute()

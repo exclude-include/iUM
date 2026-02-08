@@ -55,7 +55,7 @@ def get_user_id_from_token(authorization: str) -> str:
 
 def get_supabase_client() -> Client:
     """
-    Get or create Supabase client instance
+    Get or create Supabase client instance (service role or anon).
     
     Returns:
         Client: Supabase client instance
@@ -67,16 +67,34 @@ def get_supabase_client() -> Client:
     
     if _supabase_client is None:
         supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
         
         if not supabase_url or not supabase_key:
             raise ValueError(
-                "Missing Supabase credentials. Please set SUPABASE_URL and SUPABASE_SERVICE_KEY"
+                "Missing Supabase credentials. Please set SUPABASE_URL and SUPABASE_SERVICE_KEY (or SUPABASE_ANON_KEY)"
             )
         
         _supabase_client = create_client(supabase_url, supabase_key)
     
     return _supabase_client
+
+
+def get_supabase_client_with_user_jwt(jwt_token: str) -> Client:
+    """
+    Create a Supabase client that sends the user's JWT in requests.
+    Use this for folder/files operations so RLS sees auth.uid() and allows the row.
+    (Fixes "new row violates row-level security policy" when backend uses anon key.)
+    """
+    supabase_url = os.getenv("SUPABASE_URL")
+    anon_key = os.getenv("SUPABASE_ANON_KEY")
+    key = anon_key or os.getenv("SUPABASE_SERVICE_KEY")
+    if not supabase_url or not key:
+        raise ValueError("Missing SUPABASE_URL or SUPABASE_ANON_KEY/SUPABASE_SERVICE_KEY")
+    client = create_client(supabase_url, key)
+    # Set user JWT on postgrest so RLS sees auth.uid()
+    if hasattr(client, "postgrest") and hasattr(client.postgrest, "session"):
+        client.postgrest.session.headers["Authorization"] = f"Bearer {jwt_token}"
+    return client
 
 
 def get_storage_client():
