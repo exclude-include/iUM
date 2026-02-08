@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 # 2. 환경 변수가 로드된 후에 라우터 import
-from routers import feed, workspace, agent, ingest, integrations, reels, evaluate, comments, reel_interactions, users, feed_pagination
+from routers import feed, workspace, agent, ingest, integrations, reels, evaluate, comments, reel_interactions, users, feed_pagination, activities
 from utils.opik_config import opik_service
 import os
 
@@ -64,6 +64,7 @@ app.include_router(evaluate.router, prefix="/api/evaluate", tags=["evaluation"])
 app.include_router(comments.router, prefix="/api/comments", tags=["comments"])
 app.include_router(reel_interactions.router, prefix="/api/reel-interactions", tags=["reel-interactions"])
 app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(activities.router, prefix="/api/activities", tags=["activities"])
 
 
 @app.get("/")

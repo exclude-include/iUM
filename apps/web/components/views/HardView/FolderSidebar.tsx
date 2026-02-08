@@ -18,6 +18,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { HistoryTimeline } from "@/components/HistoryTimeline";
 import { BookmarksSection } from "./BookmarksSection";
 import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
+import { StreakBadge } from "@/components/StreakBadge";
 
 // Color presets for folders
 const FOLDER_COLORS = [
@@ -557,7 +558,10 @@ export function FolderSidebar() {
             data-tutorial="tutorial-sidebar-folders"
             className="flex items-center justify-between border-b px-3 py-2 shrink-0 bg-background"
           >
-            <h3 className="text-xs font-semibold uppercase tracking-wide">FOLDERS</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide">FOLDERS</h3>
+              <StreakBadge />
+            </div>
             <div className="flex gap-1">
               <Button
                 variant="ghost"
