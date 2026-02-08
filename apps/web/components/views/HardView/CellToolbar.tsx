@@ -11,6 +11,8 @@ interface CellToolbarProps {
   onDelete: () => void;
   onBookmark: () => void;
   onMoveToNewTab: () => void;
+  floating?: boolean; // ✨ Toggle absolute vs static
+  className?: string;
 }
 
 export function CellToolbar({
@@ -19,10 +21,22 @@ export function CellToolbar({
   onDelete,
   onBookmark,
   onMoveToNewTab,
+  floating = true,
+  className,
 }: CellToolbarProps) {
   return (
-    <div className="absolute -top-3 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-      <div className="flex items-center gap-1 bg-background border rounded-md shadow-sm px-1.5 py-0.5">
+    <div className={cn(
+      floating
+        ? "absolute -top-3 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+        : "flex items-center",
+      className
+    )}>
+      <div className={cn(
+        "flex items-center gap-1",
+        floating
+          ? "bg-background border rounded-md shadow-sm px-1.5 py-0.5"
+          : ""
+      )}>
         {/* Type Badge */}
         <span className="text-[10px] text-muted-foreground px-2 uppercase font-medium">
           {cellType}
@@ -30,7 +44,7 @@ export function CellToolbar({
 
         <Separator orientation="vertical" className="h-4" />
 
-        {/* Bookmark Toggle */}
+        {/* ... Buttons ... */}
         <Button
           variant="ghost"
           size="icon"
@@ -45,7 +59,6 @@ export function CellToolbar({
           )}
         </Button>
 
-        {/* Move to New Tab */}
         <Button
           variant="ghost"
           size="icon"
@@ -56,7 +69,6 @@ export function CellToolbar({
           <ExternalLink className="h-3.5 w-3.5" />
         </Button>
 
-        {/* Delete Cell */}
         <Button
           variant="ghost"
           size="icon"

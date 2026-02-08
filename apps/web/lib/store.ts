@@ -166,6 +166,7 @@ export interface UploadedFile {
   name: string;
   url?: string; // or path
   uploadedAt: number;
+  is_temp?: boolean; // ✨ Added for temporary save status
 }
 
 export interface KnowledgeFolder {
@@ -598,6 +599,25 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     // Queue auto-sync
     get().queueTabSync(tabId);
+
+    // ✨ Auto-update Tab Title from First Cell
+    // If it's the first cell (index 0) and tab title is generic
+    const state = get();
+    const currentTab = state.notebookTabs.find((t) => t.id === tabId);
+    if (currentTab && currentTab.cells.length > 0 && currentTab.cells[0].id === cellId) {
+      const firstCell = currentTab.cells[0]; // The updated cell
+      const genericTitles = ["Untitled", "New Tab", "New Notebook"];
+      const isGeneric = genericTitles.some(t => currentTab.title.startsWith(t));
+
+      if (isGeneric && firstCell.title && firstCell.title.trim() !== "") {
+        // Auto-rename tab
+        set((state) => ({
+          notebookTabs: state.notebookTabs.map((tab) =>
+            tab.id === tabId ? { ...tab, title: firstCell.title } : tab
+          )
+        }));
+      }
+    }
   },
 
   toggleBookmark: (tabId, cellId) => {
@@ -1353,8 +1373,11 @@ export const useAppStore = create<AppState>((set, get) => ({
       formData.append("collection_name", "user_knowledge");
       formData.append("folder_id", syncInfo.folderId);
       // Signal to backend to update existing file
+      // Signal to backend to update existing file
       formData.append("file_id", syncInfo.fileId);
       formData.append("update_existing", "true");
+      // ✨ Mark as temporary save
+      formData.append("is_temp", "true");
 
       const headers: HeadersInit = {};
       if (session?.access_token) {
@@ -1384,13 +1407,27 @@ export const useAppStore = create<AppState>((set, get) => ({
                 ? {
                   ...folder,
                   files: folder.files.map((f) =>
-                    f.id === syncInfo.fileId ? { ...f, name: newFileName } : f
+                    f.id === syncInfo.fileId ? { ...f, name: newFileName, is_temp: true } : f
                   ),
                 }
                 : folder
             ),
           }));
         }
+
+        // ✨ Also update is_temp in local state immediately
+        set((state) => ({
+          knowledgeFolders: state.knowledgeFolders.map((folder) =>
+            folder.id === syncInfo.folderId
+              ? {
+                ...folder,
+                files: folder.files.map((f) =>
+                  f.id === syncInfo.fileId ? { ...f, is_temp: true } : f
+                ),
+              }
+              : folder
+          ),
+        }));
 
         console.log(`Auto-synced tab "${tab.title}" to Supabase`);
       }

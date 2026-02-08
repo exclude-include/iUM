@@ -322,6 +322,11 @@ export function MainContentArea() {
     }
 
     const handleMouseMove = (e: MouseEvent) => {
+      // ✨ [Fixed] Auto Deep Restriction: 
+      // Do NOT trigger if there is no content (Empty Tab / No Tab / No Document)
+      const hasContent = (activeTab?.cells?.length > 0) || !!activeDocument;
+      if (!hasContent) return;
+
       // Reset timers on move
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
@@ -381,7 +386,7 @@ export function MainContentArea() {
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
     }
-  }, [sidebarMode]);
+  }, [sidebarMode, activeTab, activeDocument]);
 
   const handleCopy = () => {
     if (selectionMenu.text) {
@@ -425,8 +430,25 @@ export function MainContentArea() {
     });
 
     try {
-      // Context: Active Document title or Tab title
-      const context = activeDocument ? activeDocument.title : (activeTab ? activeTab.title : "");
+      // ✨ [Updated] Context Retrieval
+      // Try to find the specific cell the selection belongs to
+      let context = "";
+      const selection = window.getSelection();
+      if (selection && selection.anchorNode) {
+        const cellElement = (selection.anchorNode instanceof Element ? selection.anchorNode : selection.anchorNode.parentElement)?.closest('[data-cell-id]');
+        if (cellElement) {
+          const cellId = cellElement.getAttribute('data-cell-id');
+          const sourceCell = activeTab?.cells.find(c => c.id === cellId);
+          if (sourceCell) {
+            context = `Context from cell "${sourceCell.title || 'Untitled'}":\n${sourceCell.content}`;
+          }
+        }
+      }
+
+      // Fallback to document/tab title if no specific cell context found
+      if (!context) {
+        context = activeDocument ? activeDocument.title : (activeTab ? activeTab.title : "");
+      }
 
       const response = await api.chat.generateDeepExplanation(text, context, activeFolderId || undefined);
 

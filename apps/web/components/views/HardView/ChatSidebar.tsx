@@ -22,6 +22,7 @@ import {
   Settings,
   LogOut,
   User,
+  RefreshCw,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -658,6 +659,26 @@ export function ChatSidebar() {
                         )}
                       </div>
 
+                      {/* ✨ [Added] Retry Button */}
+                      {message.role === "assistant" && messages.indexOf(message) === messages.length - 1 && !loadingStatus && (
+                        <div className="mt-2 flex justify-end border-t border-border/50 pt-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              // Find last user message
+                              const lastUserMsg = [...messages].reverse().find(m => m.role === "user");
+                              if (lastUserMsg) {
+                                handleSend(lastUserMsg.content);
+                              }
+                            }}
+                          >
+                            <RefreshCw className="h-3 w-3 mr-1" /> Retry
+                          </Button>
+                        </div>
+                      )}
+
                       {/* Feedback & Actions */}
                       {message.role === "assistant" && (
                         <div className="flex items-center gap-1 px-1">
@@ -789,7 +810,7 @@ export function ChatSidebar() {
                   type="text"
                   placeholder={
                     activeFolderId
-                      ? `Msg ${activeFolder?.name}...`
+                      ? `Message ${activeFolder?.name}...`
                       : "Select a folder to chat..."
                   }
                   className="w-full h-9 px-3 py-2 text-sm rounded-md border border-input bg-transparent shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"

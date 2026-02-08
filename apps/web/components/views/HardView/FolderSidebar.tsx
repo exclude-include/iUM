@@ -42,6 +42,7 @@ export function FolderSidebar() {
     fetchFiles,
     loadTabFromIum,
     setSelectedDocuments,
+    renameFolder, // ✨ Added
   } = useAppStore();
 
   const { toast } = useToast();
@@ -61,6 +62,10 @@ export function FolderSidebar() {
   const [fileToRename, setFileToRename] = useState<{ id: string; name: string } | null>(null);
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
   const [renameInput, setRenameInput] = useState("");
+
+  // ✨ Folder Rename State
+  const [folderToRename, setFolderToRename] = useState<{ id: string; name: string } | null>(null);
+  const [renameFolderInput, setRenameFolderInput] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
@@ -526,6 +531,16 @@ export function FolderSidebar() {
       title: "Download started",
       description: `Downloading "${fileName}"...`,
     });
+
+  };
+
+  // ✨ Handle Folder Rename
+  const confirmRenameFolder = () => {
+    if (folderToRename && renameFolderInput.trim()) {
+      renameFolder(folderToRename.id, renameFolderInput.trim());
+      setFolderToRename(null);
+      toast({ title: "Folder renamed" });
+    }
   };
 
 
@@ -538,15 +553,7 @@ export function FolderSidebar() {
       >
         <h3 className="text-xs font-semibold uppercase tracking-wide">FOLDERS</h3>
         <div className="flex gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-5 w-5"
-            onClick={() => setMindMapOpen(true)}
-            title="View Knowledge Graph"
-          >
-            <Network className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
-          </Button>
+          {/* View Knowledge Graph button removed */}
           <Button
             variant="ghost"
             size="icon"
@@ -581,6 +588,19 @@ export function FolderSidebar() {
                   style={{ backgroundColor: folder.color }}
                 />
                 <span className="flex-1 truncate">{folder.name}</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setFolderToRename({ id: folder.id, name: folder.name });
+                    setRenameFolderInput(folder.name);
+                  }}
+                  title="Rename folder"
+                >
+                  <Pencil className="h-3 w-3 text-muted-foreground hover:text-primary" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -790,6 +810,12 @@ export function FolderSidebar() {
                         >
                           {file.name.replace('.ium', '')}
                         </span>
+                        {/* ✨ Temp Badge */}
+                        {file.is_temp && (
+                          <span className="ml-1.5 px-1 py-0.5 rounded-sm bg-orange-500/10 text-orange-500 text-[9px] font-bold uppercase tracking-tighter border border-orange-500/20">
+                            TEMP
+                          </span>
+                        )}
                       </div>
                       <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded">
                         <Button
@@ -906,6 +932,29 @@ export function FolderSidebar() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewFolderModal(false)}>Cancel</Button>
             <Button onClick={handleCreateFolder} disabled={!newFolderName.trim()}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✨ Rename Folder Dialog */}
+      <Dialog open={!!folderToRename} onOpenChange={(open) => !open && setFolderToRename(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename Folder</DialogTitle>
+          </DialogHeader>
+          <div className="py-2">
+            <Input
+              value={renameFolderInput}
+              onChange={(e) => setRenameFolderInput(e.target.value)}
+              placeholder="Folder Name"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmRenameFolder();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFolderToRename(null)}>Cancel</Button>
+            <Button onClick={confirmRenameFolder} disabled={!renameFolderInput.trim()}>Rename</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

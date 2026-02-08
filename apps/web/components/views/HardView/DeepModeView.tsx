@@ -75,7 +75,7 @@ export function DeepModeView() {
                                     </div>
                                 </div>
 
-                                <div className="p-3 text-sm prose prose-sm dark:prose-invert max-w-none">
+                                <div className="p-3 text-sm prose prose-sm dark:prose-invert max-w-none break-words">
                                     <ReactMarkdown
                                         remarkPlugins={[remarkMath, remarkGfm]}
                                         rehypePlugins={[rehypeKatex]}

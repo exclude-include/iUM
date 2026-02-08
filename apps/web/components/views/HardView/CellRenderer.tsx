@@ -100,28 +100,45 @@ export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
     };
 
     return (
-      <div ref={ref} className="group relative w-full max-w-full min-w-0">
-        {/* Cell Toolbar - appears on hover */}
-        <CellToolbar
-          cellType={cell.type}
-          isBookmarked={cell.isBookmarked}
-          onDelete={handleDelete}
-          onBookmark={handleBookmark}
-          onMoveToNewTab={handleMoveToNewTab}
-        />
-
-        {/* Cell Content */}
+      <div ref={ref} data-cell-id={cell.id} className="group relative w-full max-w-full min-w-0">
+        {/* ✨ New Static Header Layout */}
         <Card className={cn(
-          "p-6 bg-background border-border transition-all w-full max-w-full overflow-hidden",
+          "bg-background border-border transition-all w-full max-w-full overflow-hidden flex flex-col",
           cell.isBookmarked && "border-l-4 border-l-primary"
         )}>
-          {cell.type === "quiz" && cell.quiz_data ? (
-            <QuizView questions={cell.quiz_data} />
-          ) : (
-            <CellContent cell={cell} />
-          )}
+          {/* Header Row: Title + Menu */}
+          <div className="flex items-start justify-between gap-2 border-b px-4 py-2.5 bg-muted/5 min-h-[44px]">
+            {/* Title: Truncate if too long */}
+            <div className="flex-1 min-w-0 pt-0.5">
+              <h3 className="font-bold text-base truncate pr-2" title={cell.title}>
+                {cell.title}
+              </h3>
+            </div>
+            {/* Toolbar: Fixed width, prioritized */}
+            <CellToolbar
+              cellType={cell.type}
+              isBookmarked={cell.isBookmarked}
+              onDelete={handleDelete}
+              onBookmark={handleBookmark}
+              onMoveToNewTab={handleMoveToNewTab}
+              floating={false} // Static mode
+              className="shrink-0"
+            />
+          </div>
+
+          <div className="p-5 w-full max-w-full overflow-hidden">
+            {cell.type === "quiz" && cell.quiz_data ? (
+              <QuizView questions={cell.quiz_data} />
+            ) : (
+              <CellContent cell={cell} hideTitle />
+            )}
+          </div>
         </Card>
       </div>
+    );
+  }
+);
+      </div >
     );
   }
 );
@@ -187,12 +204,12 @@ function preprocessContent(content: string): string {
 // Custom Markdown Renderer Component to reuse logic
 
 
-function CellContent({ cell }: { cell: Cell }) {
+function CellContent({ cell, hideTitle }: { cell: Cell; hideTitle?: boolean }) {
   // 1. GraphData (New Reactflow)
   if (cell.graph_data) {
     return (
       <div className="w-full">
-        <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>
+        {!hideTitle && <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>}
         {cell.diagram_description && (
           <p className="text-sm text-muted-foreground mb-4">{cell.diagram_description}</p>
         )}
@@ -218,11 +235,13 @@ function CellContent({ cell }: { cell: Cell }) {
     );
   }
 
-  // 3. Standard Content
+  // 3. Default Text Content
   return (
-    <>
-      <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>
-      <CellMarkdownContent content={cell.content} />
+    <div className="w-full">
+      {!hideTitle && <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>}
+      <div className="mt-1">
+        <CellMarkdownContent content={cell.content || ""} />
+      </div>
 
       {/* Equations */}
       {cell.equations && cell.equations.length > 0 && (

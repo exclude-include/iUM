@@ -42,6 +42,7 @@ async def ingest_document(
     folder_id: Optional[str] = Form(None),
     file_id: Optional[str] = Form(None),  # ✨ 기존 파일 ID (업데이트 시 사용)
     update_existing: Optional[str] = Form(None),  # ✨ "true"면 기존 파일 업데이트
+    is_temp: Optional[str] = Form(None), # ✨ 임시 저장 여부 ("true" / "false")
     authorization: Optional[str] = Header(None) # ✨ 인증 토큰 추가
 ):
     """
@@ -103,6 +104,7 @@ async def ingest_document(
 
         # 3. Supabase DB (files 테이블)에 메타데이터 저장 또는 업데이트
         is_update = update_existing == "true" and file_id
+        is_temp_bool = is_temp == "true"
 
         print(f"DTO [2/5] Saving to Supabase DB (files table)")
         if is_update:
@@ -112,6 +114,7 @@ async def ingest_document(
                 "storage_path": storage_path,
                 "content_type": file.content_type,
                 "size": len(content),
+                "is_temp": is_temp_bool # ✨ 업데이트 시 임시 저장 상태 반영
             }
             db_res = supabase.table("files").update(update_data).eq("id", file_id).execute()
             new_file_id = file_id
@@ -123,7 +126,8 @@ async def ingest_document(
                 "storage_path": storage_path,
                 "content_type": file.content_type,
                 "size": len(content),
-                "user_id": user_id  # ✨ user_id 추가 (None일 수 있음)
+                "user_id": user_id,  # ✨ user_id 추가 (None일 수 있음)
+                "is_temp": is_temp_bool # ✨ 새 파일 임시 저장 여부
             }
 
             # DB Insert & Return ID
