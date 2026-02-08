@@ -46,7 +46,7 @@ function MeshBackground({ rotateX, rotateY }: { rotateX: number; rotateY: number
   const { points, lines } = useMemo(() => {
     // Triangular lattice: alternating rows offset by SPACING/2 (dots + lines → triangles/polygons)
     const points: [number, number][] = [];
-    const pointByCoord = new Map<string [number, number]>();
+    const pointByCoord = new Map<string, [number, number]>();
 
     for (let j = 0; j < ROWS; j++) {
       const xOffset = (j % 2) * (SPACING / 2);
