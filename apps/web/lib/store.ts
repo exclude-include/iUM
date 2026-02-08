@@ -3,6 +3,9 @@ import { persist } from "zustand/middleware";
 import type { Document } from "@/types";
 import type { ChatMessage } from "@/types/api";
 
+// Skip repeated Supabase user_notebook_state calls after first 404/error (e.g. migration not run)
+let _userNotebookStateSupabaseFailed = false;
+
 type ViewMode = "hard" | "soft";
 
 interface ActiveDocument {
@@ -1242,6 +1245,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   saveUserNotebookStateToSupabase: async () => {
+    if (_userNotebookStateSupabaseFailed) return;
     const { supabase } = await import("@/lib/supabase/client");
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) return;
@@ -1252,18 +1256,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       deepHistory: state.deepHistory,
     };
     try {
-      await supabase
+      const { error } = await supabase
         .from("user_notebook_state")
         .upsert(
           { user_id: session.user.id, payload, updated_at: new Date().toISOString() },
           { onConflict: "user_id" }
         );
+      if (error) {
+        _userNotebookStateSupabaseFailed = true;
+        console.warn("[Store] user_notebook_state unavailable (run Supabase migration 006). Save skipped.");
+        return;
+      }
     } catch (e) {
-      console.warn("[Store] saveUserNotebookStateToSupabase failed:", e);
+      _userNotebookStateSupabaseFailed = true;
+      console.warn("[Store] user_notebook_state unavailable (run Supabase migration 006). Save skipped.");
     }
   },
 
   loadUserNotebookStateFromSupabase: async () => {
+    if (_userNotebookStateSupabaseFailed) return;
     const { supabase } = await import("@/lib/supabase/client");
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user?.id) return;
@@ -1273,7 +1284,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         .select("payload")
         .eq("user_id", session.user.id)
         .maybeSingle();
-      if (error || !data?.payload || typeof data.payload !== "object") return;
+      if (error) {
+        _userNotebookStateSupabaseFailed = true;
+        console.warn("[Store] user_notebook_state unavailable (run Supabase migration 006). Load skipped.");
+        return;
+      }
+      if (!data?.payload || typeof data.payload !== "object") return;
       const p = data.payload as { tabs?: unknown; activeTabId?: string | null; deepHistory?: unknown };
       const payload: { tabs?: NotebookTab[]; activeTabId?: string | null; deepHistory?: Cell[] } = {};
       if (Array.isArray(p.tabs) && p.tabs.length > 0) payload.tabs = p.tabs as NotebookTab[];
@@ -1283,7 +1299,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         get().hydrateNotebookBackup(payload);
       }
     } catch (e) {
-      console.warn("[Store] loadUserNotebookStateFromSupabase failed:", e);
+      _userNotebookStateSupabaseFailed = true;
+      console.warn("[Store] user_notebook_state unavailable (run Supabase migration 006). Load skipped.");
     }
   },
 

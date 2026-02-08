@@ -229,17 +229,12 @@ async def query_rag_chain(
         else:
             docs = retriever.get_relevant_documents(question)
             
-        # ✨ [후처리 필터링] 
-        # Supabase 쿼리에서 'IN' 필터가 까다로울 수 있으므로, 
-        # 가져온 문서들 중에서 사용자가 선택한 파일에 속하는지 파이썬 레벨에서 한 번 더 확인합니다.
+        # ✨ 사용자가 파일을 선택했을 때는 선택한 파일만 사용 (다른 문서로 폴백하지 않음)
         if document_ids:
             relevant_docs = [
-                d for d in docs 
+                d for d in docs
                 if d.metadata.get("document_id") in document_ids or d.metadata.get("source") in document_ids
             ]
-            if not relevant_docs and docs:
-                # 만약 필터링 후 남은게 없다면, 너무 엄격했을 수 있으니 상위 2개만 fallback으로 사용
-                 relevant_docs = docs[:2]
         else:
             relevant_docs = docs
             

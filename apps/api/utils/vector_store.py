@@ -107,26 +107,73 @@ class CustomSupabaseRetriever(BaseRetriever):
             documents = []
             for item in data:
                 content = item.get("content", "")
-                metadata = item.get("metadata", {}) or {}
-                
-                # Ensure useful fields are in metadata
-                if "id" in item: metadata["id"] = item["id"]
-                if "document_id" in item: metadata["document_id"] = item["document_id"]
-                
+                metadata = dict(item.get("metadata", {}) or {})
+                if "id" in item:
+                    metadata["id"] = item["id"]
+                if "document_id" in item:
+                    metadata["document_id"] = item["document_id"]
+                if "similarity" in item:
+                    metadata["_similarity"] = item["similarity"]
                 documents.append(Document(page_content=content, metadata=metadata))
                 
             return documents
             
         except Exception as e:
             print(f"⚠️ Custom Retriever Error: {e}")
-            # Try fallback without filter if it failed? No, just return empty
             return []
 
     async def _aget_relevant_documents(
         self, query: str, *, run_manager: CallbackManagerForRetrieverRun
     ) -> List[Document]:
-        # Async implementation for better performance
-        # Note: embeddings.embed_query is usually sync, but we can verify
+        return self._get_relevant_documents(query, run_manager=run_manager)
+
+
+class MultiDocumentRetriever(BaseRetriever):
+    """Retriever that searches only within multiple specified document IDs and merges by similarity."""
+
+    def __init__(
+        self,
+        client: Any,
+        embeddings: Any,
+        k: int = 4,
+        document_ids: List[str] = None,
+        folder_id: Optional[str] = None,
+    ):
+        super().__init__()
+        self.client = client
+        self.embeddings = embeddings
+        self.k = k
+        self.document_ids = document_ids or []
+        self.folder_id = folder_id
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> List[Document]:
+        if not self.document_ids:
+            return []
+        merged = []
+        per_doc_k = max(1, (self.k + len(self.document_ids) - 1) // len(self.document_ids))
+        for doc_id in self.document_ids:
+            filter_dict = {"document_id": doc_id}
+            if self.folder_id:
+                filter_dict["folder_id"] = self.folder_id
+            retriever = CustomSupabaseRetriever(
+                client=self.client,
+                embeddings=self.embeddings,
+                k=per_doc_k,
+                filter=filter_dict,
+            )
+            docs = retriever._get_relevant_documents(query, run_manager=run_manager)
+            merged.extend(docs)
+        merged.sort(key=lambda d: d.metadata.get("_similarity", 0), reverse=True)
+        result = merged[: self.k]
+        for doc in result:
+            doc.metadata.pop("_similarity", None)
+        return result
+
+    async def _aget_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> List[Document]:
         return self._get_relevant_documents(query, run_manager=run_manager)
 
 
@@ -138,18 +185,25 @@ def get_retriever(
     document_ids: Optional[List[str]] = None
 ):
     """
-    Get a custom retriever that bypasses the LangChain SupabaseVectorStore issue.
+    Get a retriever. When document_ids has multiple IDs, searches only those documents and merges by similarity.
     """
     supabase = get_supabase_client()
-    
-    # Supabase Filter Logic
+
+    if document_ids and len(document_ids) > 1:
+        return MultiDocumentRetriever(
+            client=supabase,
+            embeddings=embeddings,
+            k=k,
+            document_ids=document_ids,
+            folder_id=folder_id,
+        )
+
     filter_dict = {}
     if folder_id:
         filter_dict["folder_id"] = folder_id
-        
-    if document_ids and len(document_ids) > 0:
+    if document_ids and len(document_ids) == 1:
         filter_dict["document_id"] = document_ids[0]
-    
+
     return CustomSupabaseRetriever(
         client=supabase,
         embeddings=embeddings,

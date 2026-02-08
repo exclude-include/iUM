@@ -289,16 +289,14 @@ export function ChatSidebar() {
     setLoadingStatus("Starting agent...");
 
     try {
-      // RAG: selected files (Files section) + chat-added attachment file IDs
+      // RAG: 질문 시 체크한 파일 + 채팅에 첨부한 파일만 참고 (다른 파일 미참조)
       const attachmentFileIds = attachments.map((a) => a.file_id).filter(Boolean) as string[];
-      const documentIdsForRag = [
-        ...attachmentFileIds,
-        ...(activeFolderId
-          ? selectedDocumentIds.filter(
-              (id) => activeFolder?.files?.some((f) => f.id === id)
-            )
-          : selectedDocumentIds),
-      ].filter((id, i, arr) => arr.indexOf(id) === i);
+      const checkedInFolder = activeFolderId
+        ? selectedDocumentIds.filter((id) => activeFolder?.files?.some((f) => f.id === id))
+        : selectedDocumentIds;
+      const documentIdsForRag = [...attachmentFileIds, ...checkedInFolder].filter(
+        (id, i, arr) => arr.indexOf(id) === i
+      );
 
       const response = await api.chat.sendMessage(
         userMessage.content,
@@ -840,11 +838,7 @@ export function ChatSidebar() {
                 size="icon"
                 className="shrink-0 h-9 w-9"
               >
-                {loadingStatus ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
+                <Send className="h-4 w-4" />
               </Button>
             </div>
             <p className="text-[10px] text-muted-foreground mt-2 text-center flex items-center justify-center gap-1">

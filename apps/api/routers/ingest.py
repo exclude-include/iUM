@@ -11,27 +11,91 @@ from utils.vector_store import add_documents_to_vector_store
 from utils.opik_config import trace
 from utils.supabase_client import get_supabase_client
 import os
+import re
 import tempfile
 
 router = APIRouter()
 
+
+def _normalize_page_text(text: str) -> str:
+    """Collapse whitespace and strip; preserve line breaks for readability."""
+    if not text or not isinstance(text, str):
+        return ""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _extract_pdf_with_pdfplumber(file_path: str, original_filename: str) -> List[Document]:
+    """Extract text using pdfplumber (better for layout/tables)."""
+    import pdfplumber
+    documents = []
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            for i, page in enumerate(pdf.pages):
+                text = page.extract_text()
+                if text:
+                    text = _normalize_page_text(text)
+                if not text:
+                    text = ""
+                documents.append(
+                    Document(
+                        page_content=text,
+                        metadata={"source": original_filename, "page": i + 1},
+                    )
+                )
+    except Exception as e:
+        print(f"pdfplumber extraction failed: {e}")
+    return documents
+
+
+def _extract_pdf_with_pypdf(file_path: str, original_filename: str) -> List[Document]:
+    """Extract text using PyPDFLoader (pypdf)."""
+    loader = PyPDFLoader(file_path)
+    documents = loader.load()
+    for doc in documents:
+        doc.page_content = _normalize_page_text(doc.page_content or "")
+    return documents
+
+
 @trace
 async def process_pdf_file(file_path: str, original_filename: str) -> List[Document]:
     """
-    Process a PDF file and extract text as LangChain Documents.
+    Process a PDF file: try pdfplumber first (better recognition), then PyPDF fallback.
+    Normalizes text for consistent embedding.
     """
-    loader = PyPDFLoader(file_path)
-    documents = loader.load()
-    return documents
+    import asyncio
+    loop = asyncio.get_event_loop()
+
+    # 1) Try pdfplumber first (better for many PDFs and tables)
+    docs_plumber = await loop.run_in_executor(
+        None, _extract_pdf_with_pdfplumber, file_path, original_filename
+    )
+    total_plumber = sum(len(d.page_content or "") for d in docs_plumber)
+
+    # 2) If little or no text, try PyPDF as fallback (different parser)
+    if total_plumber < 50 and os.path.getsize(file_path) > 500:
+        docs_pypdf = await loop.run_in_executor(
+            None, _extract_pdf_with_pypdf, file_path, original_filename
+        )
+        total_pypdf = sum(len(d.page_content or "") for d in docs_pypdf)
+        if total_pypdf > total_plumber:
+            return docs_pypdf
+
+    return docs_plumber if docs_plumber else await loop.run_in_executor(
+        None, _extract_pdf_with_pypdf, file_path, original_filename
+    )
 
 
 @trace
 async def process_text_file(file_path: str, original_filename: str) -> List[Document]:
     """
-    Process a text file content and create LangChain Documents.
+    Process a text file content and create LangChain Documents (UTF-8 for Korean etc.).
     """
-    loader = TextLoader(file_path)
+    loader = TextLoader(file_path, encoding="utf-8", autodetect_encoding=True)
     documents = loader.load()
+    for doc in documents:
+        doc.page_content = _normalize_page_text(doc.page_content or "")
     return documents
 
 
