@@ -6,14 +6,21 @@ import { motion } from "framer-motion";
 import { BookOpen, MessageSquare, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-// Grid mesh for cursor-reactive background (dots + lines)
-const GRID_COLS = 28;
-const GRID_ROWS = 20;
-const SPACING = 48;
-const MESH_WIDTH = GRID_COLS * SPACING;
-const MESH_HEIGHT = GRID_ROWS * SPACING;
+// Triangular lattice mesh (dots + lines forming triangles, Include-style)
+const COLS = 24;
+const ROWS = 18;
+const SPACING = 52;
+const ROW_HEIGHT = SPACING * 0.866; // sqrt(3)/2 for equilateral triangles
+const MESH_WIDTH = COLS * SPACING + SPACING / 2;
+const MESH_HEIGHT = ROWS * ROW_HEIGHT;
 const TILT_MAX_DEG = 10;
 const TILT_SMOOTH_MS = 180;
+
+function edgeKey(a: [number, number], b: [number, number]): string {
+  const [ax, ay] = a;
+  const [bx, by] = b;
+  return ax < bx || (ax === bx && ay <= by) ? `${ax},${ay}-${bx},${by}` : `${bx},${by}-${ax},${ay}`;
+}
 
 function useMouseTilt() {
   const [mouse, setMouse] = useState({ x: 0.5, y: 0.5 });
@@ -37,19 +44,57 @@ function useMouseTilt() {
 
 function MeshBackground({ rotateX, rotateY }: { rotateX: number; rotateY: number }) {
   const { points, lines } = useMemo(() => {
+    // Triangular lattice: alternating rows offset by SPACING/2 (dots + lines → triangles/polygons)
     const points: [number, number][] = [];
-    for (let j = 0; j < GRID_ROWS; j++) {
-      for (let i = 0; i < GRID_COLS; i++) {
-        points.push([i * SPACING, j * SPACING]);
+    const pointByCoord = new Map<string [number, number]>();
+
+    for (let j = 0; j < ROWS; j++) {
+      const xOffset = (j % 2) * (SPACING / 2);
+      for (let i = 0; i < COLS; i++) {
+        const x = i * SPACING + xOffset;
+        const y = j * ROW_HEIGHT;
+        const pt: [number, number] = [x, y];
+        points.push(pt);
+        pointByCoord.set(`${i},${j}`, pt);
       }
     }
+
+    const seen = new Set<string>();
     const lines: [[number, number], [number, number]][] = [];
-    for (let j = 0; j < GRID_ROWS; j++) {
-      for (let i = 0; i < GRID_COLS; i++) {
-        if (i < GRID_COLS - 1) lines.push([[i * SPACING, j * SPACING], [(i + 1) * SPACING, j * SPACING]]);
-        if (j < GRID_ROWS - 1) lines.push([[i * SPACING, j * SPACING], [i * SPACING, (j + 1) * SPACING]]);
+
+    const addEdge = (a: [number, number], b: [number, number]) => {
+      const key = edgeKey(a, b);
+      if (seen.has(key)) return;
+      seen.add(key);
+      lines.push([a, b]);
+    };
+
+    for (let j = 0; j < ROWS; j++) {
+      for (let i = 0; i < COLS; i++) {
+        const a = pointByCoord.get(`${i},${j}`);
+        if (!a) continue;
+        // Horizontal: right neighbor
+        if (i < COLS - 1) {
+          const b = pointByCoord.get(`${i + 1},${j}`);
+          if (b) addEdge(a, b);
+        }
+        // Diagonal down: triangular lattice (each point connects to 2 neighbors in row below)
+        if (j < ROWS - 1) {
+          if (j % 2 === 0) {
+            const b = pointByCoord.get(`${i},${j + 1}`);
+            const c = pointByCoord.get(`${i - 1},${j + 1}`);
+            if (b) addEdge(a, b);
+            if (c) addEdge(a, c);
+          } else {
+            const b = pointByCoord.get(`${i},${j + 1}`);
+            const c = pointByCoord.get(`${i + 1},${j + 1}`);
+            if (b) addEdge(a, b);
+            if (c) addEdge(a, c);
+          }
+        }
       }
     }
+
     return { points, lines };
   }, []);
 

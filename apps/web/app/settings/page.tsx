@@ -225,9 +225,13 @@ export default function SettingsPage() {
       router.push("/");
       router.refresh();
     } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "";
+      const is404 = message.includes("404") || message.toLowerCase().includes("not found");
       toast({
         title: "Deletion failed",
-        description: error instanceof Error ? error.message : "Could not delete account. Try again.",
+        description: is404
+          ? "Account deletion is not available on this server yet. Please ensure the API (ium-api) has been redeployed with the latest code and try again."
+          : message || "Could not delete account. Try again.",
         variant: "destructive",
       });
     } finally {
