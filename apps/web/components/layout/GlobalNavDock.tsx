@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Flame, MessageSquare, Bell, Settings } from "lucide-react";
+import { Flame, Sparkles, Bell, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
@@ -57,7 +57,7 @@ export function GlobalNavDock() {
             </TooltipContent>
           </Tooltip>
 
-          {/* Message - Soft View (Reels) */}
+          {/* Sparkles - Soft View (Reels) */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -69,7 +69,7 @@ export function GlobalNavDock() {
                   viewMode === "soft" && "bg-accent"
                 )}
               >
-                <MessageSquare className="h-5 w-5" />
+                <Sparkles className="h-5 w-5 text-purple-500" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right">

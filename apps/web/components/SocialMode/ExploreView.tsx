@@ -4,10 +4,10 @@ import { useSocialStore } from "./useSocialStore";
 import { Play, Heart, Sparkles } from "lucide-react";
 
 export function ExploreView() {
-  const { reels, setCurrentView, setCurrentReelIndex } = useSocialStore();
+  const { reels, setCurrentView, setCurrentReelById } = useSocialStore();
 
-  const handleReelClick = (reelIndex: number) => {
-    setCurrentReelIndex(reelIndex);
+  const handleReelClick = (reelId: string) => {
+    setCurrentReelById(reelId);
     setCurrentView("feed");
   };
 
@@ -37,10 +37,10 @@ export function ExploreView() {
           </div>
         ) : (
           <div className="grid grid-cols-3 lg:grid-cols-4 gap-1">
-            {reels.map((reel, index) => (
+            {reels.map((reel) => (
               <button
                 key={reel.id}
-                onClick={() => handleReelClick(index)}
+                onClick={() => handleReelClick(reel.id)}
                 className="relative aspect-square overflow-hidden rounded-sm bg-muted group hover:opacity-90 transition-opacity"
               >
                 {reel.videoUrl ? (

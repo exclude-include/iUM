@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 export function MyProfileView() {
   const { user } = useAuth();
   const router = useRouter();
-  const { getMyReels, likedReels, bookmarkedReels, setCurrentView, setCurrentReelIndex, reels } = useSocialStore();
+  const { getMyReels, likedReels, bookmarkedReels, setCurrentView, setCurrentReelById, reels } = useSocialStore();
   const [activeTab, setActiveTab] = useState("posts");
   
   const myReels = getMyReels(user?.id);
@@ -36,8 +36,8 @@ export function MyProfileView() {
       .slice(0, 2);
   };
 
-  const handleReelClick = (reelIndex: number) => {
-    setCurrentReelIndex(reelIndex);
+  const handleReelClick = (reelId: string) => {
+    setCurrentReelById(reelId);
     setCurrentView("feed");
   };
 
@@ -57,10 +57,10 @@ export function MyProfileView() {
 
     return (
       <div className="grid grid-cols-3 gap-1">
-        {reels.map((reel, index) => (
+        {reels.map((reel) => (
           <button
             key={reel.id}
-            onClick={() => handleReelClick(index)}
+            onClick={() => handleReelClick(reel.id)}
             className="relative aspect-square overflow-hidden rounded-sm bg-muted group hover:opacity-90 transition-opacity"
           >
             {reel.videoUrl ? (

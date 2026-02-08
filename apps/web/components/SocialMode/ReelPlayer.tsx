@@ -115,6 +115,14 @@ export function ReelPlayer() {
     }
   }, [currentReel, likedReels, bookmarkedReels]);
 
+  // Sync muted state with video element when reel changes
+  useEffect(() => {
+    if (videoRef.current) {
+      // Sync the state with the actual video element's muted property
+      videoRef.current.muted = isMuted;
+    }
+  }, [currentReel, isMuted]);
+
   // Calculate quiz trigger time
   const getQuizTriggerTime = useCallback(() => {
     if (!currentReel?.quiz) return null;
@@ -249,11 +257,19 @@ export function ReelPlayer() {
       setIsPlaying(true);
     };
 
+    // Sync state with actual video events
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+
     video.addEventListener('canplay', handleCanPlay, { once: true });
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
     video.load();
 
     return () => {
       video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
     };
   }, [currentReel]);
 
@@ -379,14 +395,16 @@ export function ReelPlayer() {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
+        setIsPlaying(false);
       } else {
         videoRef.current.play().catch((err) => {
           if (err.name !== 'AbortError') {
             console.error("Play failed:", err);
+            setIsPlaying(false);
           }
         });
+        setIsPlaying(true);
       }
-      setIsPlaying(!isPlaying);
     } else {
       // For placeholder reels
       setIsPlaying(!isPlaying);
@@ -395,13 +413,17 @@ export function ReelPlayer() {
 
   const toggleMute = () => {
     if (videoRef.current) {
-      videoRef.current.muted = !isMuted;
-      setIsMuted(!isMuted);
+      const newMutedState = !isMuted;
+      videoRef.current.muted = newMutedState;
+      setIsMuted(newMutedState);
     }
   };
 
   return (
-    <div className="relative flex h-full w-full flex-col items-center justify-center bg-muted/30">
+    <div className={cn(
+      "relative flex h-full w-full flex-col items-center justify-center bg-muted/30 transition-transform duration-300 ease-out",
+      showCommentDrawer ? "-translate-x-[200px]" : "translate-x-0"
+    )}>
       {/* Main Container (Mobile Frame) - wheel listener added in useEffect with passive: false */}
       <div
         ref={containerRef}
@@ -457,45 +479,9 @@ export function ReelPlayer() {
           )}
         </div>
 
-        {/* Mute/Unmute Button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute top-20 left-4 z-20 h-10 w-10 rounded-full bg-background/50 backdrop-blur-sm hover:bg-background/80"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleMute();
-          }}
-        >
-          {isMuted ? (
-            <VolumeX className="h-5 w-5 text-white" />
-          ) : (
-            <Volume2 className="h-5 w-5 text-white" />
-          )}
-        </Button>
 
-        {/* Navigation Arrows */}
-        {currentReelIndex > 0 && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute left-4 top-1/2 -translate-y-1/2 z-20 h-12 w-12 rounded-full bg-background/50 backdrop-blur-sm hover:bg-background/80"
-            onClick={handlePrevReel}
-          >
-            <ChevronUp className="h-6 w-6" />
-          </Button>
-        )}
 
-        {currentReelIndex < filteredReels.length - 1 && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="absolute right-4 top-1/2 -translate-y-1/2 z-20 h-12 w-12 rounded-full bg-background/50 backdrop-blur-sm hover:bg-background/80"
-            onClick={handleNextReel}
-          >
-            <ChevronDown className="h-6 w-6" />
-          </Button>
-        )}
+
 
         {/* Bottom Left: Author Info (설정 프로필 사진 또는 API 조회 fallback) */}
         <div className="absolute bottom-20 left-4 z-20 text-white max-w-[60%]">
@@ -652,7 +638,47 @@ export function ReelPlayer() {
         )}
           </motion.div>
         </AnimatePresence>
+
+        {/* Mute/Unmute Button - Outside AnimatePresence */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute top-20 left-4 z-20 h-10 w-10 rounded-full bg-background/50 backdrop-blur-sm hover:bg-background/80"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleMute();
+          }}
+        >
+          {isMuted ? (
+            <VolumeX className="h-5 w-5 text-white" />
+          ) : (
+            <Volume2 className="h-5 w-5 text-white" />
+          )}
+        </Button>
       </div>
+
+      {/* Navigation Arrows - Outside main container for YouTube Shorts style */}
+      {currentReelIndex > 0 && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute right-4 top-[45%] -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 border-0"
+          onClick={handlePrevReel}
+        >
+          <ChevronUp className="h-5 w-5 text-white" />
+        </Button>
+      )}
+
+      {currentReelIndex < filteredReels.length - 1 && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute right-4 top-[55%] -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-black/40 backdrop-blur-sm hover:bg-black/60 border-0"
+          onClick={handleNextReel}
+        >
+          <ChevronDown className="h-5 w-5 text-white" />
+        </Button>
+      )}
 
       {/* Comment Drawer */}
       <CommentDrawer

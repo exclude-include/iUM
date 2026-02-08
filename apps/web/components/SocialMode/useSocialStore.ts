@@ -44,6 +44,7 @@ interface SocialState {
   toggleFolder: (folderId: string) => void;
   setShowAllFolders: (show: boolean) => void;
   setCurrentReelIndex: (index: number) => void;
+  setCurrentReelById: (reelId: string) => void;
   nextReel: () => void;
   prevReel: () => void;
   toggleLike: (reelId: string) => void;
@@ -231,6 +232,14 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     set({ currentReelIndex: clampedIndex });
   },
   
+  setCurrentReelById: (reelId) => {
+    const filteredReels = get().getFilteredReels();
+    const index = filteredReels.findIndex((reel) => reel.id === reelId);
+    if (index !== -1) {
+      set({ currentReelIndex: index });
+    }
+  },
+  
   nextReel: () => {
     const { currentReelIndex } = get();
     const filteredReels = get().getFilteredReels();
@@ -374,7 +383,14 @@ export const useSocialStore = create<SocialState>((set, get) => ({
     return true;
   },
   
-  setCurrentView: (view) => set({ currentView: view, currentReelIndex: 0 }),
+  setCurrentView: (view) => {
+    // Don't reset index when navigating to feed view (user might have selected a specific reel)
+    if (view === "feed") {
+      set({ currentView: view });
+    } else {
+      set({ currentView: view, currentReelIndex: 0 });
+    }
+  },
   
   setSearchQuery: (query) => set({ searchQuery: query }),
   

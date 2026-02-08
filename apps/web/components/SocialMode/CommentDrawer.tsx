@@ -159,16 +159,16 @@ export function CommentDrawer({ reelId, isOpen, onClose }: CommentDrawerProps) {
     <div className="fixed inset-0 z-[100] pointer-events-none">
       {/* Backdrop */}
       <div
-        className={`absolute inset-0 bg-black/50 transition-opacity duration-200 pointer-events-auto ${
+        className={`absolute inset-0 bg-black/60 transition-opacity duration-300 pointer-events-auto ${
           isOpen ? 'opacity-100' : 'opacity-0'
         }`}
         onClick={onClose}
       />
 
-      {/* Drawer */}
+      {/* Drawer - Slide from right like YouTube Shorts, matching reel width */}
       <div
-        className={`absolute bottom-0 left-0 right-0 bg-background rounded-t-2xl shadow-2xl max-h-[70vh] flex flex-col transition-transform duration-300 ease-out pointer-events-auto ${
-          isOpen ? 'translate-y-0' : 'translate-y-full'
+        className={`absolute top-0 right-0 bottom-0 w-full max-w-[400px] bg-background shadow-2xl flex flex-col transition-transform duration-300 ease-out pointer-events-auto ${
+          isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
         {/* Header */}
