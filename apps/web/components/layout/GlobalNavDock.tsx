@@ -65,7 +65,7 @@ export function GlobalNavDock() {
           {/* Sparkles - Soft View (Reels) */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Link href="/soft">
+              <Link href="/soft" prefetch>
                 <Button
                   data-tutorial="tutorial-nav-reels"
                   variant="ghost"

@@ -207,8 +207,8 @@ function TooltipCard({
         left = targetRect.left + targetRect.width / 2 - cardWidth / 2;
         top = targetRect.bottom + gap;
     }
-    // 보정: 튜토리얼 카드가 오른쪽으로 밀려 보이지 않도록 왼쪽으로 12px 이동
-    left -= 12;
+    // 보정: 튜토리얼 카드가 오른쪽으로 밀려 보이지 않도록 왼쪽으로 이동 (메뉴바 두께 정도)
+    left -= 28;
     left = Math.max(16, Math.min(left, window.innerWidth - cardWidth - 16));
     top = Math.max(16, Math.min(top, window.innerHeight - 200));
   }
