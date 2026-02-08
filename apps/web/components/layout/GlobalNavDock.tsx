@@ -43,7 +43,7 @@ export function GlobalNavDock() {
           {/* Fire (Streak) - Hard View (Workspace); home "/" is workspace when logged in */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Link href="/">
+              <Link href="/hard">
                 <Button
                   data-tutorial="tutorial-nav-workspace"
                   variant="ghost"

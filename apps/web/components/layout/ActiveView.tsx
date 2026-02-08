@@ -13,31 +13,29 @@ const hardViewVariants = {
   initial: {
     opacity: 0,
     x: -150,
-    scale: 0.96,
-    filter: "blur(4px)",
+    scale: 0.98,
+    // filter: "blur(4px)", // heavy on some devices
   },
   animate: {
     opacity: 1,
     x: 0,
     scale: 1,
-    filter: "blur(0px)",
+    // filter: "blur(0px)",
     transition: {
-      duration: 0.5,
-      ease: [0.25, 0.46, 0.45, 0.94], // Custom cubic-bezier for smooth, natural feel
-      opacity: { duration: 0.4 },
-      filter: { duration: 0.3 },
+      duration: 0.3, // Faster
+      ease: [0.25, 0.46, 0.45, 0.94],
+      opacity: { duration: 0.25 },
     },
   },
   exit: {
     opacity: 0,
     x: -150,
-    scale: 0.96,
-    filter: "blur(4px)",
+    scale: 0.98,
+    // filter: "blur(4px)",
     transition: {
-      duration: 0.4,
-      ease: [0.55, 0.06, 0.68, 0.19], // Faster exit
-      opacity: { duration: 0.3 },
-      filter: { duration: 0.2 },
+      duration: 0.2, // Faster exit
+      ease: [0.55, 0.06, 0.68, 0.19],
+      opacity: { duration: 0.15 },
     },
   },
 };
@@ -47,31 +45,29 @@ const softViewVariants = {
   initial: {
     opacity: 0,
     x: 150,
-    scale: 0.96,
-    filter: "blur(4px)",
+    scale: 0.98,
+    // filter: "blur(4px)",
   },
   animate: {
     opacity: 1,
     x: 0,
     scale: 1,
-    filter: "blur(0px)",
+    // filter: "blur(0px)",
     transition: {
-      duration: 0.5,
-      ease: [0.25, 0.46, 0.45, 0.94], // Same smooth easing
-      opacity: { duration: 0.4 },
-      filter: { duration: 0.3 },
+      duration: 0.3, // Faster
+      ease: [0.25, 0.46, 0.45, 0.94],
+      opacity: { duration: 0.25 },
     },
   },
   exit: {
     opacity: 0,
     x: 150,
-    scale: 0.96,
-    filter: "blur(4px)",
+    scale: 0.98,
+    // filter: "blur(4px)",
     transition: {
-      duration: 0.4,
-      ease: [0.55, 0.06, 0.68, 0.19], // Faster exit
-      opacity: { duration: 0.3 },
-      filter: { duration: 0.2 },
+      duration: 0.2, // Faster exit
+      ease: [0.55, 0.06, 0.68, 0.19],
+      opacity: { duration: 0.15 },
     },
   },
 };

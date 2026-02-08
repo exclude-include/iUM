@@ -27,6 +27,8 @@ export function VantaBackground() {
         const VANTA = await import("vanta/dist/vanta.clouds.min.js");
         const VANTADefault = (VANTA as { default: (opts: Record<string, unknown>) => { destroy: () => void } }).default;
 
+        if (!vantaRef.current) return;
+
         vantaEffect.current = VANTADefault({
           el: vantaRef.current,
           THREE,

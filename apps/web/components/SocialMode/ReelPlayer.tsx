@@ -174,13 +174,13 @@ export function ReelPlayer({ initialReelId }: ReelPlayerProps = {}) {
     // Debounce URL updates to avoid excessive history pollution
     const timeoutId = setTimeout(() => {
       const targetUrl = `/soft/reels/${currentReel.id}`;
-      if (pathname !== targetUrl) {
-        router.replace(targetUrl, { scroll: false });
-      }
+      // Use window.history.replaceState to update URL without triggering Next.js navigation/re-render
+      // This prevents the "stutter" effect
+      window.history.replaceState(null, "", targetUrl);
     }, 300);
 
     return () => clearTimeout(timeoutId);
-  }, [currentReel, pathname, router]);
+  }, [currentReel, pathname]); // Removed 'router' dependency as it's not used in effect
 
   // Sync muted state with video element when reel changes
   useEffect(() => {

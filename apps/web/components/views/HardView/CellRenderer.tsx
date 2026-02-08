@@ -67,7 +67,8 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
         }
       };
       const sel = deepCard?.sourceSelectedText?.trim();
-      const singleText = React.Children.count(children) === 1 ? (React.Children.only(children) as unknown) : null;
+      const childArray = React.Children.toArray(children);
+      const singleText = childArray.length === 1 && typeof childArray[0] === "string" ? (childArray[0] as string) : null;
       const text = typeof singleText === "string" ? singleText : null;
       const canPartialHighlight = sel && text && text.includes(sel);
 
@@ -151,7 +152,8 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
         };
         const children = props.children;
         const sel = deepCard?.sourceSelectedText?.trim();
-        const singleText = React.Children.count(children) === 1 ? (React.Children.only(children) as unknown) : null;
+        const childArray = React.Children.toArray(children);
+        const singleText = childArray.length === 1 && typeof childArray[0] === "string" ? (childArray[0] as string) : null;
         const text = typeof singleText === "string" ? singleText : null;
         const canPartialHighlight = sel && text && text.includes(sel);
         const blockquoteClass = "my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground";
