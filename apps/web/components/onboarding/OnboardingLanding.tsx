@@ -1,9 +1,98 @@
 "use client";
 
+import { useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { BookOpen, MessageSquare, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+// Grid mesh for cursor-reactive background (dots + lines)
+const GRID_COLS = 28;
+const GRID_ROWS = 20;
+const SPACING = 48;
+const MESH_WIDTH = GRID_COLS * SPACING;
+const MESH_HEIGHT = GRID_ROWS * SPACING;
+const TILT_MAX_DEG = 10;
+const TILT_SMOOTH_MS = 180;
+
+function useMouseTilt() {
+  const [mouse, setMouse] = useState({ x: 0.5, y: 0.5 });
+
+  const onMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+    setMouse({ x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) });
+  }, []);
+
+  const onMouseLeave = useCallback(() => {
+    setMouse({ x: 0.5, y: 0.5 });
+  }, []);
+
+  const rotateY = (mouse.x - 0.5) * 2 * TILT_MAX_DEG;
+  const rotateX = (0.5 - mouse.y) * 2 * TILT_MAX_DEG;
+
+  return { onMouseMove, onMouseLeave, rotateX, rotateY };
+}
+
+function MeshBackground({ rotateX, rotateY }: { rotateX: number; rotateY: number }) {
+  const { points, lines } = useMemo(() => {
+    const points: [number, number][] = [];
+    for (let j = 0; j < GRID_ROWS; j++) {
+      for (let i = 0; i < GRID_COLS; i++) {
+        points.push([i * SPACING, j * SPACING]);
+      }
+    }
+    const lines: [[number, number], [number, number]][] = [];
+    for (let j = 0; j < GRID_ROWS; j++) {
+      for (let i = 0; i < GRID_COLS; i++) {
+        if (i < GRID_COLS - 1) lines.push([[i * SPACING, j * SPACING], [(i + 1) * SPACING, j * SPACING]]);
+        if (j < GRID_ROWS - 1) lines.push([[i * SPACING, j * SPACING], [i * SPACING, (j + 1) * SPACING]]);
+      }
+    }
+    return { points, lines };
+  }, []);
+
+  return (
+    <div
+      className="pointer-events-none absolute left-1/2 top-1/2 select-none"
+      style={{
+        width: MESH_WIDTH,
+        height: MESH_HEIGHT,
+        marginLeft: -MESH_WIDTH / 2,
+        marginTop: -MESH_HEIGHT / 2,
+        perspective: 1200,
+        transform: `perspective(1200px) rotateX(${rotateX}deg) rotateY(${rotateY}deg)`,
+        transition: `transform ${TILT_SMOOTH_MS}ms ease-out`,
+        filter: "blur(0.5px)",
+      }}
+    >
+      <svg
+        width={MESH_WIDTH}
+        height={MESH_HEIGHT}
+        className="overflow-visible"
+        style={{ opacity: 0.45 }}
+      >
+        <defs>
+          <linearGradient id="mesh-line" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="rgb(148, 163, 184)" stopOpacity="0.2" />
+            <stop offset="100%" stopColor="rgb(100, 116, 139)" stopOpacity="0.35" />
+          </linearGradient>
+        </defs>
+        <g stroke="url(#mesh-line)" strokeWidth="0.6" fill="none">
+          {lines.map(([[x1, y1], [x2, y2]], i) => (
+            <line key={`l-${i}`} x1={x1} y1={y1} x2={x2} y2={y2} />
+          ))}
+        </g>
+        <g fill="rgb(100, 116, 139)" fillOpacity="0.4">
+          {points.map(([x, y], i) => (
+            <circle key={`p-${i}`} cx={x} cy={y} r="1.2" />
+          ))}
+        </g>
+      </svg>
+    </div>
+  );
+}
 
 const fadeUp = {
   initial: { opacity: 0, y: 20 },
@@ -40,10 +129,20 @@ const features = [
 ];
 
 export function OnboardingLanding() {
+  const { onMouseMove, onMouseLeave, rotateX, rotateY } = useMouseTilt();
+
   return (
-    <div className="fixed inset-0 z-[100] flex min-h-screen flex-col overflow-hidden bg-[#f0f7ff]">
+    <div
+      className="fixed inset-0 z-[100] flex min-h-screen flex-col overflow-hidden bg-[#f0f7ff]"
+      onMouseMove={onMouseMove}
+      onMouseLeave={onMouseLeave}
+    >
       {/* Pastel blue gradient layers */}
       <div className="absolute inset-0 bg-gradient-to-br from-[#e8f4fd] via-[#f0f7ff] to-[#e0effe]" />
+      {/* Cursor-reactive mesh (dots + lines, tilts with mouse) - faint, behind content */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <MeshBackground rotateX={rotateX} rotateY={rotateY} />
+      </div>
       <div
         className="absolute inset-0 opacity-70"
         style={{

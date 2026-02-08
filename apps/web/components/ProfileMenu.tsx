@@ -55,7 +55,7 @@ export function ProfileMenu({ onUploadClick }: ProfileMenuProps) {
       });
       
       setIsOpen(false);
-      router.push("/login");
+      router.push("/");
       router.refresh();
     } catch (error: any) {
       toast({
