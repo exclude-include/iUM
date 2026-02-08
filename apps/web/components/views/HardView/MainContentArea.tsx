@@ -71,7 +71,6 @@ export function MainContentArea() {
   const { user } = useAuth();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
-  const { user } = useAuth(); // Add missing user from auth hook
   const [mounted, setMounted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
