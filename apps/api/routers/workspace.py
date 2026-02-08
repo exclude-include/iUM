@@ -19,6 +19,8 @@ class FolderUpdate(BaseModel):
 
 class FileUpdate(BaseModel):
     name: Optional[str] = None
+    is_starred: Optional[bool] = None
+    is_open: Optional[bool] = None
 
 
 @router.get("/{workspace_id}", response_model=Workspace)
@@ -383,6 +385,10 @@ async def update_file(
         update_data = {}
         if file_update.name is not None:
             update_data["name"] = file_update.name
+        if file_update.is_starred is not None:
+            update_data["is_starred"] = file_update.is_starred
+        if file_update.is_open is not None:
+            update_data["is_open"] = file_update.is_open
             
         if not update_data:
             raise HTTPException(status_code=400, detail="No update data provided")

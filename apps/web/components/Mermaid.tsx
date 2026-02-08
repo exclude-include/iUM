@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
-import mermaid from "mermaid";
+// import mermaid from "mermaid"; // Removed static import
 import { Button } from "@/components/ui/button";
 import { ZoomIn, ZoomOut, RotateCcw, Move, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -9,8 +9,9 @@ import * as d3 from "d3";
 // import svgPanZoom from "svg-pan-zoom"; // Dynamic import used instead
 
 // Mermaid 초기화
-const initMermaid = () => {
+const initMermaid = async () => {
   if (typeof window !== "undefined") {
+    const mermaid = (await import("mermaid")).default;
     mermaid.initialize({
       startOnLoad: false,
       theme: "default",
@@ -69,6 +70,7 @@ export function Mermaid({ chart }: MermaidProps) {
       element.innerHTML = ""; // Clear previous chart
 
       // Mermaid 렌더링
+      const mermaid = (await import("mermaid")).default;
       const { svg: svgContent } = await mermaid.render(svgId, chart);
       element.innerHTML = svgContent;
 

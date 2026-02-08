@@ -169,7 +169,7 @@ Write your response in markdown format."""
     async def execute(self, tool_name: str, **kwargs) -> str:
         """Execute tool"""
         if tool_name not in self.tools:
-            return f"[Error] Unknown tool: {tool_name}"
+            return f"죄송합니다, 알 수 없는 도구입니다: {tool_name}"
         
         tool = self.tools[tool_name]
         try:
@@ -178,7 +178,8 @@ Write your response in markdown format."""
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return f"[Error] Tool execution failed: {str(e)}"
+            # Return user-friendly error message, not raw error
+            return "요청을 처리하는 중 문제가 발생했습니다. 다시 시도해주세요."
     
     # ========== Tool Implementations ==========
     
@@ -208,7 +209,7 @@ Write your response in markdown format."""
         except Exception as e:
             return f"Search failed: {str(e)}"
     
-    async def _generate_concept_cell(self, topic: str) -> str:
+    async def _generate_concept_cell(self, topic: str = "general concept") -> str:
         """Generate concept explanation cell with optional graph data"""
         prompt = f"""Explain '{topic}' in a way that is easy for learners to understand.
 

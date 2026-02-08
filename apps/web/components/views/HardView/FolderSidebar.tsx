@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, Loader2, Pencil, FileCode, FileImage, FileMusic, FileVideo, FileJson, File, FileType2, NotebookPen, Download } from "lucide-react";
+import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, Loader2, Pencil, FileCode, FileImage, File, Download, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -43,6 +43,10 @@ export function FolderSidebar() {
     loadTabFromIum,
     setSelectedDocuments,
     renameFolder, // ✨ Added
+    renameFile, // ✨ Added
+    toggleFileStar, // ✨ Added
+    toggleFileOpen, // ✨ Added for open state tracking
+    notebookTabs, // ✨ Added to check which tabs are open
   } = useAppStore();
 
   const { toast } = useToast();
@@ -122,7 +126,7 @@ export function FolderSidebar() {
   const getFileIcon = (fileName: string) => {
     const ext = fileName.split('.').pop()?.toLowerCase();
     switch (ext) {
-      case 'pdf': return <FileType2 className="h-3 w-3 shrink-0 opacity-70 text-red-500" />;
+      case 'pdf': return <FileText className="h-3 w-3 shrink-0 opacity-70 text-red-500" />;
       case 'png':
       case 'jpg':
       case 'jpeg':
@@ -140,11 +144,11 @@ export function FolderSidebar() {
       case 'css': return <FileCode className="h-3 w-3 shrink-0 opacity-70 text-yellow-500" />;
       case 'mp4':
       case 'mov':
-      case 'avi': return <FileVideo className="h-3 w-3 shrink-0 opacity-70 text-purple-500" />;
+      case 'avi': return <File className="h-3 w-3 shrink-0 opacity-70 text-purple-500" />;
       case 'mp3':
-      case 'wav': return <FileMusic className="h-3 w-3 shrink-0 opacity-70 text-pink-500" />;
-      case 'json': return <FileJson className="h-3 w-3 shrink-0 opacity-70 text-green-500" />;
-      case 'ium': return <NotebookPen className="h-3 w-3 shrink-0 text-primary" />;
+      case 'wav': return <File className="h-3 w-3 shrink-0 opacity-70 text-pink-500" />;
+      case 'json': return <FileCode className="h-3 w-3 shrink-0 opacity-70 text-green-500" />;
+      case 'ium': return <Pencil className="h-3 w-3 shrink-0 text-primary" />;
       default: return <File className="h-3 w-3 shrink-0 opacity-70" />;
     }
   };
@@ -193,7 +197,12 @@ export function FolderSidebar() {
   });
 
   useEffect(() => {
-    fetchFiles();
+    const initializeFiles = async () => {
+      await fetchFiles();
+      // ✨ Restore tabs that were open (marked as is_open=true in DB)
+      await useAppStore.getState().restoreOpenTabs();
+    };
+    initializeFiles();
   }, [fetchFiles]);
 
   const handleCreateFolder = async () => {
@@ -281,6 +290,26 @@ export function FolderSidebar() {
     }
   };
 
+  const handleRenameFile = async () => {
+    if (!fileToRename || !renameInput.trim()) return;
+
+    try {
+      await renameFile(fileToRename.id, renameInput.trim() + (renameInput.trim().endsWith('.ium') ? '' : '.ium'));
+      toast({
+        title: "File renamed",
+        description: `File has been renamed to "${renameInput}"`,
+      });
+      setFileToRename(null);
+      setRenameInput("");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to rename file",
+        variant: "destructive",
+      });
+    }
+  };
+
   /* ✨ Modified handleDeleteFile */
   const confirmDeleteFile = async () => {
     if (!fileToDelete) return;
@@ -294,6 +323,12 @@ export function FolderSidebar() {
       if (!token) throw new Error("Authentication required");
 
       await api.workspace.deleteFile("default", fileId, token);
+
+      // ✨ Close the corresponding tab if open 
+      const openTab = notebookTabs.find(tab => tab.syncInfo?.fileId === fileId);
+      if (openTab) {
+        useAppStore.getState().deleteNotebookTab(openTab.id);
+      }
 
       // Update local state (refetch)
       fetchFiles();
@@ -490,8 +525,8 @@ export function FolderSidebar() {
 
       const iumData: IumFile = await response.json();
 
-      // Load the tab from the .ium data (pass fileId for sync tracking)
-      loadTabFromIum(iumData, activeFolderId || undefined, file.id);
+      // Load the tab from the .ium data (pass fileId for sync tracking AND fileName for title)
+      loadTabFromIum(iumData, activeFolderId || undefined, file.id, file.name);
 
       toast({
         title: "Tab opened",
@@ -727,7 +762,12 @@ export function FolderSidebar() {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        {getFileIcon(file.name)}
+                        {/* ✨ Show star icon if starred, otherwise file type icon */}
+                        {file.isStarred ? (
+                          <Star className="h-3 w-3 shrink-0 text-yellow-500 fill-yellow-500" />
+                        ) : (
+                          getFileIcon(file.name)
+                        )}
                         <span
                           className={cn(
                             "truncate cursor-pointer",
@@ -789,7 +829,7 @@ export function FolderSidebar() {
                 <Separator className="my-2" />
                 <div className="px-2">
                   <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 mb-1">
-                    <NotebookPen className="h-3 w-3" />
+                    <FileText className="h-3 w-3" />
                     SAVED TABS
                   </p>
                 </div>
@@ -801,7 +841,12 @@ export function FolderSidebar() {
                       onClick={() => handleOpenIumFile(file)}
                     >
                       <div className="shrink-0 flex items-center justify-center h-4 w-4">
-                        <NotebookPen className="h-3.5 w-3.5 text-primary" />
+                        {/* ✨ Show star icon if starred, otherwise FileText */}
+                        {file.isStarred ? (
+                          <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500" />
+                        ) : (
+                          <FileText className="h-3.5 w-3.5 text-primary" />
+                        )}
                       </div>
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         <span
@@ -810,6 +855,12 @@ export function FolderSidebar() {
                         >
                           {file.name.replace('.ium', '')}
                         </span>
+                        {/* ✨ Open Badge - shows if tab is currently open */}
+                        {notebookTabs.some(tab => tab.syncInfo?.fileId === file.id) && (
+                          <span className="ml-1 px-1 py-0.5 rounded-sm bg-green-500/10 text-green-500 text-[9px] font-bold uppercase tracking-tighter border border-green-500/20">
+                            OPEN
+                          </span>
+                        )}
                         {/* ✨ Temp Badge */}
                         {file.is_temp && (
                           <span className="ml-1.5 px-1 py-0.5 rounded-sm bg-orange-500/10 text-orange-500 text-[9px] font-bold uppercase tracking-tighter border border-orange-500/20">
@@ -818,6 +869,31 @@ export function FolderSidebar() {
                         )}
                       </div>
                       <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className={cn("h-5 w-5 hover:text-yellow-500", file.isStarred && "text-yellow-500 opacity-100")}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleFileStar(file.id, !file.isStarred);
+                          }}
+                          title={file.isStarred ? "Unstar" : "Star"}
+                        >
+                          <Star className={cn("h-3 w-3", file.isStarred && "fill-current")} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 hover:text-blue-500"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenameInput(file.name.replace('.ium', ''));
+                            setFileToRename({ id: file.id, name: file.name });
+                          }}
+                          title="Rename"
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -990,13 +1066,13 @@ export function FolderSidebar() {
               onChange={(e) => setRenameInput(e.target.value)}
               placeholder="Enter file name"
               onKeyDown={(e) => {
-                if (e.key === "Enter") confirmRenameFile();
+                if (e.key === "Enter") handleRenameFile();
               }}
             />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setFileToRename(null)}>Cancel</Button>
-            <Button onClick={confirmRenameFile}>Rename</Button>
+            <Button onClick={handleRenameFile}>Rename</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

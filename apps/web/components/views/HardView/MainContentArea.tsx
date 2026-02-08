@@ -2,9 +2,18 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
-import { Moon, Sun, X, Plus, FileText, Save, Download, Pencil, Trash2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, PanelBottomClose, PanelBottomOpen, Sparkles } from "lucide-react";
+import { Moon, Sun, X, Plus, FileText, Save, Download, Pencil, Trash2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, PanelBottomClose, PanelBottomOpen, Sparkles, Star, Copy } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -47,12 +56,21 @@ export function MainContentArea() {
     updateDeepCard,
     setSidebarMode,
     sidebarMode,
+    knowledgeFolders, // ✨ Added for star status
+    loadTabFromIum, // ✨ Added for duplicate functionality
   } = useAppStore();
 
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // ✨ Dialog state for rename and delete confirmation
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameTabId, setRenameTabId] = useState<string | null>(null);
+  const [renameInput, setRenameInput] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTabId, setDeleteTabId] = useState<string | null>(null);
 
   // Ref map for scroll-to-cell functionality
   const cellRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -71,17 +89,34 @@ export function MainContentArea() {
     setMounted(true);
   }, []);
 
-  // ✨ [추가] 폴더가 있는데 탭이 없으면 자동으로 탭 생성
+  // ✨ [Restored] Auto-create tab if folder exists but no tabs (User Request)
   useEffect(() => {
-    if (activeFolderId && notebookTabs.length === 0) {
+    // Check if we have an active folder but NO visible tabs
+    if (activeFolderId && visibleTabs.length === 0) {
       console.log("[MainContentArea] Folder exists but no tabs, creating default tab");
       createNotebookTab("Tab 1");
     }
-  }, [activeFolderId, notebookTabs.length, createNotebookTab]);
+  }, [activeFolderId, visibleTabs.length, createNotebookTab]);
 
-  // Auto-save to localStorage every 30 seconds
+  // ✨ Auto-save to Supabase (Cloud) every 10 seconds for robustness
   useEffect(() => {
     const autoSaveInterval = setInterval(() => {
+      const state = useAppStore.getState();
+      state.notebookTabs.forEach((tab) => {
+        // Only auto-save if it's already synced (has fileId) and has changes
+        if (tab.syncInfo?.fileId && tab.syncInfo.lastSyncedAt && (tab.updatedAt > tab.syncInfo.lastSyncedAt)) {
+          console.log(`[AutoSave] Triggering cloud save for ${tab.title}`);
+          state.saveTabToSupabase(tab.id, tab.syncInfo.folderId, true);
+        }
+      });
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(autoSaveInterval);
+  }, [notebookTabs]);
+
+  // LocalStorage backup (keep existing logic)
+  useEffect(() => {
+    const backupInterval = setInterval(() => {
       if (notebookTabs.length > 0) {
         try {
           localStorage.setItem("ium_notebooks_autosave", JSON.stringify({
@@ -90,12 +125,11 @@ export function MainContentArea() {
             savedAt: Date.now(),
           }));
         } catch (error) {
-          console.error("Auto-save failed:", error);
+          // ignore
         }
       }
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(autoSaveInterval);
+    }, 30000);
+    return () => clearInterval(backupInterval);
   }, [notebookTabs, notebookActiveTabId]);
 
   // Handle scroll-to-cell with delay for render completion
@@ -143,7 +177,8 @@ export function MainContentArea() {
 
     setIsSaving(true);
     try {
-      const result = await saveTabToSupabase(tabId, activeFolderId);
+      // ✨ [Updated] Manual save = Permanent (isTemp: false)
+      const result = await saveTabToSupabase(tabId, activeFolderId, false);
       if (result.success) {
         toast({
           title: "Tab saved",
@@ -198,15 +233,39 @@ export function MainContentArea() {
     });
   };
 
-  // Rename tab
-  const handleRenameTab = (tabId: string) => {
+  // ✨ Open rename dialog (replaces browser prompt)
+  const openRenameDialog = (tabId: string) => {
     const tab = notebookTabs.find((t) => t.id === tabId);
     if (!tab) return;
+    setRenameTabId(tabId);
+    setRenameInput(tab.title);
+    setRenameDialogOpen(true);
+  };
 
-    const newName = prompt("Enter new notebook name:", tab.title);
-    if (newName && newName.trim()) {
-      renameNotebookTab(tabId, newName.trim());
+  // ✨ Confirm rename from dialog
+  const confirmRenameTab = async () => {
+    if (!renameTabId || !renameInput.trim()) return;
+
+    const tab = notebookTabs.find((t) => t.id === renameTabId);
+    if (!tab) return;
+
+    // Update local tab title
+    renameNotebookTab(renameTabId, renameInput.trim());
+
+    // Also update file name in DB if synced (so sidebar updates too)
+    if (tab.syncInfo?.fileId) {
+      try {
+        const { renameFile } = useAppStore.getState();
+        await renameFile(tab.syncInfo.fileId, renameInput.trim());
+        toast({ title: "Tab renamed", description: `Renamed to "${renameInput.trim()}"` });
+      } catch (error) {
+        console.error("Failed to sync rename to DB:", error);
+      }
     }
+
+    setRenameDialogOpen(false);
+    setRenameTabId(null);
+    setRenameInput("");
   };
 
   // Delete tab AND the file from Supabase
@@ -225,10 +284,20 @@ export function MainContentArea() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Are you sure you want to permanently delete "${tab.title}" from the cloud? This cannot be undone.`
-    );
-    if (!confirmed) return;
+    // ✨ Open delete confirmation dialog instead of browser confirm
+    setDeleteTabId(tabId);
+    setDeleteDialogOpen(true);
+  };
+
+  // ✨ Confirm delete from dialog
+  const confirmDeleteFromCloud = async () => {
+    if (!deleteTabId) return;
+
+    const tab = notebookTabs.find((t) => t.id === deleteTabId);
+    if (!tab) return;
+
+    const fileId = tab.syncInfo?.fileId;
+    if (!fileId) return;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -249,7 +318,7 @@ export function MainContentArea() {
       }
 
       // Remove from local store
-      deleteNotebookTab(tabId);
+      deleteNotebookTab(deleteTabId);
 
       // Refresh files list
       useAppStore.getState().fetchFiles();
@@ -265,6 +334,9 @@ export function MainContentArea() {
         description: error instanceof Error ? error.message : "Could not delete the file.",
         variant: "destructive",
       });
+    } finally {
+      setDeleteDialogOpen(false);
+      setDeleteTabId(null);
     }
   };
 
@@ -324,7 +396,7 @@ export function MainContentArea() {
     const handleMouseMove = (e: MouseEvent) => {
       // ✨ [Fixed] Auto Deep Restriction: 
       // Do NOT trigger if there is no content (Empty Tab / No Tab / No Document)
-      const hasContent = (activeTab?.cells?.length > 0) || !!activeDocument;
+      const hasContent = ((activeTab?.cells?.length ?? 0) > 0) || !!activeDocument;
       if (!hasContent) return;
 
       // Reset timers on move
@@ -380,9 +452,18 @@ export function MainContentArea() {
       }, 1000); // 1s delay
     };
 
+    // ✨ Cancel hover timer on scroll (user wants auto deep to NOT trigger during scroll)
+    const handleScroll = () => {
+      if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+      if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
+      setHoverCursor({ visible: false, position: null, progress: 0 });
+    };
+
     window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("scroll", handleScroll, true); // capture phase for all scroll events
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("scroll", handleScroll, true);
       if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
       if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
     }
@@ -490,7 +571,7 @@ export function MainContentArea() {
               // Extract text_content
               // Look for "text_content": " ... ", "graph_data"
               // This is tricky due to nested quotes, but we try a greedy approach up to the known next key
-              const textMatch = candidate.match(/"text_content"\s*:\s*"(.*?)",\s*"graph_data"/s);
+              const textMatch = candidate.match(/"text_content"\s*:\s*"([\s\S]*?)",\s*"graph_data"/);
               if (textMatch && textMatch[1]) {
                 // Manual unescape of basic JSON escapes
                 content = textMatch[1]
@@ -500,7 +581,7 @@ export function MainContentArea() {
               }
 
               // Extract graph_data (assuming it's at the end)
-              const graphMatch = candidate.match(/"graph_data"\s*:\s*(\{.*\})\s*}/s);
+              const graphMatch = candidate.match(/"graph_data"\s*:\s*(\{[\s\S]*\})\s*}/);
               if (graphMatch && graphMatch[1]) {
                 try {
                   // Attempt to parse just the graph object (it might be cleaner)
@@ -568,6 +649,11 @@ export function MainContentArea() {
                     >
                       <FileText className="h-3 w-3 flex-shrink-0" />
                       <span className="truncate">{tab.title}</span>
+                      {/* ✨ Star indicator from synced file */}
+                      {(() => {
+                        const file = knowledgeFolders.flatMap(f => f.files).find(f => f.id === tab.syncInfo?.fileId);
+                        return file?.isStarred ? <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 flex-shrink-0" /> : null;
+                      })()}
                       {tab.cells.length > 0 && (
                         <span className="text-[10px] text-muted-foreground">
                           ({tab.cells.length})
@@ -591,18 +677,33 @@ export function MainContentArea() {
                 </ContextMenuTrigger>
                 <ContextMenuContent className="w-48">
                   <ContextMenuItem
-                    onClick={() => handleSaveTab(tab.id)}
-                    disabled={isSaving}
+                    onClick={async () => {
+                      // ✨ Duplicate tab logic
+                      const iumFile = exportTabAsIum(tab.id);
+                      if (iumFile) {
+                        // Modify title for duplicate
+                        iumFile.metadata.title = `${iumFile.metadata.title} (Copy)`;
+                        // Load as new tab
+                        const newTabId = loadTabFromIum(iumFile, activeFolderId || "folder-1");
+                        // ✨ Only auto-save if tab has cells (empty tabs save on first cell creation)
+                        if (activeFolderId && iumFile.cells && iumFile.cells.length > 0) {
+                          await saveTabToSupabase(newTabId, activeFolderId, false);
+                          toast({ title: "Tab duplicated", description: "Duplicate tab created and saved." });
+                        } else {
+                          toast({ title: "Tab duplicated", description: "Empty tab created. Save on first cell." });
+                        }
+                      }
+                    }}
                   >
-                    <Save className="h-4 w-4 mr-2" />
-                    {isSaving ? "Saving..." : "Save to Folder (.ium)"}
+                    <Copy className="h-4 w-4 mr-2" />
+                    Duplicate
                   </ContextMenuItem>
                   <ContextMenuItem onClick={() => handleDownloadTab(tab.id)}>
                     <Download className="h-4 w-4 mr-2" />
                     Download as .ium
                   </ContextMenuItem>
                   <ContextMenuSeparator />
-                  <ContextMenuItem onClick={() => handleRenameTab(tab.id)}>
+                  <ContextMenuItem onClick={() => openRenameDialog(tab.id)}>
                     <Pencil className="h-4 w-4 mr-2" />
                     Rename
                   </ContextMenuItem>
@@ -656,6 +757,22 @@ export function MainContentArea() {
             >
               <Plus className="h-4 w-4" />
             </Button>
+
+            {/* ✨ Close All Tabs Button */}
+            {visibleTabs.length > 0 && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-destructive"
+                onClick={() => {
+                  visibleTabs.forEach(tab => deleteNotebookTab(tab.id));
+                  toast({ title: "All tabs closed", description: `Closed ${visibleTabs.length} tabs.` });
+                }}
+                title="Close all tabs"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
 
@@ -719,7 +836,7 @@ export function MainContentArea() {
               <div className="p-4 w-full max-w-full overflow-hidden">
                 {/* Float Elements */}
                 {/* ✨ [Updated] Only show DeepMode cursor when there is content (active tab with cells OR active document) */}
-                {(activeTab?.cells?.length > 0 || !!activeDocument) && (
+                {((activeTab?.cells?.length ?? 0) > 0 || !!activeDocument) && (
                   <DeepModeCursor
                     visible={hoverCursor.visible}
                     progress={hoverCursor.progress}
@@ -767,6 +884,55 @@ export function MainContentArea() {
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
+
+      {/* ✨ Rename Tab Dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Rename Tab</DialogTitle>
+            <DialogDescription>
+              Enter a new name for this notebook tab.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              value={renameInput}
+              onChange={(e) => setRenameInput(e.target.value)}
+              placeholder="New tab name"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmRenameTab();
+              }}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={confirmRenameTab}>Rename</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ✨ Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Delete from Cloud</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to permanently delete "{notebookTabs.find(t => t.id === deleteTabId)?.title}" from the cloud? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDeleteFromCloud}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -786,17 +952,7 @@ function EmptyTabState({ tabTitle }: { tabTitle: string }) {
 
 // No tab selected state component
 function NoTabSelectedState({ onCreateTab }: { onCreateTab: () => void }) {
-  return (
-    <div className="flex h-full min-h-[400px] flex-col items-center justify-center text-center px-4">
-      <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
-      <h3 className="text-lg font-medium text-foreground mb-2">No Tab Selected</h3>
-      <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-        Select a tab or create a new one to start learning.
-      </p>
-      <Button onClick={onCreateTab} variant="outline" size="sm">
-        <Plus className="h-4 w-4 mr-2" />
-        Create New Tab
-      </Button>
-    </div>
-  );
+  // ✨ User requested "content disappear" when all tabs closed.
+  // We'll return null to render nothing, or a very minimal empty state.
+  return null;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Flame, Sparkles, Bell, Settings } from "lucide-react";
+import { Flame, Sparkles, Bell, Settings, Film } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -73,7 +73,7 @@ export function GlobalNavDock() {
                     isSoftMode && "bg-accent"
                   )}
                 >
-                  <Sparkles className="h-5 w-5 text-purple-500" />
+                  <Film className="h-5 w-5 text-purple-500" />
                 </Button>
               </Link>
             </TooltipTrigger>

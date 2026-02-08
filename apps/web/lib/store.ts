@@ -95,6 +95,7 @@ export interface NotebookTab {
   createdAt: number;
   updatedAt: number;
   syncInfo?: TabSyncInfo; // Optional sync info when saved to Supabase
+  folderId?: string;      // ✨ [Added] Folder ID this tab belongs to
 }
 
 // Bookmark reference for sidebar navigation
@@ -165,8 +166,10 @@ export interface UploadedFile {
   id: string;
   name: string;
   url?: string; // or path
-  uploadedAt: number;
+  uploadedAt: number; // ✨ [Updated] Unix timestamp
   is_temp?: boolean; // ✨ Added for temporary save status
+  isStarred?: boolean; // ✨ Added for starred status
+  isOpen?: boolean; // ✨ Added for open tab state tracking
 }
 
 export interface KnowledgeFolder {
@@ -212,12 +215,14 @@ interface AppState {
   setActiveDocument: (document: ActiveDocument | null) => void;
 
   // === NEW: Notebook Tabs State (Multi-Cell like .ipynb) ===
+  // ✨ [Added] Track active tab per folder
+  folderActiveTabs: Record<string, string | null>;
   notebookTabs: NotebookTab[];
   notebookActiveTabId: string | null;
   scrollToCellId: string | null;
 
   // Notebook Tab Actions
-  createNotebookTab: (title?: string) => string;
+  createNotebookTab: (title?: string, folderId?: string) => string;
   deleteNotebookTab: (tabId: string) => void;
   setNotebookActiveTab: (tabId: string | null) => void;
   renameNotebookTab: (tabId: string, newTitle: string) => void;
@@ -309,11 +314,15 @@ interface AppState {
 
   // ✨ [추가] 서버에서 파일 목록 불러오기 액션
   fetchFiles: () => Promise<void>;
+  restoreOpenTabs: () => Promise<void>; // ✨ Restore open tabs on app load
+  renameFile: (fileId: string, newName: string) => Promise<void>;
+  toggleFileStar: (fileId: string, isStarred: boolean) => Promise<void>;
+  toggleFileOpen: (fileId: string, isOpen: boolean) => Promise<void>;
 
   // .ium file actions - save/load notebook tabs
   exportTabAsIum: (tabId: string) => IumFile | null;
-  saveTabToSupabase: (tabId: string, folderId: string) => Promise<{ success: boolean; fileId?: string; error?: string }>;
-  loadTabFromIum: (iumData: IumFile, folderId?: string, fileId?: string) => string;
+  saveTabToSupabase: (tabId: string, folderId: string, isTemp?: boolean) => Promise<{ success: boolean; fileId?: string; error?: string }>;
+  loadTabFromIum: (iumData: IumFile, folderId?: string, fileId?: string, fileName?: string) => string;
 
   // Auto-sync actions
   syncTabToSupabase: (tabId: string) => Promise<void>;
@@ -416,6 +425,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         }
       };
     });
+
+    // ✨ Mark file as closed in DB if it was synced
+    const state = get();
+    const closedTab = state.notebookTabs.find(t => t.id === tabId);
+    if (closedTab?.syncInfo?.fileId) {
+      get().toggleFileOpen(closedTab.syncInfo.fileId, false);
+    }
   },
 
   setNotebookActiveTab: (tabId) => {
@@ -482,7 +498,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       equations: unit.equations,
       diagram_description: unit.diagram_description,
       mermaid_code: unit.mermaid_code,
-      graph_data: unit.graph_data, // ✨ [Fix] Correctly map graph_data
+      graph_data: unit.graph_data,
       quiz_data: unit.quiz_data,
       isBookmarked: false,
       createdAt: Date.now(),
@@ -493,13 +509,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       notebookTabs: state.notebookTabs.map((tab) =>
         tab.id === tabId
-          ? { ...tab, cells: [newCell, ...tab.cells], updatedAt: Date.now() }
+          ? {
+            ...tab,
+            // ✨ Auto-title if first cell
+            title: (tab.cells.length === 0 && newCell.title) ? newCell.title : tab.title,
+            cells: [newCell, ...tab.cells],
+            updatedAt: Date.now()
+          }
           : tab
       ),
       scrollToCellId: cellId,
     }));
 
-    // Queue auto-sync
+    // ✨ Auto-save (trigger even if new)
     if (tabId) get().queueTabSync(tabId);
 
     return cellId;
@@ -518,12 +540,19 @@ export const useAppStore = create<AppState>((set, get) => ({
       notebookTabs: state.notebookTabs.map((tab) => {
         if (tab.id !== tabId) return tab;
         const cells = [...tab.cells];
+
+        // ✨ Auto-title logic
+        let newTitle = tab.title;
+        if (cells.length === 0 && newCell.title) {
+          newTitle = newCell.title;
+        }
+
         if (index !== undefined && index >= 0 && index <= cells.length) {
           cells.splice(index, 0, newCell);
         } else {
           cells.push(newCell);
         }
-        return { ...tab, cells, updatedAt: Date.now() };
+        return { ...tab, title: newTitle, cells, updatedAt: Date.now() };
       }),
     }));
 
@@ -556,9 +585,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const newTabId = `notebook-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // ✨ Fix: Inherit folderId from source tab or use active folder
+    const folderId = sourceTab?.folderId || state.activeFolderId || "folder-1";
+
     const newTab: NotebookTab = {
       id: newTabId,
       title: newTabTitle || cell.title || "Moved Cell",
+      folderId, // ✨ Added: So tab shows in tab bar
       cells: [{ ...cell }],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -575,10 +608,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       ],
       notebookActiveTabId: newTabId,
       scrollToCellId: cellId,
+      // ✨ Added: Update folderActiveTabs so new tab is visible
+      folderActiveTabs: {
+        ...state.folderActiveTabs,
+        [folderId]: newTabId
+      }
     }));
 
     // Queue auto-sync for source tab (cell was removed)
     get().queueTabSync(sourceTabId);
+
+    // ✨ Added: Queue auto-save for new tab
+    get().queueTabSync(newTabId);
 
     return newTabId;
   },
@@ -1145,7 +1186,9 @@ export const useAppStore = create<AppState>((set, get) => ({
                   id: f.id,
                   name: f.name,
                   uploadedAt: new Date(f.created_at).getTime(),
-                  url: f.storage_path
+                  url: f.storage_path,
+                  isStarred: f.is_starred || false, // ✨ Map starred status
+                  isOpen: f.is_open || false // ✨ Map open status
                 }));
 
               return {
@@ -1163,6 +1206,186 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch (error) {
       console.error("Failed to fetch files:", error);
+    }
+  },
+
+  // ✨ [Added] Restore open tabs on app load
+  restoreOpenTabs: async () => {
+    const state = get();
+    const openFiles = state.knowledgeFolders.flatMap(folder =>
+      folder.files.filter(file => file.isOpen)
+    );
+
+    if (openFiles.length === 0) return;
+
+    // Check if tabs are already loaded (avoid duplicates)
+    const existingFileIds = state.notebookTabs
+      .map(tab => tab.syncInfo?.fileId)
+      .filter(Boolean);
+
+    const { supabase } = await import("@/lib/supabase/client");
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+    for (const file of openFiles) {
+      if (existingFileIds.includes(file.id)) continue; // Skip already open tabs
+
+      try {
+        // Find folder for this file
+        const folder = state.knowledgeFolders.find(f =>
+          f.files.some(fl => fl.id === file.id)
+        );
+        const folderId = folder?.id || "folder-1";
+
+        // ✨ Fetch actual file content from API
+        const response = await fetch(`${apiUrl}/api/workspace/file/${file.id}/content`, {
+          headers: { "Authorization": `Bearer ${session.access_token}` }
+        });
+
+        if (!response.ok) {
+          console.warn(`Failed to fetch content for file ${file.name}`);
+          continue;
+        }
+
+        const iumData = await response.json();
+
+        // Load the file as a tab with actual content
+        get().loadTabFromIum(iumData, folderId, file.id, file.name);
+        console.log(`✓ Restored tab: ${file.name}`);
+      } catch (error) {
+        console.warn(`Failed to restore tab for file ${file.name}:`, error);
+      }
+    }
+  },
+
+  // ✨ [Added] File management actions
+  renameFile: async (fileId: string, newName: string) => {
+    try {
+      const { supabase } = await import("@/lib/supabase/client");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const state = get();
+
+      // ✨ [Added] Duplicate Name Handling
+      let finalName = newName.trim();
+      if (!finalName.endsWith('.ium')) finalName += '.ium';
+
+      const existingFile = state.knowledgeFolders
+        .flatMap(f => f.files)
+        .find(f => f.name === finalName && f.id !== fileId);
+
+      if (existingFile) {
+        const baseName = finalName.replace('.ium', '');
+        let counter = 1;
+        while (state.knowledgeFolders.flatMap(f => f.files).some(f => f.name === `${baseName}_${counter}.ium` && f.id !== fileId)) {
+          counter++;
+        }
+        finalName = `${baseName}_${counter}.ium`;
+      }
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(`${apiUrl}/api/workspace/default/files/${fileId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ name: finalName })
+      });
+
+      if (!response.ok) throw new Error("Failed to rename file");
+
+      // Update local state
+      await get().fetchFiles();
+
+      // ✨ Update open tabs if any
+      const currentState = get();
+      currentState.notebookTabs.forEach(tab => {
+        if (tab.syncInfo?.fileId === fileId) {
+          // Update tab title and syncInfo
+          const newTitle = newName.replace('.ium', '');
+          get().renameNotebookTab(tab.id, newTitle);
+
+          // Determine folderId (fallback to active or default)
+          const folderId = tab.folderId || currentState.activeFolderId || "folder-1";
+
+          // Update syncInfo specifically
+          get().setSyncInfo(tab.id, {
+            ...tab.syncInfo!,
+            fileName: newName,
+            folderId: folderId // Ensure folderId is preserved/set
+          });
+        }
+      });
+
+    } catch (error) {
+      console.error("Error renaming file:", error);
+      throw error;
+    }
+  },
+
+  toggleFileStar: async (fileId: string, isStarred: boolean) => {
+    // ✨ Update local state immediately (fail gracefully if DB column missing)
+    set((state) => ({
+      knowledgeFolders: state.knowledgeFolders.map(folder => ({
+        ...folder,
+        files: folder.files.map(file =>
+          file.id === fileId ? { ...file, isStarred } : file
+        )
+      }))
+    }));
+
+    try {
+      const { supabase } = await import("@/lib/supabase/client");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      await fetch(`${apiUrl}/api/workspace/default/files/${fileId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ is_starred: isStarred })
+      });
+      // Don't throw on error - DB column may not exist yet
+    } catch (error) {
+      console.warn("toggleFileStar API call failed (column may not exist):", error);
+    }
+  },
+
+  toggleFileOpen: async (fileId: string, isOpen: boolean) => {
+    // ✨ Update local state immediately (fail gracefully if DB column missing)
+    set((state) => ({
+      knowledgeFolders: state.knowledgeFolders.map(folder => ({
+        ...folder,
+        files: folder.files.map(file =>
+          file.id === fileId ? { ...file, isOpen } : file
+        )
+      }))
+    }));
+
+    try {
+      const { supabase } = await import("@/lib/supabase/client");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      await fetch(`${apiUrl}/api/workspace/default/files/${fileId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ is_open: isOpen })
+      });
+      // Don't throw on error - DB column may not exist yet
+    } catch (error) {
+      console.warn("toggleFileOpen API call failed (column may not exist):", error);
     }
   },
 
@@ -1202,7 +1425,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     return iumFile;
   },
 
-  saveTabToSupabase: async (tabId, folderId) => {
+  saveTabToSupabase: async (tabId, folderId, isTemp = true) => {
     const state = get();
     const tab = state.notebookTabs.find((t) => t.id === tabId);
     const iumFile = state.exportTabAsIum(tabId);
@@ -1213,21 +1436,44 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const fileName = `${iumFile.metadata.title.replace(/[^a-zA-Z0-9가-힣]/g, "_")}.ium`;
+      // ✨ [Improved] Duplicate Name Handling for NEW files
+      let finalFileName = `${iumFile.metadata.title.replace(/[^a-zA-Z0-9가-힣]/g, "_")}.ium`;
+
+      // Only check for duplicates if this is a NEW save (no fileId)
+      if (!tab.syncInfo?.fileId) {
+        const folder = state.knowledgeFolders.find(f => f.id === folderId);
+        if (folder) {
+          const baseName = finalFileName.replace('.ium', '');
+          let counter = 1;
+
+          const checkNameExists = (name: string) => folder.files.some(f => f.name === name);
+
+          if (checkNameExists(finalFileName)) {
+            while (checkNameExists(`${baseName}_${counter}.ium`)) {
+              counter++;
+            }
+            finalFileName = `${baseName}_${counter}.ium`;
+          }
+        }
+      }
+
       const fileContent = JSON.stringify(iumFile, null, 2);
       const blob = new Blob([fileContent], { type: "application/json" });
 
-      // Get auth token
-      const { createClient } = await import("@supabase/supabase-js");
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      // Use singleton supabase client
+      const { supabase } = await import("@/lib/supabase/client");
       const { data: { session } } = await supabase.auth.getSession();
 
       const formData = new FormData();
-      formData.append("file", blob, fileName);
+      formData.append("file", blob, finalFileName);
       formData.append("collection_name", "user_knowledge");
       formData.append("folder_id", folderId);
+      // ✨ [Refined] Handle updates and is_temp
+      if (tab.syncInfo?.fileId) {
+        formData.append("file_id", tab.syncInfo.fileId);
+        formData.append("update_existing", "true");
+      }
+      formData.append("is_temp", isTemp.toString());
 
       const headers: HeadersInit = {};
       if (session?.access_token) {
@@ -1251,9 +1497,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Add to folder files (check if not already exists)
       const folder = state.knowledgeFolders.find((f) => f.id === folderId);
       if (folder && !folder.files.some((f) => f.id === fileId)) {
-        const uploadedFile = {
+        const uploadedFile: UploadedFile = {
           id: fileId,
-          name: fileName,
+          name: finalFileName,
           uploadedAt: Date.now(),
         };
         get().addFileToFolder(folderId, uploadedFile);
@@ -1263,7 +1509,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const syncInfo: TabSyncInfo = {
         fileId,
         folderId,
-        fileName,
+        fileName: finalFileName,
         lastSyncedAt: Date.now(),
       };
       get().setSyncInfo(tabId, syncInfo);
@@ -1275,7 +1521,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  loadTabFromIum: (iumData, folderId, fileId) => {
+  loadTabFromIum: (iumData, folderId, fileId, fileName) => {
     const state = get();
 
     // Check if this file is already open (by fileId in syncInfo)
@@ -1291,11 +1537,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
 
     const tabId = `notebook-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-    const fileName = `${iumData.metadata.title.replace(/[^a-zA-Z0-9가-힣]/g, "_")}.ium`;
+    // ✨ Use fileName for title if present (remove .ium), otherwise use metadata title
+    const title = fileName ? fileName.replace('.ium', '') : (iumData.metadata.title || "Untitled");
+
+    // Explicitly construct string to avoid template literal issues if any
+    const safeTitle = title.replace(/[^a-zA-Z0-9가-힣]/g, "_");
+    const finalFileName = fileName || (safeTitle + ".ium");
 
     const newTab: NotebookTab = {
       id: tabId,
-      title: iumData.metadata.title,
+      title: title,
+      // ✨ [Fixed] Assign folderId so it shows up in the correct folder's tab bar
+      folderId: folderId || state.activeFolderId || "folder-1",
       cells: iumData.cells.map((cell) => ({
         id: cell.id || `cell-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
         type: cell.type,
@@ -1304,6 +1557,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         equations: cell.equations,
         diagram_description: cell.diagram_description,
         mermaid_code: cell.mermaid_code,
+        graph_data: cell.graph_data, // ✨ [Fix] Correctly map graph_data
         quiz_data: cell.quiz_data,
         isBookmarked: cell.isBookmarked || false,
         createdAt: cell.createdAt || Date.now(),
@@ -1314,8 +1568,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Set syncInfo if fileId is provided (so auto-sync works)
       syncInfo: fileId ? {
         fileId,
-        folderId: folderId || "",
-        fileName,
+        folderId: folderId || state.activeFolderId || "folder-1",
+        fileName: finalFileName,
         lastSyncedAt: Date.now(),
       } : undefined,
     };
@@ -1323,7 +1577,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       notebookTabs: [...state.notebookTabs, newTab],
       notebookActiveTabId: tabId,
+      // ✨ [Added] Update local history for that folder so it's active immediately
+      folderActiveTabs: {
+        ...state.folderActiveTabs,
+        [newTab.folderId || "folder-1"]: tabId
+      }
     }));
+
+    // ✨ Mark file as open in DB if it has a fileId
+    if (fileId) {
+      get().toggleFileOpen(fileId, true);
+    }
 
     return tabId;
   },
@@ -1441,25 +1705,51 @@ export const useAppStore = create<AppState>((set, get) => ({
     const state = get();
     const tab = state.notebookTabs.find((t) => t.id === tabId);
 
-    // Only queue if tab has sync info (has been saved before)
-    if (!tab?.syncInfo) return;
+    // ✨ Handle unsaved tabs (no syncInfo) -> Create new file
+    if (!tab?.syncInfo) {
+      // Debounce creation too
+      const existingTimer = state._syncDebounceTimers.get(tabId);
+      if (existingTimer) clearTimeout(existingTimer);
 
-    // Clear existing timer for this tab
-    const existingTimer = state._syncDebounceTimers.get(tabId);
-    if (existingTimer) {
-      clearTimeout(existingTimer);
+      const createAndSync = () => {
+        const folderId = tab?.folderId || state.activeFolderId || "folder-1";
+        // ✨ Auto-save is always temp
+        get().saveTabToSupabase(tabId, folderId, true);
+      };
+
+      if (immediate) {
+        createAndSync();
+      } else {
+        const timer = setTimeout(() => {
+          createAndSync();
+          state._syncDebounceTimers.delete(tabId);
+        }, 1000); // Slightly longer delay for creation
+        state._syncDebounceTimers.set(tabId, timer);
+      }
+      return;
     }
 
-    // Immediate sync or debounced
-    if (immediate) {
-      get().syncTabToSupabase(tabId);
-    } else {
-      // Set new debounce timer (500ms for quick feedback)
-      const timer = setTimeout(() => {
-        get().syncTabToSupabase(tabId);
-        get()._syncDebounceTimers.delete(tabId);
-      }, 500);
+    // Existing sync logic (Debounce)
+    const existingTimer = state._syncDebounceTimers.get(tabId);
+    if (existingTimer) clearTimeout(existingTimer);
 
+    const performSync = () => {
+      // ✨ Use saveTabToSupabase for updates too (it handles update_existing now)
+      // Auto-sync preserves current temp status (or re-marks as temp if logic dictates, but usually valid save)
+      // Actually, auto-sync ON EXISTING file is better handled by syncTabToSupabase if we want separate logic,
+      // BUT to satisfy "save button makes permanent", auto-sync should probably keep it temp?
+      // Let's use saveTabToSupabase(..., true) for auto-syncs to keep them temp.
+      const folderId = tab.syncInfo?.folderId || tab.folderId || state.activeFolderId || "folder-1";
+      get().saveTabToSupabase(tabId, folderId, true);
+    };
+
+    if (immediate) {
+      performSync();
+    } else {
+      const timer = setTimeout(() => {
+        performSync();
+        state._syncDebounceTimers.delete(tabId);
+      }, 500);
       state._syncDebounceTimers.set(tabId, timer);
     }
   },

@@ -138,10 +138,7 @@ export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
     );
   }
 );
-      </div >
-    );
-  }
-);
+
 
 CellRenderer.displayName = "CellRenderer";
 
@@ -263,6 +260,6 @@ function CellContent({ cell, hideTitle }: { cell: Cell; hideTitle?: boolean }) {
           ))}
         </div>
       )}
-    </>
+    </div>
   );
 }

@@ -27,31 +27,11 @@ import 'katex/dist/katex.min.css';
 // @ts-ignore
 declare module 'dagre';
 
-const dagreGraph = new dagre.graphlib.Graph();
-dagreGraph.setDefaultEdgeLabel(() => ({}));
-
-// Helper to estimate node size based on text
-const estimateNodeSize = (label: string) => {
-    const baseWidth = 150;
-    const baseHeight = 40;
-    const charWidth = 7;
-    const lineHeight = 18;
-    const padding = 20;
-    const maxLineWidth = 200; // Max width before wrapping
-
-    const textLength = label.length;
-
-    // Simple estimation
-    let width = Math.min(textLength * charWidth + padding, maxLineWidth);
-    width = Math.max(width, baseWidth); // Min width
-
-    const lines = Math.ceil((textLength * charWidth) / (width - padding));
-    const height = Math.max(baseHeight, lines * lineHeight + padding * 2);
-
-    return { width, height };
-};
-
 const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
+    // ✨ [Fix] Create graph instance INSIDE function to prevent stale state across renders
+    const dagreGraph = new dagre.graphlib.Graph();
+    dagreGraph.setDefaultEdgeLabel(() => ({}));
+
     const isHorizontal = direction === 'LR';
     dagreGraph.setGraph({ rankdir: direction });
 
@@ -61,8 +41,13 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
         dagreGraph.setNode(node.id, { width, height });
     });
 
+    // ✨ [Fix] Filter edges to ensure source/target nodes exist
+    // This prevents Dagre from auto-creating 0-size nodes for missing IDs, which causes the "intersection" error
+    const nodeIds = new Set(nodes.map((n: any) => n.id));
     edges.forEach((edge: any) => {
-        dagreGraph.setEdge(edge.source, edge.target);
+        if (nodeIds.has(edge.source) && nodeIds.has(edge.target)) {
+            dagreGraph.setEdge(edge.source, edge.target);
+        }
     });
 
     dagre.layout(dagreGraph);
