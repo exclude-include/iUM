@@ -696,11 +696,14 @@ export function MainContentArea() {
             <ScrollArea className="flex-1 min-w-0">
               <div className="p-4 w-full max-w-full overflow-hidden">
                 {/* Float Elements */}
-                <DeepModeCursor
-                  visible={hoverCursor.visible}
-                  progress={hoverCursor.progress}
-                  position={hoverCursor.position}
-                />
+                {/* ✨ [Updated] Only show DeepMode cursor when there is content (active tab with cells OR active document) */}
+                {(activeTab?.cells?.length > 0 || !!activeDocument) && (
+                  <DeepModeCursor
+                    visible={hoverCursor.visible}
+                    progress={hoverCursor.progress}
+                    position={hoverCursor.position}
+                  />
+                )}
                 <TextSelectionMenu
                   visible={selectionMenu.visible}
                   position={selectionMenu.position}
