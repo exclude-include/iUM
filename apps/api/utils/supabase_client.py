@@ -95,8 +95,9 @@ def get_supabase_client_with_user_jwt(jwt_token: str) -> Client:
             "SUPABASE_SERVICE_KEY alone causes RLS violation because auth.uid() is not set."
         )
     client = create_client(supabase_url, anon_key)
-    if hasattr(client, "postgrest") and hasattr(client.postgrest, "session"):
-        client.postgrest.session.headers["Authorization"] = f"Bearer {jwt_token}"
+    # Use postgrest.auth() so RLS sees auth.uid() from the user JWT (session.headers can be overwritten on request)
+    if hasattr(client, "postgrest") and hasattr(client.postgrest, "auth"):
+        client.postgrest.auth(f"Bearer {jwt_token}")
     return client
 
 
