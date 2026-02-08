@@ -17,6 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { Smile, LogOut, FolderOpen, Upload, Settings } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
+import { ActivityStatsPanel } from "@/components/ActivityStatsPanel";
 
 interface ProfileMenuProps {
   onUploadClick?: () => void;
@@ -53,7 +54,7 @@ export function ProfileMenu({ onUploadClick }: ProfileMenuProps) {
         title: "Signed out",
         description: "You have been successfully signed out.",
       });
-      
+
       setIsOpen(false);
       router.push("/");
       router.refresh();
@@ -109,7 +110,7 @@ export function ProfileMenu({ onUploadClick }: ProfileMenuProps) {
           )}
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-80">
+      <SheetContent side="left" className="w-96">
         <SheetHeader>
           <SheetTitle>
             {user ? "Profile" : "Sign in to iUM"}
@@ -139,6 +140,9 @@ export function ProfileMenu({ onUploadClick }: ProfileMenuProps) {
                   </p>
                 </div>
               </div>
+
+              {/* Learning Stats */}
+              <ActivityStatsPanel />
 
               <Separator />
 

@@ -77,23 +77,24 @@ export function ActivityStatsPanel() {
     }
 
     return (
-        <div className="space-y-4">
+        <div className="space-y-6">
             {/* Streak Card */}
             <Card className="bg-gradient-to-br from-orange-500/10 to-red-500/10 border-orange-500/20">
                 <CardContent className="pt-6">
                     <div className="flex items-center gap-4">
-                        <div className="p-3 rounded-full bg-orange-500/20">
+                        <div className="p-3 rounded-full bg-orange-500/20 flex-shrink-0">
                             <Flame className="h-8 w-8 text-orange-500" />
                         </div>
-                        <div>
+                        <div className="flex-1">
                             <p className="text-3xl font-bold">{streak?.current_streak || 0}</p>
                             <p className="text-sm text-muted-foreground">Day Streak 🔥</p>
                         </div>
                         {streak && streak.longest_streak > 0 && (
-                            <div className="ml-auto text-right">
-                                <p className="text-lg font-semibold text-muted-foreground">
-                                    Best: {streak.longest_streak}
-                                </p>
+                            <div className="flex-shrink-0">
+                                <div className="text-right">
+                                    <p className="text-xs text-muted-foreground uppercase tracking-wide">Best:</p>
+                                    <p className="text-2xl font-bold">{streak.longest_streak}</p>
+                                </div>
                             </div>
                         )}
                     </div>
@@ -101,62 +102,62 @@ export function ActivityStatsPanel() {
             </Card>
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-4">
                 {/* Study Time Today */}
                 <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                            <TrendingUp className="h-3 w-3" />
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5 whitespace-nowrap">
+                            <TrendingUp className="h-4 w-4 flex-shrink-0" />
                             Today
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-2xl font-bold">
+                        <p className="text-3xl font-bold">
                             {stats?.study_time_today_minutes || 0}
-                            <span className="text-sm font-normal text-muted-foreground ml-1">min</span>
+                            <span className="text-base font-normal text-muted-foreground ml-1.5">min</span>
                         </p>
                     </CardContent>
                 </Card>
 
                 {/* This Week */}
                 <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                            <TrendingUp className="h-3 w-3" />
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5 whitespace-nowrap">
+                            <TrendingUp className="h-4 w-4 flex-shrink-0" />
                             This Week
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-2xl font-bold">
+                        <p className="text-3xl font-bold">
                             {stats?.study_time_week_minutes || 0}
-                            <span className="text-sm font-normal text-muted-foreground ml-1">min</span>
+                            <span className="text-base font-normal text-muted-foreground ml-1.5">min</span>
                         </p>
                     </CardContent>
                 </Card>
 
                 {/* Cells Created */}
                 <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                            <BookOpen className="h-3 w-3" />
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5 whitespace-nowrap">
+                            <BookOpen className="h-4 w-4 flex-shrink-0" />
                             Cells Created
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-2xl font-bold">{stats?.cells_created || 0}</p>
+                        <p className="text-3xl font-bold">{stats?.cells_created || 0}</p>
                     </CardContent>
                 </Card>
 
                 {/* Chat Messages */}
                 <Card>
-                    <CardHeader className="pb-2">
-                        <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                            <MessageSquare className="h-3 w-3" />
+                    <CardHeader className="pb-3">
+                        <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-1.5 whitespace-nowrap">
+                            <MessageSquare className="h-4 w-4 flex-shrink-0" />
                             Chats
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <p className="text-2xl font-bold">{stats?.chat_messages || 0}</p>
+                        <p className="text-3xl font-bold">{stats?.chat_messages || 0}</p>
                     </CardContent>
                 </Card>
             </div>

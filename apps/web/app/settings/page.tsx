@@ -20,9 +20,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, User, Bell, Lock, Palette, Trash2, Loader2, Camera, Save, TrendingUp } from "lucide-react";
+import { ArrowLeft, User, Bell, Lock, Palette, Trash2, Loader2, Camera, Save } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
-import { ActivityStatsPanel } from "@/components/ActivityStatsPanel";
 
 export default function SettingsPage() {
   const [user, setUser] = useState<SupabaseUser | null>(null);
@@ -269,22 +268,6 @@ export default function SettingsPage() {
             <p className="text-muted-foreground">Manage your account and preferences</p>
           </div>
         </div>
-
-        {/* Learning Stats */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              Learning Stats
-            </CardTitle>
-            <CardDescription>
-              Track your learning progress and streaks
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ActivityStatsPanel />
-          </CardContent>
-        </Card>
 
         {/* Profile Settings */}
         <Card>
