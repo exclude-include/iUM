@@ -356,7 +356,7 @@ User Question: {question}
     def _generate_chat_message(self) -> str:
         """Generate short status message for chat sidebar"""
         if not self.accumulated_learning_units:
-            return "I've analyzed your question. Check the workspace for details!"
+            return "답변하기 어렵거나 에러가 발생한 것 같습니다!"
         
         # Count what was created
         has_concept = any(u["type"] == "concept" for u in self.accumulated_learning_units)

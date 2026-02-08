@@ -18,6 +18,10 @@ import ReactFlow, {
 import 'reactflow/dist/style.css';
 import dagre from 'dagre';
 import { GraphData } from '@/lib/store';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 // Fix for missing types
 // @ts-ignore
@@ -101,7 +105,22 @@ function FlowChartInner({ data }: FlowChartProps) {
             // Transform GraphData to ReactFlow elements
             const initialNodes = data.nodes.map(n => ({
                 id: n.id,
-                data: { label: n.label },
+                // ✨ [Updated] Render label with Markdown/Math support
+                data: {
+                    label: (
+                        <div className="math-node-label">
+                            <ReactMarkdown
+                                remarkPlugins={[remarkMath]}
+                                rehypePlugins={[rehypeKatex]}
+                                components={{
+                                    p: ({ children }) => <span className="text-xs">{children}</span>
+                                }}
+                            >
+                                {n.label}
+                            </ReactMarkdown>
+                        </div>
+                    )
+                },
                 position: { x: 0, y: 0 }, // Initial position, will be computed by dagre
                 type: n.type || 'default', // input, output, default
                 style: {
@@ -111,8 +130,9 @@ function FlowChartInner({ data }: FlowChartProps) {
                     padding: '10px',
                     fontSize: '12px',
                     textAlign: 'center',
-                    whiteSpace: 'pre-wrap', // ✨ [Added] Allow wrapping
-                    wordBreak: 'break-word', // ✨ [Added] Break long words
+                    // whiteSpace: 'pre-wrap', // Handled by Markdown
+                    width: 'fit-content', // Let CSS handle it? No, dagre needs explicit size. 
+                    // We just use style for box. content is checked by markdown.
                     color: '#000', // Ensure text is visible (black)
                 }
             }));
