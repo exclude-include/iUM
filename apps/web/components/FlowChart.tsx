@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import ReactFlow, {
     useNodesState,
     useEdgesState,
@@ -9,16 +9,14 @@ import ReactFlow, {
     Edge,
     Background,
     Controls,
-    MiniMap,
     Panel,
     useReactFlow,
     ReactFlowProvider,
     MarkerType,
+    Node,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import dagre from 'dagre';
-import { Download } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { GraphData } from '@/lib/store';
 
 // Fix for missing types
@@ -28,15 +26,35 @@ declare module 'dagre';
 const dagreGraph = new dagre.graphlib.Graph();
 dagreGraph.setDefaultEdgeLabel(() => ({}));
 
-const nodeWidth = 172;
-const nodeHeight = 36;
+// Helper to estimate node size based on text
+const estimateNodeSize = (label: string) => {
+    const baseWidth = 150;
+    const baseHeight = 40;
+    const charWidth = 7;
+    const lineHeight = 18;
+    const padding = 20;
+    const maxLineWidth = 200; // Max width before wrapping
+
+    const textLength = label.length;
+
+    // Simple estimation
+    let width = Math.min(textLength * charWidth + padding, maxLineWidth);
+    width = Math.max(width, baseWidth); // Min width
+
+    const lines = Math.ceil((textLength * charWidth) / (width - padding));
+    const height = Math.max(baseHeight, lines * lineHeight + padding * 2);
+
+    return { width, height };
+};
 
 const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
     const isHorizontal = direction === 'LR';
     dagreGraph.setGraph({ rankdir: direction });
 
     nodes.forEach((node: any) => {
-        dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
+        // ✨ [Updated] Use dynamic size
+        const { width, height } = estimateNodeSize(node.data.label || "");
+        dagreGraph.setNode(node.id, { width, height });
     });
 
     edges.forEach((edge: any) => {
@@ -45,21 +63,28 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
 
     dagre.layout(dagreGraph);
 
-    nodes.forEach((node: any) => {
+    const layoutedNodes = nodes.map((node: any) => {
         const nodeWithPosition = dagreGraph.node(node.id);
-        node.targetPosition = isHorizontal ? 'left' : 'top';
-        node.sourcePosition = isHorizontal ? 'right' : 'bottom';
+        const { width, height } = estimateNodeSize(node.data.label || "");
 
         // Shift dagre's center-point based position to ReactFlow's top-left based position
-        node.position = {
-            x: nodeWithPosition.x - nodeWidth / 2,
-            y: nodeWithPosition.y - nodeHeight / 2,
+        return {
+            ...node,
+            targetPosition: isHorizontal ? 'left' : 'top',
+            sourcePosition: isHorizontal ? 'right' : 'bottom',
+            position: {
+                x: nodeWithPosition.x - width / 2,
+                y: nodeWithPosition.y - height / 2,
+            },
+            style: {
+                ...node.style,
+                width: width,
+                height: height,
+            }
         };
-
-        return node;
     });
 
-    return { nodes, edges };
+    return { nodes: layoutedNodes, edges };
 };
 
 interface FlowChartProps {
@@ -85,9 +110,10 @@ function FlowChartInner({ data }: FlowChartProps) {
                     borderRadius: '8px',
                     padding: '10px',
                     fontSize: '12px',
-                    width: 'auto',
-                    minWidth: '100px',
-                    textAlign: 'center'
+                    textAlign: 'center',
+                    whiteSpace: 'pre-wrap', // ✨ [Added] Allow wrapping
+                    wordBreak: 'break-word', // ✨ [Added] Break long words
+                    color: '#000', // Ensure text is visible (black)
                 }
             }));
 
@@ -100,7 +126,8 @@ function FlowChartInner({ data }: FlowChartProps) {
                 markerEnd: {
                     type: MarkerType.ArrowClosed,
                 },
-                style: { stroke: '#555' }
+                style: { stroke: '#555' },
+                labelStyle: { fill: '#555', fontWeight: 700 }
             }));
 
             const { nodes: layoutedNodes, edges: layoutedEdges } = getLayoutedElements(
@@ -113,7 +140,7 @@ function FlowChartInner({ data }: FlowChartProps) {
 
             // Fit view after a brief delay to ensure rendering
             setTimeout(() => {
-                fitView({ padding: 0.2 });
+                fitView({ padding: 0.2, duration: 800 });
             }, 100);
         }
     }, [data, setNodes, setEdges, fitView]);
@@ -123,12 +150,9 @@ function FlowChartInner({ data }: FlowChartProps) {
         [setEdges]
     );
 
-    const handleDownload = () => {
-        alert("Download feature coming soon for Reactflow!");
-    };
-
     return (
-        <div style={{ width: '100%', height: '400px' }} className="border rounded-md bg-slate-50 dark:bg-slate-900">
+        <div style={{ width: '100%', height: '400px' }} className="border rounded-md bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
+            {/* ✨ [Updated] Interactive Diagram: Nodes are draggable by default in ReactFlow unless nodesDraggable={false} */}
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
@@ -137,14 +161,11 @@ function FlowChartInner({ data }: FlowChartProps) {
                 onConnect={onConnect}
                 fitView
                 attributionPosition="bottom-right"
+                nodesDraggable={true} // ✨ Explicitly enable dragging
+                nodesConnectable={false} // Disable changing connections by default (view mode)
             >
                 <Controls />
-                <Background gap={12} size={1} />
-                <Panel position="top-right">
-                    <div className="flex gap-2">
-                        {/* Placeholders for future controls */}
-                    </div>
-                </Panel>
+                <Background gap={12} size={1} color="#aaa" />
             </ReactFlow>
         </div>
     );

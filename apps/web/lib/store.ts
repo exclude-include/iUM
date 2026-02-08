@@ -334,15 +334,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   // === NEW: Notebook Tabs State ===
   notebookTabs: [],
   notebookActiveTabId: null,
+  folderActiveTabs: {}, // ✨ [Added]
   scrollToCellId: null,
 
-  createNotebookTab: (title) => {
+  createNotebookTab: (title, folderId) => {
     const state = get();
+    // ✨ [Updated] Use provided folderId or current activeFolderId (or default)
+    const targetFolderId = folderId || state.activeFolderId || "folder-1";
     let finalTitle: string;
 
     // Auto-generate unique title if not provided or is default
     if (!title || title === "New Tab" || title === "Untitled Tab" || title === "New Notebook" || title === "Untitled Notebook") {
-      const existingTitles = state.notebookTabs.map((t) => t.title);
+      // Filter by folder for unique name check
+      const existingTitles = state.notebookTabs
+        .filter(t => t.folderId === targetFolderId || (!t.folderId && targetFolderId === "folder-1"))
+        .map((t) => t.title);
       let counter = 1;
       let candidateTitle = "Tab 1";
 
@@ -362,27 +368,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       cells: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      folderId: targetFolderId, // ✨ [Added]
     };
+
     set((state) => ({
       notebookTabs: [...state.notebookTabs, newTab],
       notebookActiveTabId: id,
+      // ✨ [Added] Update active tab for this folder
+      folderActiveTabs: {
+        ...state.folderActiveTabs,
+        [targetFolderId]: id
+      }
     }));
     return id;
   },
 
   deleteNotebookTab: (tabId) => {
     set((state) => {
+      const tabToDelete = state.notebookTabs.find(t => t.id === tabId);
+      const folderId = tabToDelete?.folderId || state.activeFolderId || "folder-1";
+
       const newTabs = state.notebookTabs.filter((tab) => tab.id !== tabId);
       let newActiveTabId = state.notebookActiveTabId;
 
+      // If we are deleting the currently active tab
       if (state.notebookActiveTabId === tabId) {
-        if (newTabs.length > 0) {
-          const closedIndex = state.notebookTabs.findIndex((tab) => tab.id === tabId);
-          if (closedIndex > 0) {
-            newActiveTabId = state.notebookTabs[closedIndex - 1].id;
-          } else {
-            newActiveTabId = newTabs[0]?.id || null;
-          }
+        // Find other tabs in the SAME folder
+        const folderTabs = newTabs.filter(t => (t.folderId || "folder-1") === folderId);
+
+        if (folderTabs.length > 0) {
+          // Try to find a previous sibling in the same folder, or pick first one
+          // (Simplified: just pick the last one opened in that folder, or the last in list)
+          newActiveTabId = folderTabs[folderTabs.length - 1].id;
         } else {
           newActiveTabId = null;
         }
@@ -391,11 +408,39 @@ export const useAppStore = create<AppState>((set, get) => ({
       return {
         notebookTabs: newTabs,
         notebookActiveTabId: newActiveTabId,
+        // ✨ [Added] Update local history for that folder
+        folderActiveTabs: {
+          ...state.folderActiveTabs,
+          [folderId]: newActiveTabId
+        }
       };
     });
   },
 
-  setNotebookActiveTab: (tabId) => set({ notebookActiveTabId: tabId }),
+  setNotebookActiveTab: (tabId) => {
+    const state = get();
+    // If tabId is null, just clear it
+    if (!tabId) {
+      set({ notebookActiveTabId: null });
+      return;
+    }
+
+    // Find the tab to get its folderId
+    const tab = state.notebookTabs.find(t => t.id === tabId);
+    if (!tab) return;
+
+    // Use folderId from tab, or fallback to current active folder, or default
+    const folderId = tab.folderId || state.activeFolderId || "folder-1";
+
+    set((state) => ({
+      notebookActiveTabId: tabId,
+      // ✨ [Added] Remember this tab as active for its folder
+      folderActiveTabs: {
+        ...state.folderActiveTabs,
+        [folderId]: tabId
+      }
+    }));
+  },
 
   renameNotebookTab: (tabId, newTitle) => {
     set((state) => ({
@@ -436,6 +481,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       equations: unit.equations,
       diagram_description: unit.diagram_description,
       mermaid_code: unit.mermaid_code,
+      graph_data: unit.graph_data, // ✨ [Fix] Correctly map graph_data
       quiz_data: unit.quiz_data,
       isBookmarked: false,
       createdAt: Date.now(),
@@ -657,7 +703,33 @@ export const useAppStore = create<AppState>((set, get) => ({
     return id;
   },
 
-  setActiveFolder: (id) => set({ activeFolderId: id }),
+  setActiveFolder: (id) => {
+    const state = get();
+    // ✨ [Updated] Restore active tab for this folder
+    const targetFolderId = id || "folder-1";
+    let nextTabId = state.folderActiveTabs[targetFolderId];
+
+    // Use fallback if recorded tab no longer exists
+    if (!nextTabId) {
+      const folderTabs = state.notebookTabs.filter(t => (t.folderId || "folder-1") === targetFolderId);
+      if (folderTabs.length > 0) {
+        nextTabId = folderTabs[0].id;
+      } else {
+        nextTabId = null;
+      }
+    } else {
+      // Verify it still exists in current tabs
+      if (!state.notebookTabs.find(t => t.id === nextTabId)) {
+        const folderTabs = state.notebookTabs.filter(t => (t.folderId || "folder-1") === targetFolderId);
+        nextTabId = folderTabs.length > 0 ? folderTabs[0].id : null;
+      }
+    }
+
+    set({
+      activeFolderId: id,
+      notebookActiveTabId: nextTabId
+    });
+  },
 
   updateFolder: (id, updates) => {
     set((state) => ({

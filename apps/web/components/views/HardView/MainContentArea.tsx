@@ -61,6 +61,12 @@ export function MainContentArea() {
   // Get active notebook tab
   const activeTab = notebookTabs.find((tab) => tab.id === notebookActiveTabId);
 
+  // ✨ [Updated] Filter visible tabs by active folder
+  // Tabs without folderId (legacy) are treated as belonging to "folder-1" (default)
+  const visibleTabs = notebookTabs.filter(tab =>
+    (tab.folderId || "folder-1") === (activeFolderId || "folder-1")
+  );
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -427,15 +433,76 @@ export function MainContentArea() {
       if (response.learning_unit) {
         updateDeepCard(tempCardId, { ...response.learning_unit, status: 'complete' });
       } else {
-        // Fallback if no structured unit
+        // Fallback: Check if message is actually a JSON string (from tool output)
+        let content = response.message;
+        let graph_data = undefined;
+        let diagram_description = "";
+
+        try {
+          let jsonStr = content.trim();
+
+          // 1. Remove markdown code blocks if present
+          if (jsonStr.includes("```")) {
+            jsonStr = jsonStr.replace(/```json/g, "").replace(/```/g, "").trim();
+          }
+
+          // 2. Locate JSON object
+          const firstOpen = jsonStr.indexOf('{');
+          const lastClose = jsonStr.lastIndexOf('}');
+
+          if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
+            const candidate = jsonStr.substring(firstOpen, lastClose + 1);
+
+            try {
+              // Try standard parse
+              const parsed = JSON.parse(candidate);
+              if (parsed.text_content) content = parsed.text_content;
+              if (parsed.graph_data) {
+                graph_data = parsed.graph_data;
+                diagram_description = "Generated diagram based on the explanation.";
+              }
+            } catch (parseError) {
+              console.warn("JSON parse failed, attempting regex extraction:", parseError);
+
+              // 3. Fallback: Regex Extraction (Robust against bad escaping)
+              // Extract text_content
+              // Look for "text_content": " ... ", "graph_data"
+              // This is tricky due to nested quotes, but we try a greedy approach up to the known next key
+              const textMatch = candidate.match(/"text_content"\s*:\s*"(.*?)",\s*"graph_data"/s);
+              if (textMatch && textMatch[1]) {
+                // Manual unescape of basic JSON escapes
+                content = textMatch[1]
+                  .replace(/\\n/g, '\n')
+                  .replace(/\\"/g, '"')
+                  .replace(/\\\\/g, '\\');
+              }
+
+              // Extract graph_data (assuming it's at the end)
+              const graphMatch = candidate.match(/"graph_data"\s*:\s*(\{.*\})\s*}/s);
+              if (graphMatch && graphMatch[1]) {
+                try {
+                  // Attempt to parse just the graph object (it might be cleaner)
+                  graph_data = JSON.parse(graphMatch[1]);
+                  diagram_description = "Generated diagram based on the explanation.";
+                } catch (e) {
+                  console.warn("Graph data extraction failed:", e);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Deep Dive response processing completely failed:", e);
+        }
+
         updateDeepCard(tempCardId, {
           type: "concept",
           title: "Explanation",
-          content: response.message,
+          content: content,
           equations: [],
           quiz_data: [],
-          diagram_description: "",
+          diagram_description: diagram_description,
           mermaid_code: "",
+          graph_data: graph_data,
           status: 'complete'
         });
       }
@@ -461,7 +528,7 @@ export function MainContentArea() {
         <div className="flex-1 overflow-x-auto scrollbar-hide">
           <div className="flex items-center gap-1 px-2 py-1.5 min-w-fit">
             {/* Tabs with Context Menu */}
-            {notebookTabs.map((tab) => (
+            {visibleTabs.map((tab) => (
               <ContextMenu key={tab.id}>
                 <ContextMenuTrigger asChild>
                   <div

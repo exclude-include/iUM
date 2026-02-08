@@ -176,6 +176,8 @@ Write your response in markdown format."""
             result = await tool.func(**kwargs)
             return result
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return f"[Error] Tool execution failed: {str(e)}"
     
     # ========== Tool Implementations ==========
@@ -207,18 +209,34 @@ Write your response in markdown format."""
             return f"Search failed: {str(e)}"
     
     async def _generate_concept_cell(self, topic: str) -> str:
-        """Generate concept explanation cell"""
+        """Generate concept explanation cell with optional graph data"""
         prompt = f"""Explain '{topic}' in a way that is easy for learners to understand.
 
-Please write in the following format:
-1. Core Definition (1-2 sentences)
-2. Key Features (3 points)
-3. Real-world Example (1)
-4. Mermaid Diagram (graph TD format, keep it simple)
+Rules:
+1. **Free Format**: Structure your explanation naturally. Use headings, lists, bold text, and math equations ($...$) as needed.
+2. **Math Expressions**: YOU MUST Include relevant formulas using LaTeX syntax format (e.g., $E=mc^2$). **IMPORTANT**: When writing LaTeX inside the JSON string, you MUST escape backslashes (use `\\` instead of `\`). For example, write `$\\frac{{a}}{{b}}$` instead of `$\\frac{{a}}{{b}}$`.
+3. **Diagrams**: Include a node-based diagram (`graph_data`) **ONLY IF** the topic describes a complex cycle, sequential process, or physical structure (e.g., 'Calvin Cycle', 'System Architecture'). For abstract concepts, theorems, or history (e.g., 'Fermat's Last Theorem'), **DO NOT** generate a diagram unless the user explicitly requested it.
 
-Write your response in markdown format."""
+Response Format (JSON):
+Please respond with a valid raw JSON object (do NOT wrap in markdown code blocks like ```json ... ```) containing:
+- "text_content": The main explanation (markdown).
+- "graph_data": (Optional) A JSON object for the diagram with "nodes" and "edges".
+  - Nodes: {{ "id": "1", "label": "Text", "type": "default" }}
+  - Edges: {{ "source": "1", "target": "2", "label": "Optional label" }}
+  
+Example:
+{{
+  "text_content": "# Topic\\n\\nExplanation...",
+  "graph_data": {{
+     "nodes": [{{ "id": "A", "label": "Start" }}, {{ "id": "B", "label": "End" }}],
+     "edges": [{{ "source": "A", "target": "B" }}]
+  }}
+}}
+"""
 
         response = await self.llm.ainvoke(prompt)
+        # The tool should return the raw JSON string content. 
+        # The caller (Deep Dive API) is expected to parse this JSON.
         return response.content
     
 
