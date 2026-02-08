@@ -1,6 +1,6 @@
 "use client";
 
-import React, { forwardRef, useRef, useMemo } from "react";
+import React, { forwardRef, useRef, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { QuizView } from "@/components/QuizView";
 import { FlowChart } from "@/components/FlowChart";
@@ -8,6 +8,10 @@ import { FlashcardView } from "@/components/FlashcardView"; // ✨
 import { CellToolbar } from "./CellToolbar";
 import { cn } from "@/lib/utils";
 import { useAppStore, type Cell } from "@/lib/store";
+import { supabase } from "@/lib/supabase/client";
+import { api } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { useSocialStore } from "@/components/SocialMode/useSocialStore";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -246,6 +250,9 @@ interface CellRendererProps {
 
 export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
   ({ cell, tabId }, ref) => {
+    const { toast } = useToast();
+    const [isCreatingReel, setIsCreatingReel] = useState(false);
+
     // ✨ [Performance] Use selectors to avoid re-rendering on every store update
     const deleteCell = useAppStore((state) => state.deleteCell);
     const toggleBookmark = useAppStore((state) => state.toggleBookmark);
@@ -279,6 +286,45 @@ export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
       moveCell(tabId, cell.id, 'down');
     };
 
+    const handleCreateReel = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: "Sign in required", description: "Sign in to create a reel from this cell.", variant: "destructive" });
+        return;
+      }
+      const cellContent = cell.content?.trim() || cell.title || "Untitled";
+      if (!cellContent) {
+        toast({ title: "No content", description: "This cell has no content to create a reel from.", variant: "destructive" });
+        return;
+      }
+      setIsCreatingReel(true);
+      try {
+        const payload: { user_id: string; cell_content: string; cell_title?: string; quiz_data?: any[] } = {
+          user_id: user.id,
+          cell_content: cellContent,
+          cell_title: cell.title || undefined,
+        };
+        if (cell.quiz_data && cell.quiz_data.length > 0) {
+          payload.quiz_data = cell.quiz_data.map((q) => ({
+            question_text: q.question_text,
+            options: q.options.map((o) => ({ id: o.id, text: o.text, is_correct: o.is_correct })),
+            explanation: q.explanation,
+          }));
+        }
+        const res = await api.reels.createFromCell(payload);
+        if (res?.success) {
+          await useSocialStore.getState().loadReelsFromSupabase();
+          toast({ title: "Reel created", description: "Reel added to Soft mode. Check the Reels tab." });
+        } else {
+          toast({ title: "Failed to create reel", description: (res as any)?.message || "Please try again.", variant: "destructive" });
+        }
+      } catch (e) {
+        toast({ title: "Failed to create reel", description: e instanceof Error ? e.message : "Please try again.", variant: "destructive" });
+      } finally {
+        setIsCreatingReel(false);
+      }
+    };
+
     return (
       <div ref={ref} data-cell-id={cell.id} className="group relative w-full max-w-full min-w-0">
         {/* ✨ New Static Header Layout */}
@@ -301,6 +347,7 @@ export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
               onDelete={handleDelete}
               onBookmark={handleBookmark}
               onMoveToNewTab={handleMoveToNewTab}
+              onCreateReel={isCreatingReel ? undefined : handleCreateReel}
               onMoveUp={handleMoveUp}
               onMoveDown={handleMoveDown}
               canMoveUp={canMoveUp}

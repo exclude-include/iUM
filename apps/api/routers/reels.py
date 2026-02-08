@@ -5,17 +5,15 @@ Handles video upload and management for the reels feature
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query, Form
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, List, Any
 from datetime import datetime
 import uuid
 import os
 import re
+import json
 import requests
-from typing import Optional, List
 from datetime import datetime, timezone
-import uuid
-import os
 import numpy as np
 from pathlib import Path
 
@@ -26,12 +24,21 @@ from models.reels import (
     ReelRecommendResponse,
     ReelWithSimilarity,
     ReelCreateWithQuiz,
-    Quiz
+    Quiz,
+    QuizOption,
 )
 from utils.supabase_client import get_supabase_client, get_storage_client
 from utils.vector_store import get_vector_store, embeddings
 
 router = APIRouter()
+
+
+class GenerateFromCellRequest(BaseModel):
+    """Request to create a reel from a notebook cell (auto hashtags + quiz from content)"""
+    user_id: str
+    cell_content: str = Field(..., min_length=1)
+    cell_title: Optional[str] = None
+    quiz_data: Optional[List[dict]] = Field(None, description="Optional existing quiz from cell (frontend QuizQuestion[])")
 
 
 # Request model for Drive import
@@ -42,6 +49,94 @@ class DriveImportRequest(BaseModel):
     description: Optional[str] = None
     folder_name: Optional[str] = None
     tags: Optional[list[str]] = None
+
+
+def _cell_quiz_to_reel_quiz(quiz_data: List[dict]) -> Optional[Quiz]:
+    """Convert frontend QuizQuestion (first one) to API Quiz model."""
+    if not quiz_data or len(quiz_data) == 0:
+        return None
+    q = quiz_data[0]
+    question_text = q.get("question_text") or q.get("question") or ""
+    options_raw = q.get("options") or []
+    if not question_text or not options_raw:
+        return None
+    # options: [{ id, text, is_correct }] -> [{ key, text }], answer = id of is_correct
+    options = []
+    answer_key = None
+    for i, opt in enumerate(options_raw):
+        key = opt.get("id") or opt.get("key") or chr(65 + i)
+        text = opt.get("text") or ""
+        options.append(QuizOption(key=str(key), text=text))
+        if opt.get("is_correct"):
+            answer_key = str(key)
+    if not answer_key and options:
+        answer_key = options[0].key
+    explanation = q.get("explanation")
+    return Quiz(question=question_text, options=options, answer=answer_key or "A", explanation=explanation)
+
+
+async def _generate_tags_and_quiz_from_content(cell_content: str, cell_title: Optional[str]) -> tuple[List[str], Optional[Quiz]]:
+    """Use LLM to generate hashtags and one quiz from cell content. Returns (tags, quiz)."""
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    api_key = os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        return (["study", "learning"], None)
+
+    llm = ChatGoogleGenerativeAI(
+        model=os.getenv("LLM_MODEL", "models/gemini-2.5-flash"),
+        temperature=0.3,
+        google_api_key=api_key,
+    )
+
+    title_part = f"Title: {cell_title}\n\n" if cell_title else ""
+    prompt = f"""You are helping create a short study reel from this notebook cell content.
+
+{title_part}Content (excerpt):
+{cell_content[:4000]}
+
+Tasks:
+1. Output 3-5 hashtags that describe the topic (without #, comma-separated, e.g. chemistry,organic,reaction).
+2. Create exactly ONE multiple-choice quiz question based on this content. Output valid JSON only, in this exact shape:
+{{"question": "...", "options": [{{"key": "A", "text": "..."}}, {{"key": "B", "text": "..."}}, ...], "answer": "A", "explanation": "..."}}
+Use 2-4 options. "answer" must be one of the option keys (A, B, C, D).
+
+Reply in this exact format (no other text):
+HASHTAGS: tag1, tag2, tag3
+QUIZ: {{"question": "...", "options": [...], "answer": "A", "explanation": "..."}}
+"""
+
+    try:
+        response = await llm.ainvoke(prompt)
+        text = (response.content or "").strip()
+        tags = ["study", "learning"]
+        quiz = None
+
+        if "HASHTAGS:" in text:
+            tag_line = text.split("HASHTAGS:")[1].split("QUIZ:")[0].strip() if "QUIZ:" in text else text.split("HASHTAGS:")[1].strip()
+            tags = [t.strip().strip("#") for t in tag_line.split(",") if t.strip()][:6]
+        if "QUIZ:" in text:
+            try:
+                json_str = text.split("QUIZ:")[1].strip()
+                json_str = json_str.strip()
+                if json_str.startswith("```"):
+                    json_str = re.sub(r"^```\w*\n?", "", json_str).strip()
+                    json_str = re.sub(r"\n?```$", "", json_str).strip()
+                obj = json.loads(json_str)
+                q = obj.get("question") or ""
+                opts = obj.get("options") or []
+                ans = obj.get("answer") or "A"
+                exp = obj.get("explanation")
+                if q and opts:
+                    options = [QuizOption(key=o.get("key", chr(65 + i)), text=o.get("text", "")) for i, o in enumerate(opts)]
+                    quiz = Quiz(question=q, options=options, answer=str(ans), explanation=exp)
+            except (json.JSONDecodeError, KeyError) as e:
+                print(f"Reel generate-from-cell quiz parse error: {e}")
+        return (tags, quiz)
+    except Exception as e:
+        print(f"Reel generate-from-cell LLM error: {e}")
+        return (["study", "learning"], None)
+
 
 # Supabase storage bucket name
 REELS_BUCKET = "reels"
@@ -444,6 +539,66 @@ def generate_quiz_text(quiz: Quiz) -> str:
     for opt in quiz.options:
         parts.append(f"{opt.key}. {opt.text}")
     return " ".join(parts)
+
+
+@router.post("/generate-from-cell", response_model=ReelUploadResponse)
+async def generate_reel_from_cell(request: GenerateFromCellRequest):
+    """
+    Create a reel from a notebook cell: auto-generate hashtags and quiz from cell content,
+    then create a video-less reel and add it to the reels feed (Soft mode).
+    """
+    try:
+        from utils.video_generator import choose_random_pastel
+
+        supabase = get_supabase_client()
+        title = (request.cell_title or "From notebook").strip()[:200]
+        description = (request.cell_content or "").strip()[:500]
+
+        # 1. Quiz: use existing cell quiz if provided, else generate from content (one LLM call for tags + quiz)
+        tags, quiz = await _generate_tags_and_quiz_from_content(request.cell_content, request.cell_title)
+        if not tags:
+            tags = ["study", "learning"]
+        if request.quiz_data and len(request.quiz_data) > 0:
+            cell_quiz = _cell_quiz_to_reel_quiz(request.quiz_data)
+            if cell_quiz:
+                quiz = cell_quiz
+
+        # 3. Create reel (same logic as create-with-quiz, no video)
+        color = choose_random_pastel()
+        insert_data = {
+            "user_id": request.user_id,
+            "title": title,
+            "description": description or None,
+            "video_url": None,
+            "thumbnail_url": None,
+            "duration": None,
+            "tags": tags,
+            "folder_name": None,
+            "folder_id": None,
+            "color": color,
+            "views": 0,
+            "likes": 0,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if quiz:
+            insert_data["quiz"] = quiz.model_dump()
+            quiz_text = generate_quiz_text(quiz)
+            insert_data["quiz_embedding"] = embeddings.embed_query(quiz_text)
+
+        result = supabase.table("reels").insert(insert_data).execute()
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create reel")
+
+        reel = Reel(**result.data[0])
+        return ReelUploadResponse(
+            success=True,
+            message="Reel created from cell (hashtags and quiz generated).",
+            reel=reel,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create reel from cell: {str(e)}")
 
 
 @router.post("/create-with-quiz", response_model=ReelUploadResponse)
