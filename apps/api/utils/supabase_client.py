@@ -24,22 +24,22 @@ def get_user_id_from_token(authorization: str) -> str:
     if jwt_secret:
         try:
             import jwt
+            # Supabase can use HS256 (legacy) or RS256/ES256 (signing keys); allow all so "alg value is not allowed" is avoided
             payload = jwt.decode(
                 token,
                 jwt_secret,
                 audience="authenticated",
-                algorithms=["HS256"],
+                algorithms=["HS256", "RS256", "ES256"],
                 options={"verify_exp": True},
             )
             user_id = payload.get("sub")
             if user_id:
                 return user_id
         except Exception as e:
-            print(f"JWT decode error: {e}")
-            from fastapi import HTTPException
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
+            # Local verify failed (wrong alg, RS256 with symmetric key, etc.) -> fall back to Auth API
+            print(f"JWT decode error: {e}, falling back to auth.get_user")
 
-    # Fallback: use Supabase auth.get_user (may not work with service role client)
+    # Fallback: use Supabase auth.get_user (works with service role; supports any Supabase JWT alg)
     supabase = get_supabase_client()
     try:
         user_response = supabase.auth.get_user(token)
