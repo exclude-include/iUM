@@ -35,6 +35,8 @@ class Reel(BaseModel):
     likes: int = Field(default=0)
     tags: list[str] = Field(default_factory=list, description="Hashtags for categorization and recommendation")
     folder_name: Optional[str] = Field(None, description="Folder name for auto-tagging")
+    folder_id: Optional[str] = Field(None, description="Folder ID for explicit categorization")
+    similarity: Optional[float] = Field(None, description="Similarity score for debugging")
     quiz: Optional[Quiz] = Field(None, description="Quiz data for interactive learning")
     color: Optional[str] = Field(None, description="Pastel background color for video-less reels (hex code)")
     created_at: Optional[datetime] = None
@@ -78,5 +80,6 @@ class ReelCreateWithQuiz(BaseModel):
     duration: Optional[float] = None
     tags: list[str] = Field(default_factory=list)
     folder_name: Optional[str] = None
+    folder_id: Optional[str] = None
     quiz: Optional[Quiz] = None
     color: Optional[str] = Field(None, description="Pastel background color (auto-generated if not provided)")

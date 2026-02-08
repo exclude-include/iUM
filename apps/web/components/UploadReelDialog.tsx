@@ -375,7 +375,6 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
         description: (description.trim() || null) as string | null,
         video_url: finalVideoUrl,
         user_id: user.id,
-        author_name: user.user_metadata?.display_name || user.user_metadata?.full_name || user.email || "User",
         author_avatar: (user.user_metadata?.avatar_url as string) || null,
         folder_name: folderName.trim() || null,
         tags: hashtags,
@@ -398,7 +397,7 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
           color: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
           likes: 0,
           comments: 0,
-          folderId: folderName.trim() || "default",
+          folderId: "default",
           folderName: folderName.trim() || "My Reels",
           author: user.user_metadata?.display_name || user.user_metadata?.full_name || user.email || "User",
           authorAvatar: (user.user_metadata?.avatar_url as string) || undefined,
@@ -422,6 +421,8 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
       // Reset form
       setTitle("");
       setDescription("");
+      setVideoUrl("");
+      setFile(null);
       setVideoUrl("");
       setFile(null);
       setFolderName("");
@@ -519,6 +520,7 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
 
           {/* Folder Name Input */}
           <div className="space-y-2">
+            <label className="text-sm font-medium">Folder/Category</label>
             <label className="text-sm font-medium">Folder/Category</label>
             <Input
               placeholder="e.g., Math, Physics, Programming"

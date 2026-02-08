@@ -64,6 +64,7 @@ function transformApiReelToReelItem(apiReel: any): ReelItem {
     tags: apiReel.tags || [],
     duration: apiReel.duration,
     quiz: apiReel.quiz,
+    similarity: apiReel.similarity,
   };
 }
 

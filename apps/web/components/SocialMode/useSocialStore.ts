@@ -20,6 +20,7 @@ export interface ReelItem {
   tags?: string[]; // Hashtags for categorization and recommendation
   duration?: number; // Video duration in seconds
   quiz?: ReelQuiz; // Interactive quiz data
+  similarity?: number; // Debugging score
 }
 
 interface SocialState {

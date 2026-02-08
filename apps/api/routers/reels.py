@@ -483,6 +483,7 @@ async def create_reel_with_quiz(reel_data: ReelCreateWithQuiz):
             "duration": reel_data.duration,
             "tags": reel_data.tags,
             "folder_name": reel_data.folder_name,
+            "folder_id": reel_data.folder_id,
             "color": color,  # Add color field
             "views": 0,
             "likes": 0,
@@ -673,4 +674,69 @@ async def recommend_reel(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to recommend reel: {str(e)}"
+        )
+
+@router.post("/backfill-embeddings")
+async def backfill_embeddings(force: bool = Query(False, description="Force update even if embedding exists")):
+    """
+    Backfill quiz embeddings for existing reels.
+    Iterates over all reels with quizzes and generates embeddings if missing.
+    """
+    try:
+        supabase = get_supabase_client()
+        
+        # Fetch all reels with a quiz
+        # Note: 'not_.is_' might need specific syntax depending on client version, 
+        # but eq("quiz", "null") inverse logic is tricky.
+        # Alternatively, fetch all and filter in python.
+        result = supabase.table("reels").select("*").not_.is_("quiz", "null").execute()
+        
+        if not result.data:
+            return {"message": "No reels with quizzes found.", "updated": 0}
+            
+        count = 0
+        updated = 0
+        errors = []
+        
+        for reel in result.data:
+            count += 1
+            
+            # Skip if embedding exists and not forcing update
+            if reel.get("quiz_embedding") and not force:
+                continue
+                
+            try:
+                # Parse quiz data
+                quiz_data = reel["quiz"]
+                if not quiz_data:
+                    continue
+                    
+                # Convert to Quiz model
+                quiz_obj = Quiz(**quiz_data)
+                
+                # Generate text and embedding
+                quiz_text = generate_quiz_text(quiz_obj)
+                embedding = embeddings.embed_query(quiz_text)
+                
+                # Update reel
+                supabase.table("reels").update({
+                    "quiz_embedding": embedding
+                }).eq("id", reel["id"]).execute()
+                
+                updated += 1
+            except Exception as e:
+                error_msg = f"Failed to update reel {reel.get('id')}: {str(e)}"
+                print(error_msg)
+                errors.append(error_msg)
+                
+        return {
+            "total_checked": count, 
+            "updated": updated, 
+            "errors": errors
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Backfill failed: {str(e)}"
         )

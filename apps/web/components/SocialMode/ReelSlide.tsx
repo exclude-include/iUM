@@ -33,6 +33,7 @@ interface ReelType {
   color?: string; // For placeholder
   duration?: number;
   quiz?: any;
+  similarity?: number;
 }
 
 interface ReelSlideProps {

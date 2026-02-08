@@ -33,13 +33,13 @@ def cosine_similarity(vec1: List[float], vec2: List[float]) -> float:
     return float(dot_product / (norm_v1 * norm_v2))
 
 
-def calculate_folder_centroid(folder_ids: List[str], collection_name: str = "user_knowledge") -> Optional[List[float]]:
+def calculate_folder_centroid(folder_ids: List[str], collection_name: str = "documents") -> Optional[List[float]]:
     """
     Calculate the centroid (average) embedding from documents in specified folders.
     
     Args:
         folder_ids: List of folder IDs to include
-        collection_name: Vector store collection name
+        collection_name: Vector store table name (default 'documents')
         
     Returns:
         List[float]: Centroid embedding vector, or None if no documents found
@@ -48,27 +48,36 @@ def calculate_folder_centroid(folder_ids: List[str], collection_name: str = "use
         return None
     
     try:
-        # Get vector store
-        vector_store = get_vector_store(collection_name)
-        collection = vector_store._collection
+        from utils.supabase_client import get_supabase_client
+        import json
         
-        # Build filter for multiple folders
-        if len(folder_ids) == 1:
-            where_filter = {"folder_id": folder_ids[0]}
-        else:
-            where_filter = {"folder_id": {"$in": folder_ids}}
+        supabase = get_supabase_client()
         
-        # Get embeddings from vector store
-        results = collection.get(
-            where=where_filter,
-            include=["embeddings"]
-        )
+        all_embeddings = []
         
-        if not results["embeddings"] or len(results["embeddings"]) == 0:
+        # Fetch embeddings for each folder
+        # Note: Using .contains("metadata", {"folder_id": fid}) matches JSONB
+        for fid in folder_ids:
+            # Select embedding column. 
+            # Note: Depending on response size, might need pagination, but folders usually small-ish?
+            # Let's verify table name usage. collection_name arg is passed but vector_store says 'documents'.
+            # We trust 'documents' is the table.
+            
+            response = supabase.table(collection_name).select("embedding").contains("metadata", {"folder_id": fid}).execute()
+            
+            if response.data:
+                for row in response.data:
+                    vec = row.get("embedding")
+                    if vec:
+                        if isinstance(vec, str):
+                            vec = json.loads(vec)
+                        all_embeddings.append(vec)
+        
+        if not all_embeddings:
             return None
         
         # Calculate centroid (average) of document embeddings
-        doc_embeddings = np.array(results["embeddings"])
+        doc_embeddings = np.array(all_embeddings)
         centroid = doc_embeddings.mean(axis=0).tolist()
         
         return centroid

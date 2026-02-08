@@ -387,6 +387,7 @@ export const reelsApi = {
     title: string;
     description?: string;
     folderName?: string;
+    folderId?: string;
     tags?: string[];
   }): Promise<any> {
     return fetchApi("/api/reels/import-from-drive", {
@@ -397,6 +398,7 @@ export const reelsApi = {
         title: options.title,
         description: options.description,
         folder_name: options.folderName,
+        folder_id: options.folderId,
         tags: options.tags,
       }),
     });
@@ -412,6 +414,7 @@ export const reelsApi = {
     description?: string;
     video_url?: string;
     folder_name?: string;
+    folderId?: string;
     tags?: string[];
     quiz?: any;
   }): Promise<any> {
@@ -423,6 +426,7 @@ export const reelsApi = {
         description: options.description,
         video_url: options.video_url,
         folder_name: options.folder_name,
+        folder_id: options.folderId,
         tags: options.tags,
         quiz: options.quiz,
       }),

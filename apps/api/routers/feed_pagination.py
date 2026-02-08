@@ -33,7 +33,7 @@ async def get_feed(
     last_reel_id: Optional[str] = Query(None, description="Last reel ID for cursor-based pagination"),
     user_id: Optional[str] = Query(None, description="User ID for personalization (future)"),
     active_folder_ids: Optional[str] = Query(None, description="Comma-separated active folder IDs for filtering"),
-    similarity_threshold: float = Query(0.7, ge=0.0, le=1.0, description="Similarity threshold for quiz reels"),
+    similarity_threshold: float = Query(0.3, ge=0.0, le=1.0, description="Similarity threshold for quiz reels"),
 ):
     """
     Get paginated feed of reels with folder-aware filtering
@@ -99,6 +99,11 @@ async def get_feed(
                 ]
             else:
                 for reel in all_reels_result.data:
+                    # Explicit folder match (Priority)
+                    if reel.get("folder_id") and str(reel.get("folder_id")) in folder_id_list:
+                        candidate_reels.append(reel)
+                        continue
+
                     # Non-quiz reels: always include
                     if reel.get("quiz") is None:
                         candidate_reels.append(reel)
@@ -106,9 +111,18 @@ async def get_feed(
                     # Quiz reels: check similarity
                     elif reel.get("quiz_embedding") is not None:
                         quiz_emb = reel["quiz_embedding"]
+                        
+                        if isinstance(quiz_emb, str):
+                            import json
+                            try:
+                                quiz_emb = json.loads(quiz_emb)
+                            except:
+                                continue
+
                         similarity = cosine_similarity(centroid, quiz_emb)
                         
                         if similarity >= similarity_threshold:
+                            reel["similarity"] = similarity  # Inject score for debugging
                             candidate_reels.append(reel)
         
         # Randomize order
