@@ -176,26 +176,21 @@ export function ReelSlide({
           />
         ) : (
           <div
-            className="h-full w-full"
+            className="h-full w-full flex items-center justify-center"
             style={{
-              background:
-                reel.color ||
-                "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              backgroundColor: reel.color || "#FFE5E5", // Use pastel color from backend
             }}
           >
-            {/* Placeholder content */}
-            <div className="flex h-full items-center justify-center">
-              <div className="text-center text-white/80">
-                <p className="text-2xl font-bold mb-2">{reel.title}</p>
-                <p className="text-sm">{reel.description}</p>
-                {/* Timer display for testing */}
-                {reel.quiz && !quizCompleted && (
-                  <p className="mt-4 text-xs text-white/50">
-                    {/* Note: We don't have total duration easily here for placeholder, passing '?' is fine or could pass prop */}
-                    ⏱ {elapsedTime.toFixed(1)}s
-                  </p>
-                )}
-              </div>
+            {/* Centered title for video-less reels */}
+            <div className="text-center px-8 max-w-2xl">
+              <h2 className="text-5xl font-bold text-gray-800 mb-4 drop-shadow-sm">
+                {reel.title}
+              </h2>
+              {reel.description && (
+                <p className="text-lg text-gray-700 opacity-80">
+                  {reel.description}
+                </p>
+              )}
             </div>
           </div>
         )}

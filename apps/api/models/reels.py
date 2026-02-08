@@ -28,7 +28,7 @@ class Reel(BaseModel):
     user_id: str
     title: str
     description: Optional[str] = None
-    video_url: str
+    video_url: Optional[str] = None  # Made optional for video-less reels
     thumbnail_url: Optional[str] = None
     duration: Optional[float] = Field(None, description="Duration in seconds")
     views: int = Field(default=0)
@@ -36,6 +36,7 @@ class Reel(BaseModel):
     tags: list[str] = Field(default_factory=list, description="Hashtags for categorization and recommendation")
     folder_name: Optional[str] = Field(None, description="Folder name for auto-tagging")
     quiz: Optional[Quiz] = Field(None, description="Quiz data for interactive learning")
+    color: Optional[str] = Field(None, description="Pastel background color for video-less reels (hex code)")
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -72,9 +73,10 @@ class ReelCreateWithQuiz(BaseModel):
     user_id: str
     title: str
     description: Optional[str] = None
-    video_url: str
+    video_url: Optional[str] = None  # Made optional for video-less reels
     thumbnail_url: Optional[str] = None
     duration: Optional[float] = None
     tags: list[str] = Field(default_factory=list)
     folder_name: Optional[str] = None
     quiz: Optional[Quiz] = None
+    color: Optional[str] = Field(None, description="Pastel background color (auto-generated if not provided)")

@@ -455,15 +455,23 @@ async def create_reel_with_quiz(reel_data: ReelCreateWithQuiz):
     1. Creates the reel record
     2. If quiz is provided, generates embedding from quiz text
     3. Stores embedding in pgvector column
+    4. If no video_url provided, generates pastel background color
 
     Args:
-        reel_data: Reel data including optional quiz
+        reel_data: Reel data including optional quiz and optional video_url
 
     Returns:
         ReelUploadResponse: Created reel with quiz
     """
     try:
+        from utils.video_generator import choose_random_pastel
+        
         supabase = get_supabase_client()
+
+        # Generate pastel color if no video URL provided
+        color = reel_data.color
+        if not reel_data.video_url and not color:
+            color = choose_random_pastel()
 
         # Prepare reel data for insertion
         insert_data = {
@@ -475,6 +483,7 @@ async def create_reel_with_quiz(reel_data: ReelCreateWithQuiz):
             "duration": reel_data.duration,
             "tags": reel_data.tags,
             "folder_name": reel_data.folder_name,
+            "color": color,  # Add color field
             "views": 0,
             "likes": 0,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -499,7 +508,7 @@ async def create_reel_with_quiz(reel_data: ReelCreateWithQuiz):
 
         return ReelUploadResponse(
             success=True,
-            message="Reel created successfully with quiz",
+            message="Reel created successfully" + (" with quiz" if reel_data.quiz else "") + (" (video-less)" if not reel_data.video_url else ""),
             reel=reel
         )
 
