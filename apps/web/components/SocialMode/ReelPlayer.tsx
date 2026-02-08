@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart,
@@ -17,7 +18,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { useSocialStore } from "./useSocialStore";
+import { useFeedStore } from "./useFeedStore";
+import { useSocialStore } from "./useSocialStore";  // Keep for like/bookmark state
 import { QuizOverlay } from "./QuizOverlay";
 import { CommentDrawer } from "./CommentDrawer";
 import { cn } from "@/lib/utils";
@@ -41,19 +43,37 @@ const slideVariants = {
   }),
 };
 
-export function ReelPlayer() {
+interface ReelPlayerProps {
+  initialReelId?: string;
+}
+
+export function ReelPlayer({ initialReelId }: ReelPlayerProps = {}) {
+  const router = useRouter();
+  const pathname = usePathname();
   const { toast } = useToast();
-  const store = useSocialStore();
+  
+  // Feed store for reel data and navigation
+  const feedStore = useFeedStore();
   const {
-    currentReelIndex,
-    likedReels,
-    bookmarkedReels,
+    getCurrentReel,
     nextReel,
     prevReel,
+    loadInitialFeed,
+    navigateToReel,
+    feedBuffer,
+    currentBufferIndex,
+  } = feedStore;
+  
+  // Social store for likes/bookmarks
+  const socialStore = useSocialStore();
+  const {
+    likedReels,
+    bookmarkedReels,
     toggleLike,
     toggleBookmark,
     deleteReel,
-  } = store;
+  } = socialStore;
+  
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [showCommentDrawer, setShowCommentDrawer] = useState(false);
   const wheelAccumRef = useRef(0);
@@ -71,8 +91,8 @@ export function ReelPlayer() {
     prevReel();
   }, [prevReel]);
 
-  const currentReel = store.getCurrentReel();
-  const filteredReels = store.getFilteredReels();
+  const currentReel = getCurrentReel();
+  const filteredReels = feedBuffer;  // Use feedBuffer instead of getFilteredReels()
 
   const [isLiked, setIsLiked] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
@@ -114,6 +134,38 @@ export function ReelPlayer() {
       quizTriggeredRef.current = false;
     }
   }, [currentReel, likedReels, bookmarkedReels]);
+
+  // Load initial feed on mount
+  useEffect(() => {
+    if (initialReelId) {
+      // Deep link: Navigate to specific reel
+      navigateToReel(initialReelId);
+    } else if (feedBuffer.length === 0) {
+      // Normal feed: Load initial page
+      loadInitialFeed();
+    }
+  }, [initialReelId, feedBuffer.length, loadInitialFeed, navigateToReel]);
+
+  // Sync URL with current reel (debounced)
+  useEffect(() => {
+    if (!currentReel || !pathname) return;
+    
+    // Only update URL if we're in the feed or already on a reel page
+    const isReelPage = pathname.startsWith("/soft/reels/");
+    const isFeedPage = pathname === "/soft";
+    
+    if (!isReelPage && !isFeedPage) return;
+
+    // Debounce URL updates to avoid excessive history pollution
+    const timeoutId = setTimeout(() => {
+      const targetUrl = `/soft/reels/${currentReel.id}`;
+      if (pathname !== targetUrl) {
+        router.replace(targetUrl, { scroll: false });
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [currentReel, pathname, router]);
 
   // Sync muted state with video element when reel changes
   useEffect(() => {
@@ -287,12 +339,11 @@ export function ReelPlayer() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleNextReel, handlePrevReel]);
 
-  // Wheel/touchpad scroll for reels (한 번 스크롤에 최대 한 개만 넘어가도록 쿨다운 적용)
-  // Wheel handler: use non-passive listener to avoid "Unable to preventDefault inside passive event listener"
+  // Wheel/touchpad scroll for reels
   const handleWheel = useCallback(
     (e: WheelEvent) => {
-      const canGoNext = currentReelIndex < filteredReels.length - 1;
-      const canGoPrev = currentReelIndex > 0;
+      const canGoNext = currentBufferIndex < feedBuffer.length - 1;
+      const canGoPrev = currentBufferIndex > 0;
       if (!canGoNext && !canGoPrev) return;
 
       const now = Date.now();
@@ -315,12 +366,12 @@ export function ReelPlayer() {
         wheelAccumRef.current = 0;
       }
     },
-    [handleNextReel, handlePrevReel, currentReelIndex, filteredReels.length]
+    [handleNextReel, handlePrevReel, currentBufferIndex, feedBuffer.length]
   );
 
   useEffect(() => {
     wheelAccumRef.current = 0;
-  }, [currentReelIndex]);
+  }, [currentBufferIndex]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -603,7 +654,7 @@ export function ReelPlayer() {
         {/* Reel Counter */}
         <div className="absolute top-20 right-4 z-20">
           <div className="rounded-full bg-background/50 backdrop-blur-sm px-3 py-1 text-xs text-white">
-            {currentReelIndex + 1} / {filteredReels.length}
+            {currentBufferIndex + 1} / {feedBuffer.length}
           </div>
         </div>
 
@@ -658,7 +709,7 @@ export function ReelPlayer() {
       </div>
 
       {/* Navigation Arrows - Outside main container for YouTube Shorts style */}
-      {currentReelIndex > 0 && (
+      {currentBufferIndex > 0 && (
         <Button
           variant="ghost"
           size="icon"
@@ -669,7 +720,7 @@ export function ReelPlayer() {
         </Button>
       )}
 
-      {currentReelIndex < filteredReels.length - 1 && (
+      {currentBufferIndex < feedBuffer.length - 1 && (
         <Button
           variant="ghost"
           size="icon"

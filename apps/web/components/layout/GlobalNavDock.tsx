@@ -2,16 +2,19 @@
 
 import { useState } from "react";
 import { Flame, Sparkles, Bell, Settings } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/lib/store";
 import { ProfileMenu } from "@/components/ProfileMenu";
 import { UploadReelDialog } from "@/components/UploadReelDialog";
 
 export function GlobalNavDock() {
-  const { viewMode, setViewMode } = useAppStore();
+  const pathname = usePathname();
+  const isHardMode = pathname?.startsWith("/hard");
+  const isSoftMode = pathname?.startsWith("/soft");
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
 
   return (
@@ -40,17 +43,18 @@ export function GlobalNavDock() {
           {/* Fire (Streak) - Hard View */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setViewMode("hard")}
-                className={cn(
-                  "h-9 w-9 rounded-lg hover:bg-accent transition-colors",
-                  viewMode === "hard" && "bg-accent"
-                )}
-              >
-                <Flame className="h-5 w-5 text-orange-500" />
-              </Button>
+              <Link href="/hard">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-9 w-9 rounded-lg hover:bg-accent transition-colors",
+                    isHardMode && "bg-accent"
+                  )}
+                >
+                  <Flame className="h-5 w-5 text-orange-500" />
+                </Button>
+              </Link>
             </TooltipTrigger>
             <TooltipContent side="right">
               <p>Hard-Basic View (Workspace)</p>
@@ -60,17 +64,18 @@ export function GlobalNavDock() {
           {/* Sparkles - Soft View (Reels) */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setViewMode("soft")}
-                className={cn(
-                  "h-9 w-9 rounded-lg hover:bg-accent transition-colors",
-                  viewMode === "soft" && "bg-accent"
-                )}
-              >
-                <Sparkles className="h-5 w-5 text-purple-500" />
-              </Button>
+              <Link href="/soft">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-9 w-9 rounded-lg hover:bg-accent transition-colors",
+                    isSoftMode && "bg-accent"
+                  )}
+                >
+                  <Sparkles className="h-5 w-5 text-purple-500" />
+                </Button>
+              </Link>
             </TooltipTrigger>
             <TooltipContent side="right">
               <p>Soft View (Reels)</p>

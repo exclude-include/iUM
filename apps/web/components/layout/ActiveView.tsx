@@ -2,9 +2,7 @@
 
 import { ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useAppStore } from "@/lib/store";
-import { SoftLearningView } from "@/components/views/SoftLearningView";
-import { HardLearningView } from "@/components/views/HardLearningView";
+import { usePathname } from "next/navigation";
 
 interface ActiveViewProps {
   children: ReactNode;
@@ -79,36 +77,24 @@ const softViewVariants = {
 };
 
 export function ActiveView({ children }: ActiveViewProps) {
-  const { viewMode } = useAppStore();
+  const pathname = usePathname();
+  const isSoftMode = pathname?.startsWith("/soft");
+  const viewMode = isSoftMode ? "soft" : "hard";
 
   return (
     <div className="relative h-full w-full overflow-hidden">
       <AnimatePresence mode="wait" initial={false}>
-        {viewMode === "soft" ? (
-          <motion.div
-            key="soft-view"
-            variants={softViewVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="absolute inset-0 h-full w-full"
-            style={{ willChange: "transform, opacity, filter" }}
-          >
-            <SoftLearningView />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="hard-view"
-            variants={hardViewVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="absolute inset-0 h-full w-full"
-            style={{ willChange: "transform, opacity, filter" }}
-          >
-            <HardLearningView />
-          </motion.div>
-        )}
+        <motion.div
+          key={viewMode}
+          variants={isSoftMode ? softViewVariants : hardViewVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="absolute inset-0 h-full w-full"
+          style={{ willChange: "transform, opacity, filter" }}
+        >
+          {children}
+        </motion.div>
       </AnimatePresence>
     </div>
   );
