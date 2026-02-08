@@ -1,11 +1,41 @@
 "use client";
 
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, XCircle, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { ReelQuiz } from "@/types/api";
+
+function normalizeQuizMath(text: string): string {
+  if (!text || typeof text !== "string") return text;
+  let s = text.replace(/\$\s+/g, "$").replace(/\s+\$/g, "$").replace(/\\\$/g, "$");
+  const greekNames = "eta|beta|alpha|gamma|delta|theta|sigma|omega|mu|nu|pi|rho|tau|phi|chi|psi|epsilon|zeta|xi|lambda";
+  s = s.replace(new RegExp(`\\$\\s*(${greekNames})\\s*\\$`, "g"), (_, name: string) => `$\\${name}$`);
+  return s;
+}
+
+function QuizMathText({ text, className }: { text: string; className?: string }) {
+  const normalized = normalizeQuizMath(text);
+  return (
+    <span className={cn("quiz-math-inline", className)}>
+      <ReactMarkdown
+        remarkPlugins={[remarkMath]}
+        rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
+        components={{
+          p: ({ children }) => <span>{children}</span>,
+          span: ({ children }) => <span>{children}</span>,
+        }}
+      >
+        {normalized}
+      </ReactMarkdown>
+    </span>
+  );
+}
 
 interface QuizOverlayProps {
   quiz: ReelQuiz;
@@ -81,7 +111,7 @@ export function QuizOverlay({ quiz, onCorrectAnswer, onClose }: QuizOverlayProps
             Quiz Time!
           </p>
           <p className="text-lg font-semibold text-white leading-relaxed">
-            {quiz.question}
+            <QuizMathText text={quiz.question} />
           </p>
         </div>
 
@@ -110,7 +140,7 @@ export function QuizOverlay({ quiz, onCorrectAnswer, onClose }: QuizOverlayProps
               >
                 {option.key}
               </span>
-              <span className="text-white text-sm flex-1">{option.text}</span>
+              <span className="text-white text-sm flex-1"><QuizMathText text={option.text} /></span>
               {answerState !== "unanswered" && option.key === quiz.answer && (
                 <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
               )}
@@ -163,7 +193,7 @@ export function QuizOverlay({ quiz, onCorrectAnswer, onClose }: QuizOverlayProps
                   <Lightbulb className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="text-amber-400 font-medium text-sm">Hint</p>
-                    <p className="text-amber-200/80 text-sm">{quiz.explanation}</p>
+                    <p className="text-amber-200/80 text-sm"><QuizMathText text={quiz.explanation || ""} /></p>
                   </div>
                 </motion.div>
               )}
