@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Sparkles, BookOpen, MessageSquare, Flame } from "lucide-react";
+import { BookOpen, MessageSquare, Flame } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const fadeUp = {
@@ -137,7 +137,7 @@ export function OnboardingLanding() {
             ))}
           </motion.div>
 
-          {/* CTA Buttons */}
+          {/* CTA Buttons - text only */}
           <motion.div
             variants={fadeUp}
             className="flex flex-col items-center gap-4 sm:flex-row"
@@ -145,12 +145,9 @@ export function OnboardingLanding() {
             <Button
               asChild
               size="lg"
-              className="min-w-[168px] gap-2 rounded-xl bg-[#3b82f6] px-6 py-6 text-base font-medium shadow-md transition-all hover:bg-[#2563eb] hover:shadow-lg"
+              className="min-w-[168px] rounded-xl bg-[#3b82f6] px-6 py-6 text-base font-medium shadow-md transition-all hover:bg-[#2563eb] hover:shadow-lg"
             >
-              <Link href="/login?mode=signup">
-                <Sparkles className="h-4 w-4" />
-                Sign Up
-              </Link>
+              <Link href="/login?mode=signup">Sign Up</Link>
             </Button>
             <Button
               asChild
@@ -170,6 +167,22 @@ export function OnboardingLanding() {
           </motion.p>
         </motion.div>
       </div>
+
+      {/* Footer: powered by OPIK */}
+      <motion.footer
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.6, duration: 0.4 }}
+        className="relative z-10 flex shrink-0 items-center justify-center gap-2.5 py-8"
+      >
+        <span className="text-sm text-slate-500">powered by</span>
+        <span
+          className="inline-flex items-center rounded-lg bg-slate-700/90 px-2.5 py-1 font-semibold tracking-tight text-white"
+          style={{ letterSpacing: "0.08em", fontSize: "0.8rem" }}
+        >
+          OPIK
+        </span>
+      </motion.footer>
     </div>
   );
 }
