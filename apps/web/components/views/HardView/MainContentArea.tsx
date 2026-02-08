@@ -69,6 +69,7 @@ export function MainContentArea() {
   } = useAppStore();
 
   const { user } = useAuth();
+
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
@@ -570,8 +571,7 @@ export function MainContentArea() {
       equations: [],
       quiz_data: [],
       diagram_description: "",
-      mermaid_code: "",
-    });
+    } as any);
 
     // Link deep card to source block + selected text (for partial highlight) — do this immediately
     if (blockForBadge) {
@@ -688,7 +688,6 @@ export function MainContentArea() {
           equations: [],
           quiz_data: [],
           diagram_description: diagram_description,
-          mermaid_code: "",
           graph_data: graph_data,
           status: 'complete'
         });

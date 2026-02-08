@@ -19,7 +19,7 @@ export interface ChatMessage {
   // ✨ [추가] 사용자 피드백 상태
   feedback?: "like" | "dislike" | null;
   // ✨ [추가] 사용자 의도 (유형 선택 바)
-  intent?: "auto" | "concept" | "diagram" | "quiz";
+  intent?: "auto" | "concept" | "diagram" | "quiz" | "flashcard";
 }
 
 export interface ChatRequest {
@@ -59,13 +59,35 @@ export interface ReelQuiz {
   timestamp_seconds?: number; // When quiz appears in video (seconds)
 }
 
+// Graph Data for Reactflow
+export interface GraphNode {
+  id: string;
+  label: string;
+  type?: string; // 'input', 'output', 'default'
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
 export interface LearningUnitResponse {
   title: string;
-  type: "concept" | "math" | "code" | "summary" | "quiz";
-  content: string; // Markdown text. For diagrams, use mermaid code blocks like ```mermaid ... ```
+  type: "concept" | "math" | "code" | "summary" | "quiz" | "flashcard" | "report" | "table" | "file-preview" | "notes";
+  content: string; // Markdown text
   equations?: string[]; // LaTeX strings
-  diagram_description?: string; // Deprecated - use mermaid in content instead
-  quiz_data?: QuizQuestion[]; // Structured quiz questions (required when type is 'quiz')
+  diagram_description?: string;
+  graph_data?: GraphData;
+  quiz_data?: QuizQuestion[];
+  flashcard_data?: { front: string; back: string }[];
+  fromDeep?: boolean;
 }
 
 export interface ChatResponse {

@@ -7,11 +7,15 @@ import { MainContentArea } from "./HardView/MainContentArea";
 import { ChatSidebar } from "./HardView/ChatSidebar";
 import { SourcesPanel } from "./HardView/SourcesPanel";
 import { useAppStore } from "@/lib/store";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 
 export function HardLearningView() {
   const leftRef = useRef<ImperativePanelHandle>(null);
   const rightRef = useRef<ImperativePanelHandle>(null);
   const bottomRef = useRef<ImperativePanelHandle>(null);
+
+  // Initialize keyboard shortcuts
+  useKeyboardShortcuts();
 
   const {
     leftPanelMinimized,

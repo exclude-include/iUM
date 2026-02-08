@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, Loader2, Pencil, FileCode, FileImage, File, Download, Star, Paperclip, RefreshCw } from "lucide-react";
+import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, Loader2, Pencil, FileCode, FileImage, File, Download, Star, Paperclip, RefreshCw, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { HistoryTimeline } from "@/components/HistoryTimeline";
 import { BookmarksSection } from "./BookmarksSection";
+import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
 
 // Color presets for folders
 const FOLDER_COLORS = [
@@ -502,7 +503,10 @@ export function FolderSidebar() {
 
   // Separate files into regular files and .ium files
   const regularFiles = activeFolder?.files.filter(f => !isIumFile(f.name)) || [];
-  const iumFiles = activeFolder?.files.filter(f => isIumFile(f.name)) || [];
+  const iumFilesRaw = activeFolder?.files.filter(f => isIumFile(f.name)) || [];
+
+  // ✨ Deduplicate .ium files by ID (prevent errors where same file shows twice)
+  const iumFiles = Array.from(new Map(iumFilesRaw.map(f => [f.id, f])).values());
 
   // Handle file download
   const handleDownloadFile = (fileId: string, fileName: string) => {
@@ -536,7 +540,16 @@ export function FolderSidebar() {
 
   return (
     <div className="flex h-full flex-col bg-background border-r overflow-hidden">
-      <PanelGroup direction="vertical">
+      {/* Keyboard Shortcuts Button - Fixed at top */}
+      <div className="flex items-center justify-between px-3 py-2 border-b shrink-0">
+        <div className="flex items-center gap-2">
+          <Flame className="h-4 w-4 text-orange-500" />
+          <span className="text-xs font-medium text-muted-foreground">Streak: {userStreak?.currentStreak ?? 0} days</span>
+        </div>
+        <KeyboardShortcutsDialog />
+      </div>
+
+      <PanelGroup direction="vertical" className="flex-1">
         {/* Section 1: FOLDERS */}
         <Panel id="folders" defaultSize={20} minSize={10} className="flex flex-col">
           {/* FOLDERS Header */}

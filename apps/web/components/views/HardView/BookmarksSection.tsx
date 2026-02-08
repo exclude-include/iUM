@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useCallback } from "react";
-import { BookOpen, Code, Calculator, FileText, HelpCircle, BookmarkPlus } from "lucide-react";
+import { BookOpen, Code, Calculator, FileText, HelpCircle, BookmarkPlus, Layers, FileSpreadsheet, Eye, ClipboardList, StickyNote } from "lucide-react";
 import { useAppStore, type CellType, type BookmarkRef } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,16 @@ function CellTypeIcon({ type, className }: { type: CellType; className?: string 
       return <FileText className={iconClass} />;
     case "quiz":
       return <HelpCircle className={iconClass} />;
+    case "flashcard":
+      return <Layers className={iconClass} />;
+    case "report":
+      return <ClipboardList className={iconClass} />;
+    case "table":
+      return <FileSpreadsheet className={iconClass} />;
+    case "file-preview":
+      return <Eye className={iconClass} />;
+    case "notes":
+      return <StickyNote className={iconClass} />;
     default:
       return <FileText className={iconClass} />;
   }
@@ -46,7 +56,6 @@ export function BookmarksSection() {
         content: card.content,
         equations: card.equations,
         diagram_description: card.diagram_description,
-        mermaid_code: card.mermaid_code,
         graph_data: card.graph_data,
         quiz_data: card.quiz_data,
         fromDeep: true,

@@ -3,8 +3,8 @@
 import React, { forwardRef, useRef, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { QuizView } from "@/components/QuizView";
-import { Mermaid } from "@/components/Mermaid";
 import { FlowChart } from "@/components/FlowChart";
+import { FlashcardView } from "@/components/FlashcardView"; // ✨
 import { CellToolbar } from "./CellToolbar";
 import { cn } from "@/lib/utils";
 import { useAppStore, type Cell } from "@/lib/store";
@@ -23,17 +23,6 @@ const MARKDOWN_COMPONENTS_BASE = {
   li: ({ children }: any) => <li className="my-1.5 leading-relaxed pl-1">{children}</li>,
   code: (props: any) => {
     const { inline, className, children, ...rest } = props;
-    const match = /language-(\w+)/.exec(className || "");
-    const isMermaid = match && match[1] === "mermaid";
-    const content = String(children).replace(/\n$/, "");
-
-    if (!inline && isMermaid) {
-      return (
-        <div className="my-6 flex justify-center p-4 bg-white/50 dark:bg-black/20 rounded-lg border border-border/50 overflow-hidden">
-          <Mermaid chart={content} />
-        </div>
-      );
-    }
     return !inline ? (
       <code className={cn("block rounded bg-muted p-3 text-sm overflow-x-auto font-mono my-4", className)} {...rest}>{children}</code>
     ) : (
@@ -444,23 +433,152 @@ function CellContent({ cell, hideTitle, tabId }: { cell: Cell; hideTitle?: boole
     );
   }
 
-  // 2. Mermaid Diagram (Legacy)
-  if (cell.mermaid_code) {
+
+
+
+  // 2. Flashcard (New)
+  if (cell.type === "flashcard" && cell.flashcard_data && cell.flashcard_data.length > 0) {
     return (
       <div className="w-full">
-        <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>
-        {cell.diagram_description && (
-          <p className="text-sm text-muted-foreground mb-4">{cell.diagram_description}</p>
-        )}
-        <div className="my-6 flex justify-center p-4 bg-white/50 dark:bg-black/20 rounded-lg border border-border/50 overflow-hidden">
-          <Mermaid chart={cell.mermaid_code} />
-        </div>
-        {cell.content && <div className="mt-8"><CellMarkdownContent content={cell.content} cellId={cell.id} tabId={tabId} /></div>}
+        {!hideTitle && <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>}
+        <FlashcardView cards={cell.flashcard_data} />
+        {cell.content && <div className="mt-8 text-sm text-muted-foreground"><CellMarkdownContent content={cell.content} cellId={cell.id} tabId={tabId} /></div>}
       </div>
     );
   }
 
-  // 3. Default Text Content
+  // 2b. Flashcard (Error/Fallback)
+  if (cell.type === "flashcard") {
+    return (
+      <div className="w-full">
+        {!hideTitle && <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>}
+        <div className="p-4 border border-dashed rounded-lg bg-muted/30 text-center text-sm text-muted-foreground mb-4">
+          Unable to render flashcards. Displaying raw content below.
+        </div>
+        <div className="mt-1">
+          <CellMarkdownContent content={cell.content || ""} cellId={cell.id} tabId={tabId} />
+        </div>
+      </div>
+    );
+  }
+
+  // 3. Report (보고서) - Styled document with sections
+  if (cell.type === "report") {
+    return (
+      <div className="w-full">
+        {!hideTitle && (
+          <div className="flex items-center gap-2 mb-4 pb-3 border-b">
+            <div className="h-8 w-1 bg-primary rounded-full" />
+            <h2 className="text-xl font-bold text-foreground">{cell.title}</h2>
+          </div>
+        )}
+        <div className="prose prose-sm dark:prose-invert max-w-none">
+          <CellMarkdownContent content={cell.content || ""} cellId={cell.id} tabId={tabId} />
+        </div>
+      </div>
+    );
+  }
+
+  // 4. Table (표) - Structured table view
+  if (cell.type === "table") {
+    return (
+      <div className="w-full">
+        {!hideTitle && <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>}
+        {cell.table_data && cell.table_data.headers && cell.table_data.rows ? (
+          <div className="overflow-x-auto rounded-lg border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50">
+                <tr>
+                  {cell.table_data.headers.map((header, idx) => (
+                    <th key={idx} className="px-4 py-3 text-left font-semibold text-foreground border-b">
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {cell.table_data.rows.map((row, rowIdx) => (
+                  <tr key={rowIdx} className="hover:bg-muted/30 transition-colors">
+                    {row.map((cell, cellIdx) => (
+                      <td key={cellIdx} className="px-4 py-3 border-b border-border/50">
+                        {cell}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          // Fallback: render content as markdown table
+          <CellMarkdownContent content={cell.content || ""} cellId={cell.id} tabId={tabId} />
+        )}
+      </div>
+    );
+  }
+
+  // 5. File Preview (파일 미리보기)
+  if (cell.type === "file-preview") {
+    return (
+      <div className="w-full">
+        {!hideTitle && <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>}
+        {cell.file_preview ? (
+          <div className="rounded-lg border overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3 bg-muted/50 border-b">
+              <div className="h-8 w-8 rounded flex items-center justify-center bg-primary/10">
+                <span className="text-xs font-bold text-primary uppercase">
+                  {cell.file_preview.fileType.split('/').pop()?.slice(0, 3) || 'FILE'}
+                </span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm truncate">{cell.file_preview.fileName}</p>
+                <p className="text-xs text-muted-foreground">{cell.file_preview.fileType}</p>
+              </div>
+              {cell.file_preview.fileUrl && (
+                <a 
+                  href={cell.file_preview.fileUrl} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline"
+                >
+                  Open
+                </a>
+              )}
+            </div>
+            {cell.file_preview.content && (
+              <div className="p-4 max-h-[400px] overflow-auto">
+                <pre className="text-xs font-mono whitespace-pre-wrap">{cell.file_preview.content}</pre>
+              </div>
+            )}
+          </div>
+        ) : (
+          <CellMarkdownContent content={cell.content || ""} cellId={cell.id} tabId={tabId} />
+        )}
+      </div>
+    );
+  }
+
+  // 6. Notes (정리노트/핵심)
+  if (cell.type === "notes") {
+    return (
+      <div className="w-full">
+        {!hideTitle && (
+          <div className="flex items-center gap-2 mb-4">
+            <span className="px-2 py-1 rounded-md bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 text-xs font-semibold uppercase">
+              핵심 정리
+            </span>
+            <h2 className="text-lg font-bold text-foreground">{cell.title}</h2>
+          </div>
+        )}
+        <div className="relative pl-4 border-l-2 border-yellow-500/50">
+          <div className="prose prose-sm dark:prose-invert max-w-none">
+            <CellMarkdownContent content={cell.content || ""} cellId={cell.id} tabId={tabId} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full">
       {!hideTitle && <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>}

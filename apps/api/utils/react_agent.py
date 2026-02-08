@@ -39,8 +39,9 @@ Final Answer: [Final response to the user]
 3. For quiz requests, use the create_quiz_cell tool.
 4. For topics requiring prior knowledge, run check_prerequisites first.
 5. For file/document summarization, use the create_summary_cell tool.
-6. Always start each step with Thought.
-7. Your Final Answer should be a short confirmation like "I have generated the content in the workspace." followed by the actual content generation via tools.
+6. For flashcard requests, use the create_flashcard_cell tool. If the user provides text/JSON, pass it as 'context'.
+7. Always start each step with Thought.
+8. Your Final Answer should be a short confirmation like "I have generated the content in the workspace." followed by the actual content generation via tools.
 
 ## Example
 User: "Explain calculus and also create a quiz"
@@ -129,17 +130,39 @@ class ReactLearningAgent:
         action_name = action_match.group(1).strip()
         
         # Parse Action Input (JSON format)
-        input_match = re.search(r'Action Input:\s*(\{.*?\})', response, re.DOTALL)
+        # Improvement: greedy match for JSON to handle nested braces or multiple lines better
+        input_match = re.search(r'Action Input:\s*(\{.*\})', response, re.DOTALL)
         if input_match:
             try:
-                action_input = json.loads(input_match.group(1))
+                json_str = input_match.group(1)
+                # Cleaning: sometimes LLM adds backticks around JSON
+                if json_str.startswith("```json"):
+                    json_str = json_str[7:]
+                if json_str.endswith("```"):
+                    json_str = json_str[:-3]
+                
+                action_input = json.loads(json_str.strip())
             except json.JSONDecodeError:
+                print(f"[DEBUG] JSON Decode Error for action {action_name}. Raw: {input_match.group(1)}")
                 action_input = {}
         else:
             # Parse simple string input
             input_match = re.search(r'Action Input:\s*(.+?)(?:\n|$)', response)
             if input_match:
-                action_input = {"query": input_match.group(1).strip().strip('"')}
+                raw_input = input_match.group(1).strip().strip('"')
+                # If it looks like start of JSON but failed regex, it might be incomplete
+                if raw_input.startswith("{"):
+                    print(f"[DEBUG] Failed to parse JSON input for {action_name}: {raw_input}")
+                    action_input = {}
+                else:
+                    # Assume single argument "query" (legacy behavior) or "topic" based on tool?
+                    # Actually, for flashcards, if it's just a string, it's likely the topic.
+                    if action_name == "create_flashcard_cell":
+                         action_input = {"topic": raw_input}
+                    elif action_name == "search_knowledge":
+                         action_input = {"query": raw_input}
+                    else:
+                         action_input = {"topic": raw_input} # Default fallback
             else:
                 action_input = {}
         
@@ -251,7 +274,7 @@ class ReactLearningAgent:
                 return
             
             thought = self._extract_thought(response_text)
-            action_name = action["action"]
+            action_name = action["action"].strip()
             action_input = action["action_input"]
             
             # 4. Stream progress status with friendly message
@@ -269,12 +292,16 @@ class ReactLearningAgent:
                 observation = f"[Error] Tool execution failed: {str(e)}"
             
             # 6. Collect Learning Units and extract topic
-            if action_name in ["create_quiz_cell", "generate_concept_cell", "check_prerequisites", "create_summary_cell"]:
+            print(f"[DEBUG] Action: {action_name}")
+            if action_name in ["create_quiz_cell", "generate_concept_cell", "check_prerequisites", "create_summary_cell", "create_flashcard_cell"]:
                 # Determine unit type based on action name
+                print(f"[DEBUG] Collecting Unit: {action_name}")
                 if "quiz" in action_name:
                     unit_type = "quiz"
                 elif "summary" in action_name:
                     unit_type = "summary"
+                elif "flashcard" in action_name:
+                    unit_type = "flashcard"
                 else:
                     unit_type = "concept"
                 
@@ -372,11 +399,16 @@ class ReactLearningAgent:
         has_concept = any(u["type"] == "concept" for u in self.accumulated_learning_units)
         has_quiz = any(u["type"] == "quiz" for u in self.accumulated_learning_units)
         has_summary = any(u["type"] == "summary" for u in self.accumulated_learning_units)
+        has_flashcard = any(u["type"] == "flashcard" for u in self.accumulated_learning_units)
+        
+        print(f"[DEBUG] has_flashcard: {has_flashcard}, units: {len(self.accumulated_learning_units)}")
         
         topic = self.detected_topic or "your topic"
         
         if has_summary:
             return f"📋 I've created a summary of **{topic}**. Check the workspace!"
+        elif has_flashcard:
+            return f"🎴 I've created flashcards for **{topic}**. Check the workspace!"
         elif has_concept and has_quiz:
             return f"📚 I've prepared an explanation and quiz about **{topic}**! Check the workspace."
         elif has_quiz:
@@ -395,6 +427,7 @@ class ReactLearningAgent:
         combined_content = ""
         unit_type = "concept"
         quiz_data = []
+        flashcard_data = []
         graph_data = None # ✨ [Added]
         
         for unit in self.accumulated_learning_units:
@@ -412,6 +445,43 @@ class ReactLearningAgent:
                         quiz_data = json.loads(content)
                 except:
                     combined_content += f"\n\n## Quiz\n{unit['content']}"
+            elif unit["type"] == "flashcard":
+                unit_type = "flashcard"
+                try:
+                    flashcard_content = unit["content"]
+                    # Extract JSON if in code block
+                    json_match = re.search(r'```json\s*([\s\S]*?)\s*```', flashcard_content)
+                    if json_match:
+                        raw_data = json.loads(json_match.group(1))
+                    else:
+                        raw_data = json.loads(flashcard_content)
+                    
+                    # Ensure it's a list
+                    if isinstance(raw_data, list):
+                        flashcard_data = raw_data
+                    elif isinstance(raw_data, dict):
+                        # Try to find a list within the dict (common LLM behavior)
+                        for key, value in raw_data.items():
+                            if isinstance(value, list) and len(value) > 0 and "front" in value[0]:
+                                flashcard_data = value
+                                break
+                        if not flashcard_data:
+                            flashcard_data = raw_data.get("flashcards", [])
+                    
+                    if not isinstance(flashcard_data, list):
+                        print(f"[DEBUG] Flashcard data is not a list: {type(flashcard_data)}")
+                        raise ValueError("Flashcard data is not a list")
+                        
+                    if not flashcard_data:
+                        print("[DEBUG] Flashcard data is empty")
+                        raise ValueError("Flashcard data is empty")
+                        
+                    print(f"[DEBUG] Successfully parsed {len(flashcard_data)} flashcards")
+
+                except Exception as e:
+                    print(f"Error parsing flashcard data: {e}")
+                    flashcard_data = []
+                    combined_content += f"\n\n## Flashcards\n{unit['content']}"
             elif unit["type"] == "summary":
                 unit_type = "summary"
                 combined_content += f"\n\n{unit['content']}"
@@ -426,6 +496,7 @@ class ReactLearningAgent:
             "content": combined_content.strip(),
             "equations": [],
             "quiz_data": quiz_data if unit_type == "quiz" else [],
+            "flashcard_data": flashcard_data if unit_type == "flashcard" else [],
             "graph_data": graph_data # ✨ [Added] Pass graph data
         }
         

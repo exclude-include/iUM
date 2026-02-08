@@ -23,7 +23,24 @@ import {
   LogOut,
   User,
   RefreshCw,
+  BookOpen, // ✨
+  Layers,   // ✨
+  GitGraph, // ✨
+  HelpCircle, // ✨
+  Bot, // Added
+  MoreHorizontal, // Added
+  ChevronDown, // Added
+  ClipboardList, // Report
+  Table2, // Table
+  Eye, // File Preview
+  StickyNote, // Notes
 } from "lucide-react";
+
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -79,7 +96,7 @@ export function ChatSidebar() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [responseType, setResponseType] = useState<"auto" | "concept" | "diagram" | "quiz">("auto");
+  const [responseType, setResponseType] = useState<"auto" | "concept" | "diagram" | "quiz" | "flashcard" | "report" | "table" | "file-preview" | "notes">("auto");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -319,7 +336,30 @@ export function ChatSidebar() {
       // ✨ [핵심 수정] learning_unit이 없어도 항상 탭에 콘텐츠 추가
       if (response.learning_unit) {
         console.log("[ChatSidebar] Learning unit received:", response.learning_unit);
-        appendCellToActiveTab(response.learning_unit);
+
+        // ✨ [추가] "diagram" 요청 시 다이아그램이 없으면 기본 다이아그램 추가
+        const unit = response.learning_unit;
+        if (responseType === "diagram" && !unit.graph_data) {
+          console.log("[ChatSidebar] Diagram requested but not found, adding fallback.");
+          unit.graph_data = {
+            nodes: [
+              { id: "1", label: unit.title || "Concept", type: "input" },
+              { id: "2", label: "Key Component", type: "default" },
+              { id: "3", label: "Detail 1", type: "output" },
+              { id: "4", label: "Detail 2", type: "output" },
+            ],
+            edges: [
+              { id: "e1-2", source: "1", target: "2" },
+              { id: "e2-3", source: "2", target: "3" },
+              { id: "e2-4", source: "2", target: "4" },
+            ],
+          };
+          if (!unit.diagram_description) {
+            unit.diagram_description = "A default diagram illustrating the concept.";
+          }
+        }
+
+        appendCellToActiveTab(unit);
       }
 
       // ✨ [Removed] Fallback cell creation to prevent "AI Response" cells with generic text
@@ -398,9 +438,19 @@ export function ChatSidebar() {
       if (responseType === "concept") {
         contentToSend = `[Instruction: Provide a detailed conceptual explanation] ${contentToSend}`;
       } else if (responseType === "diagram") {
-        contentToSend = `[Instruction: Focus on providing a clear diagram. Keep text explanations concise] ${contentToSend}`;
+        contentToSend = `[Instruction: Provide a clear, visual diagram using Mermaid syntax (graph TD, etc.) or Flowchart JSON. Keep text explanations concise but meaningful.] ${contentToSend}`;
       } else if (responseType === "quiz") {
         contentToSend = `[Instruction: Provide a quiz on this topic] ${contentToSend}`;
+      } else if (responseType === "flashcard") {
+        contentToSend = `[Instruction: Create flashcards for this topic] ${contentToSend}`;
+      } else if (responseType === "report") {
+        contentToSend = `[Instruction: Create a comprehensive report with clear sections, headings, and organized content] ${contentToSend}`;
+      } else if (responseType === "table") {
+        contentToSend = `[Instruction: Organize information into a structured table format with clear headers and rows] ${contentToSend}`;
+      } else if (responseType === "file-preview") {
+        contentToSend = `[Instruction: Provide a file preview summary with key content highlights] ${contentToSend}`;
+      } else if (responseType === "notes") {
+        contentToSend = `[Instruction: Create concise study notes with key points and essential takeaways] ${contentToSend}`;
       }
     }
 
@@ -752,27 +802,79 @@ export function ChatSidebar() {
               </div>
             )}
 
-            {/* Response Type Selector */}
-            <div className="flex gap-1.5 mb-2 overflow-x-auto no-scrollbar py-0.5">
-              {[
-                { id: "auto", label: "자동" },
-                { id: "concept", label: "Concept" },
-                { id: "diagram", label: "Diagram" },
-                { id: "quiz", label: "Quiz" },
-              ].map((type) => (
-                <button
-                  key={type.id}
-                  onClick={() => setResponseType(type.id as any)}
-                  className={cn(
-                    "px-3 py-1 text-[11px] rounded-full border transition-all whitespace-nowrap",
-                    responseType === type.id
-                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
-                      : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
-                  )}
-                >
-                  {type.label}
-                </button>
-              ))}
+            {/* Response Type Selector (Dropdown) */}
+            <div className="mb-3 px-1">
+              <span className="text-[10px] text-muted-foreground font-medium mb-1.5 block">Response Type</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between px-3 font-normal">
+                    <div className="flex items-center gap-2">
+                      {(() => {
+                        const activeType = [
+                          { id: "auto", label: "Auto", icon: Sparkles },
+                          { id: "concept", label: "Concept", icon: BookOpen },
+                          { id: "flashcard", label: "Flashcard", icon: Layers },
+                          { id: "diagram", label: "Diagram", icon: GitGraph },
+                          { id: "quiz", label: "Quiz", icon: HelpCircle },
+                          { id: "report", label: "Report", icon: ClipboardList },
+                          { id: "table", label: "Table", icon: Table2 },
+                          { id: "file-preview", label: "Preview", icon: Eye },
+                          { id: "notes", label: "Notes", icon: StickyNote },
+                        ].find(t => t.id === responseType) || { id: "auto", label: "Auto", icon: Sparkles };
+                        const Icon = activeType.icon;
+                        return (
+                          <>
+                            <Icon className="h-4 w-4 text-primary" />
+                            <span>{activeType.label}</span>
+                          </>
+                        );
+                      })()}
+                    </div>
+                    <ChevronDown className="h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[280px] p-1" align="start">
+                  <div className="grid gap-1">
+                    {[
+                      { id: "auto", label: "Auto", icon: Sparkles, desc: "Let AI decide based on context" },
+                      { id: "concept", label: "Concept", icon: BookOpen, desc: "Detailed explanation text" },
+                      { id: "flashcard", label: "Flashcard", icon: Layers, desc: "Flip cards for memorization" },
+                      { id: "diagram", label: "Diagram", icon: GitGraph, desc: "Visual flowcharts & graphs" },
+                      { id: "quiz", label: "Quiz", icon: HelpCircle, desc: "Test your knowledge" },
+                      { id: "report", label: "Report", icon: ClipboardList, desc: "Comprehensive document with sections" },
+                      { id: "table", label: "Table", icon: Table2, desc: "Structured data in table format" },
+                      { id: "file-preview", label: "File Preview", icon: Eye, desc: "Preview uploaded file content" },
+                      { id: "notes", label: "Notes", icon: StickyNote, desc: "Concise key points & takeaways" },
+                    ].map((type) => {
+                      const isActive = responseType === type.id;
+                      const Icon = type.icon;
+
+                      return (
+                        <button
+                          key={type.id}
+                          onClick={() => setResponseType(type.id as any)}
+                          className={cn(
+                            "flex items-center gap-3 w-full p-2 rounded-md text-left transition-colors hover:bg-accent",
+                            isActive ? "bg-accent/70" : ""
+                          )}
+                        >
+                          <div className={cn(
+                            "flex items-center justify-center h-8 w-8 rounded-md border",
+                            isActive ? "bg-background border-primary text-primary" : "bg-background border-muted text-muted-foreground"
+                          )}>
+                            <Icon className="h-4 w-4" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="text-sm font-medium leading-none mb-1">{type.label}</div>
+                            <div className="text-[10px] text-muted-foreground">{type.desc}</div>
+                          </div>
+                          {isActive && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
 
             <div data-tutorial="tutorial-chat" className="flex gap-2">
@@ -795,6 +897,7 @@ export function ChatSidebar() {
 
               <div className="relative flex-1">
                 <Textarea
+                  data-chat-input
                   placeholder={
                     activeFolderId
                       ? `Message ${activeFolder?.name}...`

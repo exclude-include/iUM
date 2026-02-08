@@ -142,6 +142,12 @@ Write your response in markdown format."""
                 func=self._create_quiz_cell,
                 params=["topic", "num_questions(default=3)"]
             ),
+            "create_flashcard_cell": Tool(
+                name="create_flashcard_cell",
+                description="Generate flashcards. Use 'context' to pass specific text/content.",
+                func=self._create_flashcard_cell,
+                params=["topic", "num_cards", "context"]
+            ),
             "check_prerequisites": Tool(
                 name="check_prerequisites",
                 description="Analyze prerequisite knowledge needed to learn the topic",
@@ -173,6 +179,7 @@ Write your response in markdown format."""
         
         tool = self.tools[tool_name]
         try:
+            print(f"[DEBUG] Executing {tool_name} with kwargs: {kwargs}")
             result = await tool.func(**kwargs)
             return result
         except Exception as e:
@@ -194,7 +201,12 @@ Write your response in markdown format."""
                 folder_id=self.folder_id,
                 document_ids=self.document_ids
             )
-            docs = retriever.invoke(query)
+            
+            # Robust retrieval call (handle different LangChain/Retriever versions)
+            if hasattr(retriever, 'invoke'):
+                docs = retriever.invoke(query)
+            else:
+                docs = retriever.get_relevant_documents(query)
             
             if not docs:
                 return "No relevant documents found."
@@ -266,6 +278,41 @@ Please respond in the following JSON format:
         response = await self.llm.ainvoke(prompt)
         return response.content
     
+    async def _create_flashcard_cell(self, topic: str, num_cards: int = 5, context: str = None) -> str:
+        """Generate flashcards, optionally using provided context/text"""
+        if context:
+            prompt = f"""Create {num_cards} flashcards about '{topic}' based SPECIFICALLY on the following context:
+            
+            Context:
+            {context}
+            
+            IMPORTANT: Return ONLY a raw JSON array. Do not wrap it in an object.
+            Format:
+            ```json
+            [
+              {{
+                "front": "Term",
+                "back": "Definition"
+              }}
+            ]
+            ```"""
+        else:
+            prompt = f"""Create {num_cards} flashcards about '{topic}'.
+            
+            IMPORTANT: Return ONLY a raw JSON array. Do not wrap it in an object.
+            Format:
+            ```json
+            [
+              {{
+                "front": "Term",
+                "back": "Definition"
+              }}
+            ]
+            ```"""
+
+        response = await self.llm.ainvoke(prompt)
+        return response.content
+
     async def _check_prerequisites(self, topic: str) -> str:
         """Analyze prerequisite knowledge"""
         prompt = f"""Analyze the prerequisite knowledge needed to effectively learn '{topic}'.

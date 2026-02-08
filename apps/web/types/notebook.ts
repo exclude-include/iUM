@@ -4,7 +4,7 @@
  */
 
 // Cell types matching the existing store.ts definitions
-export type CellType = "concept" | "math" | "code" | "summary" | "quiz";
+export type CellType = "concept" | "math" | "code" | "summary" | "quiz" | "flashcard" | "report" | "table" | "file-preview" | "notes";
 
 export interface QuizOption {
   id: string;

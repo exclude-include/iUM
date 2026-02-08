@@ -11,7 +11,6 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import "katex/dist/katex.min.css";
 import { cn } from "@/lib/utils";
-import { Mermaid } from "@/components/Mermaid";
 
 export function DeepModeView() {
     const {
@@ -40,7 +39,6 @@ export function DeepModeView() {
         content: item.content,
         equations: item.equations,
         diagram_description: item.diagram_description,
-        mermaid_code: item.mermaid_code,
         graph_data: item.graph_data,
         quiz_data: item.quiz_data,
         fromDeep: true,
@@ -144,16 +142,6 @@ export function DeepModeView() {
                                             components={{
                                                 code: (props: any) => {
                                                     const { inline, className, children, ...rest } = props;
-                                                    const match = /language-(\w+)/.exec(className || "");
-                                                    const isMermaid = match && match[1] === "mermaid";
-
-                                                    if (!inline && isMermaid) {
-                                                        return (
-                                                            <div className="my-2 flex justify-center p-2 bg-white/50 dark:bg-black/20 rounded border overflow-hidden">
-                                                                <Mermaid chart={String(children).replace(/\n$/, "")} />
-                                                            </div>
-                                                        );
-                                                    }
                                                     return !inline ? (
                                                         <code className={cn("block bg-muted p-2 rounded text-xs my-2 overflow-x-auto", className)} {...rest}>
                                                             {children}

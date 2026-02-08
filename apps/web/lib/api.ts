@@ -221,7 +221,7 @@ Include:
 2. Detailed Explanation (Why? How?)
 3. Examples or Analogies
 4. Related Concepts
-5. Flowchart Data for Reactflow (NOT Mermaid). Provide strictly valid JSON:
+5. Flowchart Data for Reactflow. Provide strictly valid JSON:
    "graph_data": {
      "nodes": [{ "id": "1", "label": "Start", "type": "input" }, ...],
      "edges": [{ "id": "e1-2", "source": "1", "target": "2", "label": "next" }, ...]

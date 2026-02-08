@@ -127,21 +127,45 @@ class QuizQuestion(BaseModel):
     explanation: str = Field(..., description="Explanation for why the correct answer is correct")
 
 
+# ✨✨ [새로 추가된 클래스] Flashcard 모델 ✨✨
+class FlashcardItem(BaseModel):
+    """Represents a single flashcard"""
+    front: str
+    back: str
+
+
+# ✨✨ [새로 추가된 클래스] Table 모델 ✨✨
+class TableData(BaseModel):
+    """Represents structured table data"""
+    headers: List[str]
+    rows: List[List[str]]
+
+
+# ✨✨ [새로 추가된 클래스] File Preview 모델 ✨✨
+class FilePreviewData(BaseModel):
+    """Represents file preview data"""
+    fileName: str
+    fileType: str
+    fileUrl: Optional[str] = None
+    content: Optional[str] = None
+
+
 # ✨✨ [새로 추가된 클래스] Agent 응답용 전용 모델 ✨✨
 class LearningUnitResponse(BaseModel):
-    """
-    Represents a structured learning unit returned by the Agent.
-    This explicitly includes the 'content' field for Markdown text.
-    """
+    """Represents a structured learning unit that can be displayed in the workspace"""
     title: str
-    type: Literal["concept", "math", "code", "summary", "quiz"] = Field(..., description="Type of learning unit")
+    type: Literal["concept", "math", "code", "summary", "quiz", "flashcard", "report", "table", "file-preview", "notes"] = Field(..., description="Type of learning unit")
     
     # 🚨 가장 중요한 필드! 이 줄이 없어서 데이터가 사라졌던 것입니다.
-    content: str = Field(..., description="Markdown content. Includes mermaid diagrams.")
+    content: str = Field(..., description="Markdown content. For diagrams, use mermaid code blocks like ```mermaid ... ```")
     
-    equations: Optional[List[str]] = Field(None, description="LaTeX equation strings")
-    diagram_description: Optional[str] = Field(None, description="Deprecated")
-    quiz_data: Optional[List[QuizQuestion]] = Field(None, description="Structured quiz questions")
+    equations: Optional[List[str]] = Field(None, description="LaTeX equation strings for mathematical concepts")
+    diagram_description: Optional[str] = Field(None, description="Description for generating diagrams (deprecated - use mermaid in content)")
+    quiz_data: Optional[List[QuizQuestion]] = Field(None, description="Structured quiz questions (required when type is 'quiz')")
+    flashcard_data: Optional[List[FlashcardItem]] = Field(None, description="Structured flashcards (required when type is 'flashcard')")
+    table_data: Optional[TableData] = Field(None, description="Structured table data (required when type is 'table')")
+    file_preview: Optional[FilePreviewData] = Field(None, description="File preview data (required when type is 'file-preview')")
+    graph_data: Optional[Dict] = Field(None, description="ReactFlow graph data")
 
 
 class ChatMessage(BaseModel):
@@ -160,6 +184,9 @@ class ChatResponse(BaseModel):
     sources: Optional[List[Source]] = None
     reasoning_chain: Optional[List[str]] = None
     confidence_score: Optional[float] = None
+    
+    # ✨✨ [새로 추가된 클래스] Flashcard 모델 ✨✨
+    flashcards: Optional[List[FlashcardItem]] = None # Added this line to ChatResponse
     
     # ✨✨ [수정됨] 위에서 정의한 LearningUnitResponse를 사용하도록 변경 ✨✨
     learning_unit: Optional[LearningUnitResponse] = None

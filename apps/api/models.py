@@ -127,11 +127,18 @@ class QuizQuestion(BaseModel):
     explanation: str = Field(..., description="Explanation for why the correct answer is correct")
 
 
+# ✨✨ [새로 추가된 클래스] Flashcard 모델 ✨✨
+class FlashcardItem(BaseModel):
+    """Represents a single flashcard"""
+    front: str
+    back: str
+
+
 # ✨✨ [수정됨] 이름 충돌 방지를 위해 이름을 변경했습니다 (LearningUnit -> LearningUnitResponse) ✨✨
 class LearningUnitResponse(BaseModel):
     """Represents a structured learning unit that can be displayed in the workspace"""
     title: str
-    type: Literal["concept", "math", "code", "summary", "quiz"] = Field(..., description="Type of learning unit")
+    type: Literal["concept", "math", "code", "summary", "quiz", "flashcard"] = Field(..., description="Type of learning unit")
     
     # ✨ 여기에 content 필드가 확실하게 존재합니다!
     content: str = Field(..., description="Markdown content. For diagrams, use mermaid code blocks like ```mermaid ... ```")
@@ -139,6 +146,8 @@ class LearningUnitResponse(BaseModel):
     equations: Optional[List[str]] = Field(None, description="LaTeX equation strings for mathematical concepts")
     diagram_description: Optional[str] = Field(None, description="Description for generating diagrams (deprecated - use mermaid in content)")
     quiz_data: Optional[List[QuizQuestion]] = Field(None, description="Structured quiz questions (required when type is 'quiz')")
+    flashcard_data: Optional[List[FlashcardItem]] = Field(None, description="Structured flashcards (required when type is 'flashcard')")
+    graph_data: Optional[Dict] = Field(None, description="ReactFlow graph data")
 
 
 class ChatMessage(BaseModel):
@@ -158,5 +167,8 @@ class ChatResponse(BaseModel):
     reasoning_chain: Optional[List[str]] = None
     confidence_score: Optional[float] = None
     
-    # ✨✨ [수정됨] 위에서 변경한 새 클래스 이름(LearningUnitResponse)을 참조합니다 ✨✨
+    # ✨✨ [새로 추가된 클래스] Flashcard 모델 ✨✨
+    flashcards: Optional[List[FlashcardItem]] = None # Added this line to ChatResponse
+    
+    # ✨✨ [수정됨] 위에서 정의한 LearningUnitResponse를 사용하도록 변경 ✨✨
     learning_unit: Optional[LearningUnitResponse] = None

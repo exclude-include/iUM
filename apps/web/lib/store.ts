@@ -60,7 +60,7 @@ export interface GraphData {
 }
 
 // Cell type for notebook cells
-export type CellType = "concept" | "math" | "code" | "summary" | "quiz";
+export type CellType = "concept" | "math" | "code" | "summary" | "quiz" | "flashcard" | "report" | "table" | "file-preview" | "notes";
 
 // Cell interface - a single learning unit within a notebook tab
 export interface Cell {
@@ -70,9 +70,11 @@ export interface Cell {
   content: string; // Markdown text
   equations?: string[]; // LaTeX strings
   diagram_description?: string;
-  mermaid_code?: string;
   graph_data?: GraphData;
   quiz_data?: QuizQuestion[];
+  flashcard_data?: { front: string; back: string }[];
+  table_data?: { headers: string[]; rows: string[][] }; // ✨ For table type
+  file_preview?: { fileName: string; fileType: string; fileUrl?: string; content?: string }; // ✨ For file-preview type
   isBookmarked: boolean;
   createdAt: number;
   updatedAt?: number;
@@ -123,9 +125,9 @@ export interface LearningUnitInput {
   content: string; // Markdown text
   equations?: string[]; // LaTeX strings
   diagram_description?: string;
-  mermaid_code?: string;
   graph_data?: GraphData;
   quiz_data?: QuizQuestion[];
+  flashcard_data?: { front: string; back: string }[]; // ✨ [Fix] Include flashcard data from backend
   /** When true, cell is marked as added from Deep (for bookmark tag) */
   fromDeep?: boolean;
 }
@@ -146,25 +148,26 @@ export interface IumFile {
     content: string;
     equations?: string[];
     diagram_description?: string;
-    mermaid_code?: string;
     graph_data?: GraphData;
     quiz_data?: QuizQuestion[];
+    flashcard_data?: { front: string; back: string }[];
     isBookmarked: boolean;
     createdAt: number;
     updatedAt?: number;
+    fromDeep?: boolean;
   }>;
 }
 
 /** @deprecated Use LearningUnitInput for API inputs, Cell for internal state */
 export interface LearningUnit {
   title: string;
-  type: "concept" | "math" | "code" | "summary" | "quiz";
+  type: CellType;
   content: string; // Markdown text
   equations?: string[]; // LaTeX strings
   diagram_description?: string;
-  mermaid_code?: string;
   graph_data?: GraphData;
   quiz_data?: QuizQuestion[];
+  flashcard_data?: { front: string; back: string }[];
 }
 
 /** @deprecated Use NotebookTab instead */
@@ -559,9 +562,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       content: unit.content,
       equations: unit.equations,
       diagram_description: unit.diagram_description,
-      mermaid_code: unit.mermaid_code,
       graph_data,
       quiz_data: unit.quiz_data,
+      flashcard_data: unit.flashcard_data, // ✨ [Fix] Include flashcard data
       isBookmarked: false,
       createdAt: Date.now(),
       fromDeep: unit.fromDeep ?? false,
@@ -574,8 +577,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         tab.id === tabId
           ? {
             ...tab,
-            // ✨ Auto-title if first cell
-            title: (tab.cells.length === 0 && newCell.title) ? newCell.title : tab.title,
+            // ✨ Auto-title if first cell AND tab is NOT already saved (no syncInfo)
+            title: (tab.cells.length === 0 && newCell.title && !tab.syncInfo) ? newCell.title : tab.title,
             cells: [newCell, ...tab.cells],
             updatedAt: Date.now()
           }
@@ -604,9 +607,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (tab.id !== tabId) return tab;
         const cells = [...tab.cells];
 
-        // ✨ Auto-title logic
+        // ✨ Auto-title logic: only if first cell AND tab is NOT already saved
         let newTitle = tab.title;
-        if (cells.length === 0 && newCell.title) {
+        if (cells.length === 0 && newCell.title && !tab.syncInfo) {
           newTitle = newCell.title;
         }
 
@@ -651,9 +654,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     // ✨ Fix: Inherit folderId from source tab or use active folder
     const folderId = sourceTab?.folderId || state.activeFolderId || "folder-1";
 
+    // ✨ [Updated] Ensure unique title for new tab
+    let finalTitle = newTabTitle || cell.title || "Moved Cell";
+
+    // Only apply uniqueness check if user didn't explicitly provide a title (or if it's the default fallback)
+    if (!newTabTitle) {
+      let counter = 1;
+      const existingTitles = state.notebookTabs
+        .filter(t => t.folderId === folderId)
+        .map(t => t.title);
+
+      let candidateTitle = finalTitle;
+      while (existingTitles.includes(candidateTitle)) {
+        candidateTitle = `${finalTitle} (${counter})`;
+        counter++;
+      }
+      finalTitle = candidateTitle;
+    }
+
     const newTab: NotebookTab = {
       id: newTabId,
-      title: newTabTitle || cell.title || "Moved Cell",
+      title: finalTitle,
       folderId, // ✨ Added: So tab shows in tab bar
       cells: [{ ...cell }],
       createdAt: Date.now(),
@@ -705,10 +726,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().queueTabSync(tabId);
 
     // ✨ Auto-update Tab Title from First Cell
-    // If it's the first cell (index 0) and tab title is generic
+    // If it's the first cell (index 0) and tab title is generic AND tab is NOT already saved
     const state = get();
     const currentTab = state.notebookTabs.find((t) => t.id === tabId);
-    if (currentTab && currentTab.cells.length > 0 && currentTab.cells[0].id === cellId) {
+    if (currentTab && currentTab.cells.length > 0 && currentTab.cells[0].id === cellId && !currentTab.syncInfo) {
       const firstCell = currentTab.cells[0]; // The updated cell
       const genericTitles = ["Untitled", "New Tab", "New Notebook"];
       const isGeneric = genericTitles.some(t => currentTab.title.startsWith(t));
@@ -1201,7 +1222,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       content: unit.content,
       equations: unit.equations,
       diagram_description: unit.diagram_description,
-      mermaid_code: unit.mermaid_code,
       quiz_data: unit.quiz_data,
       isBookmarked: false,
       createdAt: Date.now(),
@@ -1406,17 +1426,28 @@ export const useAppStore = create<AppState>((set, get) => ({
         });
 
         if (!response.ok) {
-          console.warn(`Failed to fetch content for file ${file.name}`);
+          console.warn(`Failed to fetch content for file ${file.name} - marking as closed`);
+          // ✨ [Fix] Mark file as closed if it doesn't exist or can't be fetched
+          get().toggleFileOpen(file.id, false);
           continue;
         }
 
         const iumData = await response.json();
+
+        // ✨ [Fix] Validate that iumData has proper structure before loading
+        if (!iumData || !iumData.cells || !Array.isArray(iumData.cells)) {
+          console.warn(`Invalid ium data for file ${file.name} - marking as closed`);
+          get().toggleFileOpen(file.id, false);
+          continue;
+        }
 
         // Load the file as a tab with actual content
         get().loadTabFromIum(iumData, folderId, file.id, file.name);
         console.log(`✓ Restored tab: ${file.name}`);
       } catch (error) {
         console.warn(`Failed to restore tab for file ${file.name}:`, error);
+        // ✨ [Fix] Mark file as closed if restoration fails
+        get().toggleFileOpen(file.id, false);
       }
     }
   },
@@ -1575,8 +1606,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         content: cell.content,
         equations: cell.equations,
         diagram_description: cell.diagram_description,
-        mermaid_code: cell.mermaid_code,
+        graph_data: cell.graph_data, // ✨ [Fix] Include graph_data
         quiz_data: cell.quiz_data,
+        flashcard_data: cell.flashcard_data, // ✨ [Fix] Include flashcard_data
         isBookmarked: cell.isBookmarked,
         createdAt: cell.createdAt,
         updatedAt: cell.updatedAt,
@@ -1717,9 +1749,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         content: cell.content,
         equations: cell.equations,
         diagram_description: cell.diagram_description,
-        mermaid_code: cell.mermaid_code,
         graph_data: cell.graph_data, // ✨ [Fix] Correctly map graph_data
         quiz_data: cell.quiz_data,
+        flashcard_data: cell.flashcard_data, // ✨ [Fix] Include flashcard_data for flashcard cells
         isBookmarked: cell.isBookmarked || false,
         createdAt: cell.createdAt || Date.now(),
         updatedAt: cell.updatedAt,
