@@ -237,7 +237,14 @@ User Question: {question}
             
             # 6. Collect Learning Units and extract topic
             if action_name in ["create_quiz_cell", "generate_concept_cell", "check_prerequisites", "create_summary_cell"]:
-                unit_type = "quiz" if "quiz" in action_name else "concept"
+                # Determine unit type based on action name
+                if "quiz" in action_name:
+                    unit_type = "quiz"
+                elif "summary" in action_name:
+                    unit_type = "summary"
+                else:
+                    unit_type = "concept"
+                
                 self.accumulated_learning_units.append({
                     "type": unit_type,
                     "content": observation,
@@ -291,10 +298,13 @@ User Question: {question}
         # Count what was created
         has_concept = any(u["type"] == "concept" for u in self.accumulated_learning_units)
         has_quiz = any(u["type"] == "quiz" for u in self.accumulated_learning_units)
+        has_summary = any(u["type"] == "summary" for u in self.accumulated_learning_units)
         
         topic = self.detected_topic or "your topic"
         
-        if has_concept and has_quiz:
+        if has_summary:
+            return f"📋 I've created a summary of **{topic}**. Check the workspace!"
+        elif has_concept and has_quiz:
             return f"📚 I've prepared an explanation and quiz about **{topic}**! Check the workspace."
         elif has_quiz:
             return f"📝 Quiz ready! I've added questions about **{topic}** to test your understanding."
