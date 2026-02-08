@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useGooglePicker } from "@/hooks/useGooglePicker";
-import { Upload, Loader2, FileVideo, Link2, HardDrive, Plus, Trash2, HelpCircle } from "lucide-react";
+import { Upload, Loader2, FileVideo, Link2, HardDrive, Plus, Trash2, HelpCircle, Sparkles } from "lucide-react";
 import { useSocialStore } from "./SocialMode/useSocialStore";
 import { api } from "@/lib/api";
 import type { ReelQuiz, ReelQuizOption } from "@/types/api";
@@ -30,7 +30,7 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
   const [videoUrl, setVideoUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadMode, setUploadMode] = useState<"file" | "url" | "drive">("url");
+  const [uploadMode, setUploadMode] = useState<"file" | "url" | "drive" | "none">("none"); // Default to no video
   const [folderName, setFolderName] = useState("");
   const [hashtags, setHashtags] = useState<string[]>([]);
   const [hashtagInput, setHashtagInput] = useState("");
@@ -329,6 +329,43 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
         finalVideoUrl = publicUrl;
       }
 
+      // Use create-with-quiz endpoint for video-less reels
+      if (uploadMode === "none") {
+        const response = await api.reels.createWithQuiz({
+          user_id: user.id,
+          title: title.trim(),
+          description: description.trim() || undefined,
+          video_url: undefined, // No video URL
+          folder_name: folderName.trim() || undefined,
+          tags: hashtags.length > 0 ? hashtags : undefined,
+          quiz: quizData || undefined,
+        });
+
+        if (response.success) {
+          // Refresh reels from Supabase
+          await useSocialStore.getState().loadReelsFromSupabase();
+
+          toast({
+            title: "Success!",
+            description: "Your video-less reel has been created with a pastel background.",
+          });
+
+          // Reset form
+          setTitle("");
+          setDescription("");
+          setVideoUrl("");
+          setFile(null);
+          setFolderName("");
+          setHashtags([]);
+          setHashtagInput("");
+          resetQuizForm();
+          onClose();
+          return;
+        } else {
+          throw new Error(response.message || "Failed to create reel");
+        }
+      }
+
       // Create reel record in database
       // TODO: Create a 'reels' table in Supabase with columns:
       // - id, title, description, video_url, user_id, folder_id, created_at, likes, comments, tags, folder_name
@@ -415,7 +452,16 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
 
         <div className="mt-6 space-y-4">
           {/* Upload Mode Selection */}
-          <div className="flex gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant={uploadMode === "none" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setUploadMode("none")}
+              className="flex-1"
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              No Video
+            </Button>
             <Button
               variant={uploadMode === "url" ? "default" : "outline"}
               size="sm"
@@ -525,6 +571,21 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
           </div>
 
           {/* Conditional Upload Input */}
+          {uploadMode === "none" && (
+            <div className="space-y-2 p-4 bg-primary/5 border border-primary/20 rounded-lg">
+              <div className="flex items-start gap-2">
+                <Sparkles className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-primary">Video-less Reel</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Your reel will display with a randomly generated pastel background and centered title.
+                    Perfect for quiz-only content!
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {uploadMode === "url" && (
             <div className="space-y-2">
               <label className="text-sm font-medium">Video URL</label>
@@ -711,7 +772,14 @@ export function UploadReelDialog({ isOpen, onClose }: UploadReelDialogProps) {
           <Button
             className="w-full mt-6"
             onClick={uploadMode === "drive" ? handleGoogleDriveImport : handleUpload}
-            disabled={isUploading || !title.trim() || (uploadMode === "url" && !videoUrl) || (uploadMode === "file" && !file) || (uploadMode === "drive" && !driveUrl)}
+            disabled={
+              isUploading || 
+              !title.trim() || 
+              (uploadMode === "url" && !videoUrl) || 
+              (uploadMode === "file" && !file) || 
+              (uploadMode === "drive" && !driveUrl)
+              // No validation needed for uploadMode === "none"
+            }
           >
             {isUploading ? (
               <>

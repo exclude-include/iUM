@@ -381,6 +381,33 @@ export const reelsApi = {
       }),
     });
   },
+
+  /**
+   * Create a reel with optional quiz and optional video URL
+   * Used for video-less reels with pastel backgrounds
+   */
+  async createWithQuiz(options: {
+    user_id: string;
+    title: string;
+    description?: string;
+    video_url?: string;
+    folder_name?: string;
+    tags?: string[];
+    quiz?: any;
+  }): Promise<any> {
+    return fetchApi("/api/reels/create-with-quiz", {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: options.user_id,
+        title: options.title,
+        description: options.description,
+        video_url: options.video_url,
+        folder_name: options.folder_name,
+        tags: options.tags,
+        quiz: options.quiz,
+      }),
+    });
+  },
 };
 
 /**
