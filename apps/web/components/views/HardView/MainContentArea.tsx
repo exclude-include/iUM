@@ -68,6 +68,7 @@ export function MainContentArea() {
     reorderNotebookTabs, // ✨ Added for drag-and-drop
   } = useAppStore();
 
+  const { user } = useAuth();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
