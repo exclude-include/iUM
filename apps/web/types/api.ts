@@ -67,6 +67,7 @@ export interface LearningUnitResponse {
 
 export interface ChatResponse {
   message: string;
+  chat_message?: string; // Short status for chat sidebar (Cursor-like UX)
   conversation_id: string;
   sources?: Array<{
     id: string;

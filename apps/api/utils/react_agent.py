@@ -158,7 +158,8 @@ User Question: {question}
             {"status": "complete", "data": {...}}
         """
         self.scratchpad = ""
-        accumulated_learning_units = []
+        self.accumulated_learning_units = []
+        self.detected_topic = None  # Track main topic for chat message
         
         yield {
             "status": "progress", 
@@ -183,14 +184,21 @@ User Question: {question}
             # 2. Check for Final Answer
             final_answer = self._parse_final_answer(response_text)
             if final_answer:
+                # Generate appropriate chat message based on actions taken
+                chat_msg = self._generate_chat_message()
+                
+                # Build learning_unit from accumulated content
+                learning_unit = self._build_learning_unit()
+                
                 yield {
                     "status": "complete",
                     "data": {
-                        "message": final_answer,
+                        "message": chat_msg,  # Short status for chat sidebar
+                        "chat_message": chat_msg,  # Explicit field
                         "conversation_id": "react-session",
                         "sources": [],
                         "reasoning_chain": self._get_reasoning_chain(),
-                        "learning_units": accumulated_learning_units
+                        "learning_unit": learning_unit  # Structured for cell
                     }
                 }
                 return
@@ -227,12 +235,17 @@ User Question: {question}
             except Exception as e:
                 observation = f"[Error] Tool execution failed: {str(e)}"
             
-            # 6. Collect Learning Units (for quiz_cell or concept_cell)
-            if action_name in ["create_quiz_cell", "generate_concept_cell"]:
-                accumulated_learning_units.append({
-                    "type": "quiz" if "quiz" in action_name else "concept",
-                    "content": observation
+            # 6. Collect Learning Units and extract topic
+            if action_name in ["create_quiz_cell", "generate_concept_cell", "check_prerequisites", "create_summary_cell"]:
+                unit_type = "quiz" if "quiz" in action_name else "concept"
+                self.accumulated_learning_units.append({
+                    "type": unit_type,
+                    "content": observation,
+                    "title": action_input.get("topic", "Learning Content")
                 })
+                # Track topic for chat message
+                if action_input.get("topic"):
+                    self.detected_topic = action_input.get("topic")
             
             # 7. Update scratchpad
             self.scratchpad += f"\nThought: {thought}\n"
@@ -241,14 +254,18 @@ User Question: {question}
             self.scratchpad += f"Observation: {observation[:500]}...\n" if len(observation) > 500 else f"Observation: {observation}\n"
         
         # Max iterations reached
+        chat_msg = self._generate_chat_message() or "I've prepared some learning materials for you. Check the workspace!"
+        learning_unit = self._build_learning_unit()
+        
         yield {
             "status": "complete",
             "data": {
-                "message": "Maximum iterations reached. Here is my response based on the information gathered so far.",
+                "message": chat_msg,
+                "chat_message": chat_msg,
                 "conversation_id": "react-session",
                 "sources": [],
                 "reasoning_chain": self._get_reasoning_chain(),
-                "learning_units": accumulated_learning_units
+                "learning_unit": learning_unit
             }
         }
     
@@ -265,6 +282,64 @@ User Question: {question}
             chain = ["Direct response"]
         
         return chain
+    
+    def _generate_chat_message(self) -> str:
+        """Generate short status message for chat sidebar"""
+        if not self.accumulated_learning_units:
+            return "I've analyzed your question. Check the workspace for details!"
+        
+        # Count what was created
+        has_concept = any(u["type"] == "concept" for u in self.accumulated_learning_units)
+        has_quiz = any(u["type"] == "quiz" for u in self.accumulated_learning_units)
+        
+        topic = self.detected_topic or "your topic"
+        
+        if has_concept and has_quiz:
+            return f"📚 I've prepared an explanation and quiz about **{topic}**! Check the workspace."
+        elif has_quiz:
+            return f"📝 Quiz ready! I've added questions about **{topic}** to test your understanding."
+        elif has_concept:
+            return f"📚 I've created an explanation about **{topic}**. Check the workspace!"
+        else:
+            return "✅ Done! Check the workspace for the results."
+    
+    def _build_learning_unit(self) -> Optional[Dict[str, Any]]:
+        """Build structured learning unit for cell display"""
+        if not self.accumulated_learning_units:
+            return None
+        
+        # Combine all accumulated content into a single learning unit
+        combined_content = ""
+        unit_type = "concept"
+        quiz_data = []
+        
+        for unit in self.accumulated_learning_units:
+            if unit["type"] == "quiz":
+                unit_type = "quiz"
+                # Try to parse quiz JSON from content
+                try:
+                    content = unit["content"]
+                    # Extract JSON from markdown code block if present
+                    json_match = re.search(r'```json\s*([\s\S]*?)\s*```', content)
+                    if json_match:
+                        quiz_data = json.loads(json_match.group(1))
+                    else:
+                        # Try direct JSON parse
+                        quiz_data = json.loads(content)
+                except:
+                    combined_content += f"\n\n## Quiz\n{unit['content']}"
+            else:
+                combined_content += f"\n\n{unit['content']}"
+        
+        learning_unit = {
+            "title": self.detected_topic or "Learning Content",
+            "type": unit_type,
+            "content": combined_content.strip(),
+            "equations": [],
+            "quiz_data": quiz_data if unit_type == "quiz" else []
+        }
+        
+        return learning_unit
 
 
 async def query_with_react_agent(

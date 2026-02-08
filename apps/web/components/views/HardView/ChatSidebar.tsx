@@ -368,7 +368,8 @@ export function ChatSidebar() {
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
-        content: response.message,
+        // Use chat_message for short status (Cursor-like), fall back to message
+        content: response.chat_message || response.message,
         timestamp: new Date().toISOString(),
         sources: response.sources,
         reasoning_chain: response.reasoning_chain,
