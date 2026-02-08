@@ -58,7 +58,8 @@ export function ReelPlayer() {
   const [showCommentDrawer, setShowCommentDrawer] = useState(false);
   const wheelAccumRef = useRef(0);
   const lastWheelNavigateAt = useRef(0);
-  const slideDirectionRef = useRef(1); // 1 = next (slide up), -1 = prev (slide down)
+  const slideDirectionRef = useRef(1);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const handleNextReel = useCallback(() => {
     slideDirectionRef.current = 1;
@@ -81,9 +82,25 @@ export function ReelPlayer() {
   const [quizCompleted, setQuizCompleted] = useState(false);
   const [videoDuration, setVideoDuration] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [authorAvatarFallback, setAuthorAvatarFallback] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const quizTriggeredRef = useRef(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // author_avatar가 없을 때 API로 업로더 프로필 사진 조회 (설정에서 지정한 사진 반영)
+  useEffect(() => {
+    if (!currentReel?.authorUserId || currentReel.authorAvatar) {
+      setAuthorAvatarFallback(null);
+      return;
+    }
+    let cancelled = false;
+    import("@/lib/api").then(({ api }) => {
+      api.users.getUserMetadata(currentReel.authorUserId!).then((meta) => {
+        if (!cancelled && meta?.avatar_url) setAuthorAvatarFallback(meta.avatar_url);
+      }).catch(() => {});
+    });
+    return () => { cancelled = true; };
+  }, [currentReel?.id, currentReel?.authorUserId, currentReel?.authorAvatar]);
 
   // Update like/bookmark state when reel changes
   useEffect(() => {
@@ -255,8 +272,9 @@ export function ReelPlayer() {
   }, [handleNextReel, handlePrevReel]);
 
   // Wheel/touchpad scroll for reels (한 번 스크롤에 최대 한 개만 넘어가도록 쿨다운 적용)
+  // Wheel handler: use non-passive listener to avoid "Unable to preventDefault inside passive event listener"
   const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
+    (e: WheelEvent) => {
       const canGoNext = currentReelIndex < filteredReels.length - 1;
       const canGoPrev = currentReelIndex > 0;
       if (!canGoNext && !canGoPrev) return;
@@ -284,10 +302,16 @@ export function ReelPlayer() {
     [handleNextReel, handlePrevReel, currentReelIndex, filteredReels.length]
   );
 
-  // Reset wheel accumulation when reel changes
   useEffect(() => {
     wheelAccumRef.current = 0;
   }, [currentReelIndex]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, [handleWheel]);
 
   if (!currentReel) {
     return (
@@ -378,10 +402,10 @@ export function ReelPlayer() {
 
   return (
     <div className="relative flex h-full w-full flex-col items-center justify-center bg-muted/30">
-      {/* Main Container (Mobile Frame) - wheel for touchpad scroll */}
+      {/* Main Container (Mobile Frame) - wheel listener added in useEffect with passive: false */}
       <div
+        ref={containerRef}
         className="relative h-[90vh] max-h-[800px] w-full max-w-[400px] rounded-2xl bg-background shadow-2xl overflow-hidden"
-        onWheel={handleWheel}
       >
         <AnimatePresence initial={false} custom={slideDirectionRef.current}>
           <motion.div
@@ -473,11 +497,14 @@ export function ReelPlayer() {
           </Button>
         )}
 
-        {/* Bottom Left: Author Info (실제 설정에서 지정한 프로필 사진 반영) */}
+        {/* Bottom Left: Author Info (설정 프로필 사진 또는 API 조회 fallback) */}
         <div className="absolute bottom-20 left-4 z-20 text-white max-w-[60%]">
           <div className="flex items-center gap-2 mb-2">
             <Avatar className="h-8 w-8 border-2 border-white/30">
-              <AvatarImage src={currentReel.authorAvatar} alt={currentReel.author} />
+              <AvatarImage
+                src={currentReel.authorAvatar || authorAvatarFallback || undefined}
+                alt={currentReel.author}
+              />
               <AvatarFallback className="bg-white/20 text-xs font-bold">
                 {currentReel.author.charAt(0).toUpperCase()}
               </AvatarFallback>

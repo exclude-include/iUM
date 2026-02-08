@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime, timezone
 
-from utils.supabase_client import get_supabase_client, get_user_metadata
+from utils.supabase_client import get_supabase_client, get_user_metadata, get_user_id_from_token
 
 router = APIRouter()
 
@@ -27,25 +27,6 @@ class Comment(BaseModel):
     updated_at: str
     author_name: Optional[str] = None
     author_avatar: Optional[str] = None
-
-
-def get_user_id_from_token(authorization: str) -> str:
-    """Extract user_id from Supabase JWT token"""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-
-    token = authorization.replace("Bearer ", "")
-    supabase = get_supabase_client()
-
-    try:
-        # Verify and decode the JWT token
-        user_response = supabase.auth.get_user(token)
-        if not user_response or not user_response.user:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return user_response.user.id
-    except Exception as e:
-        print(f"Token verification error: {e}")
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 @router.get("/{reel_id}", response_model=List[Comment])
@@ -144,8 +125,14 @@ async def create_comment(
     except HTTPException:
         raise
     except Exception as e:
+        err_msg = str(e)
         print(f"Error creating comment: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to create comment: {str(e)}")
+        if "42501" in err_msg or "row-level security" in err_msg.lower():
+            raise HTTPException(
+                status_code=503,
+                detail="RLS violation: set SUPABASE_SERVICE_KEY to the service_role (secret) key in Render, not the anon key. Supabase Dashboard > Project Settings > API > service_role.",
+            )
+        raise HTTPException(status_code=500, detail=f"Failed to create comment: {err_msg}")
 
 
 @router.delete("/{comment_id}")

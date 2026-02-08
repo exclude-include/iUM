@@ -447,6 +447,15 @@ export const reelInteractionsApi = {
   },
 };
 
+/**
+ * Users API - public metadata for display (e.g. reel author avatar)
+ */
+export const usersApi = {
+  getUserMetadata: async (userId: string): Promise<{ name?: string; avatar_url?: string }> => {
+    return fetchApi<{ name?: string; avatar_url?: string }>(`/api/users/${userId}/metadata`);
+  },
+};
+
 // Export all APIs as a single object for convenience
 export const api = {
   chat: chatApi,
@@ -456,5 +465,6 @@ export const api = {
   reels: reelsApi,
   comments: commentsApi,
   reelInteractions: reelInteractionsApi,
+  users: usersApi,
   health: checkHealth,
 };
