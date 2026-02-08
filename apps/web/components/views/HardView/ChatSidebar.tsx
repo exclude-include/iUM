@@ -1,14 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import {
   Send,
   Loader2,
   MessageCircle,
-  LogOut,
-  User,
-  Settings,
   ThumbsUp,
   ThumbsDown,
   Sparkles,
@@ -23,16 +19,20 @@ import {
   Check,
   Paperclip,
   X,
+  Settings,
+  LogOut,
+  User,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { ChatMessage } from "@/types/api";
@@ -66,10 +66,28 @@ export function ChatSidebar() {
     setSidebarMode, // ✨
   } = useAppStore();
 
-  const router = useRouter();
   const { toast } = useToast();
+  const router = useRouter();
   const supabase = createClient();
   const activeFolder = knowledgeFolders.find((f) => f.id === activeFolderId);
+
+  const getInitials = (email: string) => {
+    if (!email) return "U";
+    const part = email.split("@")[0];
+    return part ? part.slice(0, 2).toUpperCase() : "U";
+  };
+
+  const handleSignOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      toast({ title: "Signed out", description: "You have been successfully signed out." });
+      router.push("/");
+      router.refresh();
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.message || "Failed to sign out", variant: "destructive" });
+    }
+  };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   // ✨ [수정] 단순 boolean 대신 현재 진행 상태 메시지를 저장 (null이면 로딩 아님)
@@ -116,28 +134,6 @@ export function ChatSidebar() {
 
     return () => subscription.unsubscribe();
   }, [supabase]);
-
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-      toast({
-        title: "Signed out",
-        description: "You have been signed out successfully.",
-      });
-      router.push("/login");
-      router.refresh();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to sign out",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const getInitials = (email: string) => {
-    return email.charAt(0).toUpperCase();
-  };
 
   // Load messages from active folder's chat history
   useEffect(() => {
@@ -745,7 +741,31 @@ export function ChatSidebar() {
               </div>
             )}
 
-            <div className="flex gap-2">
+            {/* Save Progress (from hover-onboarding) */}
+            {messages.filter((m) => m.role === "user").length >= 1 && !isSaved && (
+              <div className="flex justify-end mb-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-[10px] px-2"
+                  onClick={generateStudySummary}
+                  disabled={isGeneratingSummary || isSaved}
+                >
+                  {isGeneratingSummary ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      Saving...
+                    </>
+                  ) : isSaved ? (
+                    "Saved!"
+                  ) : (
+                    "Save Progress"
+                  )}
+                </Button>
+              </div>
+            )}
+
+            <div data-tutorial="tutorial-chat" className="flex gap-2">
               <input
                 type="file"
                 ref={fileInputRef}

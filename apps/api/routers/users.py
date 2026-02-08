@@ -1,13 +1,34 @@
 """
 Users Router
 Exposes public user metadata (name, avatar_url) for display (e.g. reel author profile)
+and account deletion (admin delete user).
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Header
+from typing import Optional
 
-from utils.supabase_client import get_user_metadata
+from utils.supabase_client import get_user_metadata, get_user_id_from_token, get_supabase_client
 
 router = APIRouter()
+
+
+@router.post("/delete-account")
+async def delete_account(authorization: Optional[str] = Header(None, alias="Authorization")):
+    """
+    Delete the authenticated user's account. Requires Bearer token.
+    Uses Supabase Admin API to remove the user from auth.users.
+    """
+    if not authorization or not authorization.strip().startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+    try:
+        user_id = get_user_id_from_token(authorization)
+        supabase = get_supabase_client()
+        supabase.auth.admin.delete_user(user_id)
+        return {"success": True, "message": "Account deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/{user_id}/metadata")

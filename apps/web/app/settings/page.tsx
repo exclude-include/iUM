@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
+import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,14 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, User, Bell, Lock, Palette, Trash2, Loader2, Camera, Save } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
@@ -23,9 +32,16 @@ export default function SettingsPage() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [pushNotifications, setPushNotifications] = useState(true);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { toast } = useToast();
+
+  // String the user must type to confirm deletion (display name or email)
+  const deleteConfirmLabel =
+    (displayName && displayName.trim()) || user?.email || "";
 
   useEffect(() => {
     // Check authentication
@@ -168,7 +184,7 @@ export default function SettingsPage() {
         description: "You have been successfully signed out.",
       });
       
-      router.push("/login");
+      router.push("/");
       router.refresh();
     } catch (error: any) {
       toast({
@@ -179,16 +195,47 @@ export default function SettingsPage() {
     }
   };
 
+  const handleOpenDeleteDialog = () => {
+    setDeleteConfirmText("");
+    setDeleteDialogOpen(true);
+  };
+
   const handleDeleteAccount = async () => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete your account? This action cannot be undone."
-    );
-    
-    if (confirmed) {
+    if (deleteConfirmText.trim() !== deleteConfirmLabel || !user) return;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
       toast({
-        title: "Account deletion",
-        description: "Please contact support to delete your account.",
+        title: "Error",
+        description: "You must be signed in to delete your account.",
+        variant: "destructive",
       });
+      return;
+    }
+
+    setIsDeletingAccount(true);
+    try {
+      await api.users.deleteAccount(session.access_token);
+      setDeleteDialogOpen(false);
+      await supabase.auth.signOut();
+      toast({
+        title: "Account deleted",
+        description: "Your account has been permanently deleted.",
+      });
+      router.push("/");
+      router.refresh();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "";
+      const is404 = message.includes("404") || message.toLowerCase().includes("not found");
+      toast({
+        title: "Deletion failed",
+        description: is404
+          ? "Account deletion is not available on this server yet. Please ensure the API (ium-api) has been redeployed with the latest code and try again."
+          : message || "Could not delete account. Try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeletingAccount(false);
     }
   };
 
@@ -435,16 +482,70 @@ export default function SettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button 
-              variant="destructive" 
+            <Button
+              variant="destructive"
               className="w-full"
-              onClick={handleDeleteAccount}
+              onClick={handleOpenDeleteDialog}
             >
               Delete Account
             </Button>
           </CardContent>
         </Card>
       </div>
+
+      {/* Delete account confirmation dialog (GitHub-style: type name to confirm) */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Delete account</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. To confirm, type{" "}
+              <span className="font-mono font-semibold text-foreground">
+                {deleteConfirmLabel}
+              </span>{" "}
+              below.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="delete-confirm">Confirm by typing your name or email</Label>
+            <Input
+              id="delete-confirm"
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder={deleteConfirmLabel}
+              className="font-mono"
+              autoComplete="off"
+              disabled={isDeletingAccount}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={isDeletingAccount}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteAccount}
+              disabled={
+                isDeletingAccount || deleteConfirmText.trim() !== deleteConfirmLabel
+              }
+            >
+              {isDeletingAccount ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting…
+                </>
+              ) : (
+                "Delete account"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

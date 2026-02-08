@@ -488,11 +488,20 @@ export const reelInteractionsApi = {
 };
 
 /**
- * Users API - public metadata for display (e.g. reel author avatar)
+ * Users API - public metadata and account actions
  */
 export const usersApi = {
   getUserMetadata: async (userId: string): Promise<{ name?: string; avatar_url?: string }> => {
     return fetchApi<{ name?: string; avatar_url?: string }>(`/api/users/${userId}/metadata`);
+  },
+
+  deleteAccount: async (accessToken: string): Promise<{ success: boolean; message: string }> => {
+    return fetchApi<{ success: boolean; message: string }>("/api/users/delete-account", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
   },
 };
 

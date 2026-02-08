@@ -625,6 +625,7 @@ export function MainContentArea() {
 
             {/* New Tab Button */}
             <Button
+              data-tutorial="tutorial-main-new-tab"
               variant="ghost"
               size="icon"
               className="h-7 w-7 flex-shrink-0"
