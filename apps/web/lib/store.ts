@@ -916,17 +916,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   setRightPanelMinimized: (minimized) => set({ rightPanelMinimized: minimized }),
   setBottomPanelMinimized: (minimized) => set({ bottomPanelMinimized: minimized }),
 
-  // ✨ [추가] 파일 목록 동기화 액션
+  // ✨ [추가] 파일 목록 동기화 액션 (Supabase 단일 클라이언트 사용으로 다중 인스턴스 방지)
   fetchFiles: async () => {
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-      // Get session token from Supabase
-      const { createClient } = await import("@supabase/supabase-js");
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
+      const { supabase } = await import("@/lib/supabase/client");
       const { data: { session } } = await supabase.auth.getSession();
 
       // If not logged in, don't try to fetch

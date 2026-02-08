@@ -221,16 +221,18 @@ export function FolderSidebar() {
 
         if (response.ok) {
           const folder = await response.json();
-          // Add folder to local state with DB id
-          createFolder(folder.name, folder.color);
-          // Refresh to get the actual DB folder
-          fetchFiles();
+          // Reload folders from Supabase so the new folder (with DB id) is in state and persists on refresh
+          await fetchFiles();
+          // Select the newly created folder (use DB id from response)
+          if (folder?.id) setActiveFolder(folder.id);
           toast({
             title: "Folder created",
-            description: `"${folder.name}" has been created.`,
+            description: `"${folder.name}" has been created and saved to the cloud.`,
           });
         } else {
-          throw new Error("Failed to create folder");
+          const errBody = await response.json().catch(() => ({}));
+          const msg = errBody?.detail || response.statusText || "Failed to create folder";
+          throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
         }
       }
     } catch (error) {

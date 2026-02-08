@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Header
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from models import Workspace, Folder, Tab, HistoryItem, Document
-from utils.supabase_client import get_supabase_client, get_storage_client
+from utils.supabase_client import get_supabase_client, get_storage_client, get_user_id_from_token
 
 router = APIRouter()
 
@@ -19,25 +19,6 @@ class FolderUpdate(BaseModel):
 
 class FileUpdate(BaseModel):
     name: Optional[str] = None
-
-
-def get_user_id_from_token(authorization: str) -> str:
-    """Extract user_id from Supabase JWT token"""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-
-    token = authorization.replace("Bearer ", "")
-    supabase = get_supabase_client()
-
-    try:
-        # Verify and decode the JWT token
-        user_response = supabase.auth.get_user(token)
-        if not user_response or not user_response.user:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return user_response.user.id
-    except Exception as e:
-        print(f"Token verification error: {e}")
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 @router.get("/{workspace_id}", response_model=Workspace)
@@ -103,8 +84,8 @@ async def get_folders(
         folders_response = supabase.table("folders").select("*").eq("user_id", user_id).execute()
         folders = folders_response.data or []
 
-        # Get user's files from DB
-        files_response = supabase.table("files").select("*").execute()
+        # Get user's files from DB (filter by user_id)
+        files_response = supabase.table("files").select("*").eq("user_id", user_id).execute()
         files = files_response.data or []
 
         return {
@@ -138,15 +119,21 @@ async def create_folder(
             "color": folder.color
         }).execute()
 
-        if response.data:
+        if response.data and len(response.data) > 0:
             return response.data[0]
-        raise HTTPException(status_code=500, detail="Failed to create folder")
+        raise HTTPException(status_code=500, detail="Failed to create folder (no data returned)")
 
     except HTTPException:
         raise
     except Exception as e:
+        err_msg = str(e)
         print(f"Error creating folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        if "relation \"folders\" does not exist" in err_msg or "does not exist" in err_msg.lower():
+            raise HTTPException(
+                status_code=503,
+                detail="Folders table not set up. Run Supabase migration: apps/web/supabase/migrations/003_create_folders_table.sql",
+            )
+        raise HTTPException(status_code=500, detail=f"Failed to create folder: {err_msg}")
 
 
 @router.put("/{workspace_id}/folders/{folder_id}")

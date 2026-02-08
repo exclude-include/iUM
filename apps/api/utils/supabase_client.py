@@ -9,6 +9,50 @@ from typing import Optional
 _supabase_client: Optional[Client] = None
 
 
+def get_user_id_from_token(authorization: str) -> str:
+    """
+    Extract user_id from Supabase JWT token.
+    Prefer local JWT decode (SUPABASE_JWT_SECRET); fallback to auth.get_user().
+    """
+    if not authorization or not authorization.startswith("Bearer "):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+
+    token = authorization.replace("Bearer ", "").strip()
+    jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
+
+    if jwt_secret:
+        try:
+            import jwt
+            payload = jwt.decode(
+                token,
+                jwt_secret,
+                audience="authenticated",
+                algorithms=["HS256"],
+                options={"verify_exp": True},
+            )
+            user_id = payload.get("sub")
+            if user_id:
+                return user_id
+        except Exception as e:
+            print(f"JWT decode error: {e}")
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    # Fallback: use Supabase auth.get_user (may not work with service role client)
+    supabase = get_supabase_client()
+    try:
+        user_response = supabase.auth.get_user(token)
+        if not user_response or not user_response.user:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return user_response.user.id
+    except Exception as e:
+        print(f"Token verification error: {e}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
 def get_supabase_client() -> Client:
     """
     Get or create Supabase client instance
