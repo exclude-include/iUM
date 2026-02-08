@@ -13,6 +13,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { QuizOverlay } from "./QuizOverlay";
+import { useFeedStore } from "./useFeedStore";
 // import type { Reel } from "@/types"; // Removed invalid import, using local ReelType
 
 // Temporary interface until we verify exact path of Reel type. 
@@ -102,6 +103,11 @@ export function ReelSlide({
   onQuizCorrect,
   onQuizClose,
 }: ReelSlideProps) {
+  // Fix for AnimatePresence keeping exiting slides active:
+  // Check global store to see if this reel is TRULY the active one.
+  const currentReel = useFeedStore(state => state.feedBuffer[state.currentBufferIndex]);
+  const isActuallyActive = currentReel?.id === reel.id;
+
   const [authorAvatarFallback, setAuthorAvatarFallback] = useState<string | null>(null);
   const [authorName, setAuthorName] = useState<string | null>(null);
   const internalVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -124,13 +130,15 @@ export function ReelSlide({
     const video = internalVideoRef.current;
     if (!video) return;
 
-    if (isActive && !showQuiz) {
+    // Use isActuallyActive (from store) combined with isActive (prop)
+    // This ensures exiting slides (which have stale isActive=true prop) stop playing.
+    if (isActive && isActuallyActive && !showQuiz) {
        // Try to play if active
        video.play().catch(() => { /* ignore */ });
     } else {
        video.pause();
     }
-  }, [isActive, showQuiz]);
+  }, [isActive, isActuallyActive, showQuiz]);
 
   // Author info fetch (copied from ReelPlayer)
   useEffect(() => {

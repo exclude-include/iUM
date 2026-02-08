@@ -136,9 +136,16 @@ export const useFeedStore = create<FeedState>((set, get) => ({
       // Transform API response to ReelItem format
       const transformedReels = data.reels.map(transformApiReelToReelItem);
 
-      // Append new reels to buffer
+      // Append new reels to buffer, avoiding duplicates
+      const existingIds = new Set(feedBuffer.map(r => r.id));
+      const newReels = transformedReels.filter(r => !existingIds.has(r.id));
+      
+      if (newReels.length === 0 && data.reels.length > 0) {
+        console.log("Only duplicate reels received, fetching next page might be needed.");
+      }
+
       set({
-        feedBuffer: [...feedBuffer, ...transformedReels],
+        feedBuffer: [...feedBuffer, ...newReels],
         currentPage: currentPage + 1,
         hasMore: data.hasMore,
         isLoading: false,
