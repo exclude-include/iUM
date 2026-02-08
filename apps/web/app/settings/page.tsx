@@ -252,7 +252,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background overflow-y-auto overflow-x-auto">
+    <div className="h-full min-h-0 bg-background overflow-y-auto overflow-x-hidden">
       <div className="container max-w-4xl mx-auto p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center gap-4">

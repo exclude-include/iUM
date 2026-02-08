@@ -69,22 +69,24 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
       return (
         <div
           key={`block-${blockIdx}`}
-          className="relative group/block"
+          className="group/block"
           data-cell-id={cellId}
           data-tab-id={tabId}
           data-block-index={blockIdx}
         >
           {deepCard && (
-            <button
-              type="button"
-              onClick={handleOpenDeep}
-              title="View Deep explanation"
-              className="absolute -top-0.5 right-0 z-10 flex items-center gap-1 px-2 py-1 rounded-md bg-primary text-primary-foreground shadow-sm border border-primary/30 hover:bg-primary/90 transition-colors"
-              aria-label="View Deep explanation"
-            >
-              <Sparkles className="h-4 w-4 shrink-0" />
-              <span className="text-[10px] font-medium leading-none">Deep</span>
-            </button>
+            <div className="flex justify-end mb-0.5">
+              <button
+                type="button"
+                onClick={handleOpenDeep}
+                title="View Deep explanation"
+                className="relative overflow-hidden flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary text-primary-foreground shadow-sm border border-primary/40 hover:bg-primary/90 transition-colors before:absolute before:inset-0 before:bg-[linear-gradient(135deg,transparent_45%,rgba(255,255,255,0.35)_50%,transparent_55%)] before:pointer-events-none"
+                aria-label="View Deep explanation"
+              >
+                <Sparkles className="h-3 w-3 shrink-0" />
+                <span className="text-[9px] font-medium leading-none">Deep</span>
+              </button>
+            </div>
           )}
           <Tag className={className} {...props}>{children}</Tag>
         </div>
@@ -109,22 +111,24 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
         return (
           <div
             key={`block-${blockIdx}`}
-            className="relative group/block"
+            className="group/block"
             data-cell-id={cellId}
             data-tab-id={tabId}
             data-block-index={blockIdx}
           >
             {deepCard && (
-              <button
-                type="button"
-                onClick={handleOpenDeep}
-                title="View Deep explanation"
-                className="absolute -top-0.5 right-0 z-10 flex items-center gap-1 px-2 py-1 rounded-md bg-primary text-primary-foreground shadow-sm border border-primary/30 hover:bg-primary/90 transition-colors"
-                aria-label="View Deep explanation"
-              >
-                <Sparkles className="h-4 w-4 shrink-0" />
-                <span className="text-[10px] font-medium leading-none">Deep</span>
-              </button>
+              <div className="flex justify-end mb-0.5">
+                <button
+                  type="button"
+                  onClick={handleOpenDeep}
+                  title="View Deep explanation"
+                  className="relative overflow-hidden flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary text-primary-foreground shadow-sm border border-primary/40 hover:bg-primary/90 transition-colors before:absolute before:inset-0 before:bg-[linear-gradient(135deg,transparent_45%,rgba(255,255,255,0.35)_50%,transparent_55%)] before:pointer-events-none"
+                  aria-label="View Deep explanation"
+                >
+                  <Sparkles className="h-3 w-3 shrink-0" />
+                  <span className="text-[9px] font-medium leading-none">Deep</span>
+                </button>
+              </div>
             )}
             <blockquote className="my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground" {...props} />
           </div>
