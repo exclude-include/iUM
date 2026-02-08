@@ -78,6 +78,7 @@ class ReactLearningAgent:
         folder_id: Optional[str] = None,
         session_id: Optional[str] = None,
         document_ids: Optional[List[str]] = None,
+        attachments: Optional[List[Dict[str, Any]]] = None,
         max_iterations: int = 5
     ):
         self.llm = ChatGoogleGenerativeAI(
@@ -88,7 +89,8 @@ class ReactLearningAgent:
         self.toolkit = get_learning_toolkit(
             folder_id=folder_id,
             session_id=session_id,
-            document_ids=document_ids
+            document_ids=document_ids,
+            attachments=attachments
         )
         self.max_iterations = max_iterations
         self.scratchpad = ""
@@ -360,7 +362,8 @@ async def query_with_react_agent(
     question: str,
     folder_id: Optional[str] = None,
     session_id: Optional[str] = None,
-    document_ids: Optional[List[str]] = None
+    document_ids: Optional[List[str]] = None,
+    attachments: Optional[List[Dict[str, Any]]] = None
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Process question with ReAct agent (convenience function)
@@ -370,6 +373,7 @@ async def query_with_react_agent(
         folder_id: Folder ID (document filtering)
         session_id: Session ID (history integration)
         document_ids: Specific document ID list
+        attachments: Attached files content
     
     Yields:
         Streaming events
@@ -377,7 +381,8 @@ async def query_with_react_agent(
     agent = ReactLearningAgent(
         folder_id=folder_id,
         session_id=session_id,
-        document_ids=document_ids
+        document_ids=document_ids,
+        attachments=attachments
     )
     
     async for event in agent.run(question):

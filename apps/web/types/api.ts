@@ -27,6 +27,7 @@ export interface ChatRequest {
   conversation_id?: string;
   collection_name?: string;
   folder_id?: string; // Folder ID to filter RAG context
+  attachments?: Array<any>; // Uploaded files info
 }
 
 export interface QuizOption {
