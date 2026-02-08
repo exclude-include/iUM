@@ -35,6 +35,75 @@ const MARKDOWN_COMPONENTS_BASE = {
   },
 };
 
+/** Recursively get plain text from React children (for partial highlight matching) */
+function getTextFromChildren(node: React.ReactNode): string {
+  if (node == null) return "";
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(getTextFromChildren).join("");
+  if (React.isValidElement(node) && node.props?.children != null) return getTextFromChildren(node.props.children);
+  return "";
+}
+
+/**
+ * Wrap only the selected substring in React children. Uses character offset so
+ * only the dragged part is highlighted, not the whole paragraph.
+ * renderHighlight(portion: string) is called for each text segment that is part of the selection.
+ */
+function wrapSelectedTextInChildren(
+  children: React.ReactNode,
+  sel: string,
+  renderHighlight: (portion: string) => React.ReactNode
+): React.ReactNode {
+  const full = getTextFromChildren(children);
+  const start = full.indexOf(sel);
+  if (start === -1) return children;
+
+  let offset = 0;
+  function walk(node: React.ReactNode): React.ReactNode {
+    if (node == null) return null;
+    if (typeof node === "string") {
+      const end = offset + node.length;
+      if (end <= start) {
+        offset = end;
+        return node;
+      }
+      if (offset >= start + sel.length) {
+        return node;
+      }
+      const localStart = Math.max(0, start - offset);
+      const localEnd = Math.min(node.length, start + sel.length - offset);
+      const portion = node.slice(localStart, localEnd);
+      offset = end;
+      if (portion.length === 0) return node;
+      return (
+        <>
+          {localStart > 0 ? node.slice(0, localStart) : null}
+          {renderHighlight(portion)}
+          {localEnd < node.length ? node.slice(localEnd) : null}
+        </>
+      );
+    }
+    if (typeof node === "number") {
+      const s = String(node);
+      offset += s.length;
+      return node;
+    }
+    if (Array.isArray(node)) {
+      return node.map((child) => walk(child));
+    }
+    if (React.isValidElement(node) && node.props?.children != null) {
+      const inner = node.props.children;
+      const newChildren = walk(inner);
+      if (newChildren === inner) return node;
+      return React.cloneElement(node, { children: newChildren });
+    }
+    return node;
+  }
+
+  return walk(children);
+}
+
 function CellMarkdownContent({ content, cellId, tabId }: { content: string; cellId: string; tabId: string }) {
   const blockIndexRef = useRef(0);
   const deepHistory = useAppStore((s) => s.deepHistory);
@@ -60,20 +129,15 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
         }
       };
       const sel = deepCard?.sourceSelectedText?.trim();
-      const childArray = React.Children.toArray(children);
-      const singleText = childArray.length === 1 && typeof childArray[0] === "string" ? (childArray[0] as string) : null;
-      const text = typeof singleText === "string" ? singleText : null;
-      const canPartialHighlight = sel && text && text.includes(sel);
+      const fullText = getTextFromChildren(children);
+      const canPartialHighlight = sel && fullText.includes(sel);
 
       let content: React.ReactNode;
-      if (deepCard && canPartialHighlight && text) {
-        const idx = text.indexOf(sel!);
-        const before = text.slice(0, idx);
-        const match = sel!;
-        const after = text.slice(idx + match.length);
-        content = (
-          <Tag className={className} {...props}>
-            {before}
+      if (deepCard && canPartialHighlight && sel) {
+        const wrappedChildren = wrapSelectedTextInChildren(
+          children,
+          sel,
+          (portion) => (
             <span
               role="button"
               tabIndex={0}
@@ -88,11 +152,11 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
               title="View Deep explanation"
               aria-label="View Deep explanation"
             >
-              {match}
+              {portion}
             </span>
-            {after}
-          </Tag>
+          )
         );
+        content = <Tag className={className} {...props}>{wrappedChildren}</Tag>;
       } else if (deepCard) {
         content = (
           <div
@@ -145,17 +209,15 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
         };
         const children = props.children;
         const sel = deepCard?.sourceSelectedText?.trim();
-        const childArray = React.Children.toArray(children);
-        const singleText = childArray.length === 1 && typeof childArray[0] === "string" ? (childArray[0] as string) : null;
-        const text = typeof singleText === "string" ? singleText : null;
-        const canPartialHighlight = sel && text && text.includes(sel);
+        const fullText = getTextFromChildren(children);
+        const canPartialHighlight = sel && fullText.includes(sel);
         const blockquoteClass = "my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground";
         let content: React.ReactNode;
-        if (deepCard && canPartialHighlight && text) {
-          const idx = text.indexOf(sel!);
-          content = (
-            <blockquote className={blockquoteClass} {...props}>
-              {text.slice(0, idx)}
+        if (deepCard && canPartialHighlight && sel) {
+          const wrappedChildren = wrapSelectedTextInChildren(
+            children,
+            sel,
+            (portion) => (
               <span
                 role="button"
                 tabIndex={0}
@@ -170,11 +232,11 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
                 title="View Deep explanation"
                 aria-label="View Deep explanation"
               >
-                {sel}
+                {portion}
               </span>
-              {text.slice(idx + sel!.length)}
-            </blockquote>
+            )
           );
+          content = <blockquote className={blockquoteClass} {...props}>{wrappedChildren}</blockquote>;
         } else if (deepCard) {
           content = (
             <div

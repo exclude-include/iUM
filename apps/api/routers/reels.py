@@ -118,6 +118,13 @@ Tasks:
 {{"question": "...", "options": [{{"key": "A", "text": "..."}}, {{"key": "B", "text": "..."}}, ...], "answer": "A", "explanation": "..."}}
 Use 2-4 options. "answer" must be one of the option keys (A, B, C, D).
 
+**IMPORTANT – Math and formulas:** When the content involves equations, physics, or math, you MUST use LaTeX inside dollar signs in the question and options so formulas display correctly. Examples:
+- Fractions: $\\\\frac{{I_C}}{{I_B}}$, $\\\\frac{{a}}{{b}}$
+- Greek letters: $\\\\alpha$, $\\\\beta$, $\\\\eta$, $\\\\gamma$, $\\\\Delta$
+- Powers/subscripts: $x^2$, $I_C$, $E = mc^2$
+- Multiple symbols: "The current gain $\\\\beta = \\\\frac{{I_C}}{{I_B}}$ is..."
+In JSON strings use one backslash before LaTeX commands (e.g. \\\\frac, \\\\alpha). The app renders LaTeX in the quiz.
+
 Reply in this exact format (no other text):
 HASHTAGS: tag1, tag2, tag3
 QUIZ: {{"question": "...", "options": [...], "answer": "A", "explanation": "..."}}
