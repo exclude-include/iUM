@@ -80,6 +80,7 @@ class ReactLearningAgent:
         session_id: Optional[str] = None,
         document_ids: Optional[List[str]] = None,
         attachments: Optional[List[Dict[str, Any]]] = None,
+        initial_document_context: Optional[str] = None,
         max_iterations: int = 5
     ):
         self.llm = ChatGoogleGenerativeAI(
@@ -93,18 +94,27 @@ class ReactLearningAgent:
             document_ids=document_ids,
             attachments=attachments
         )
+        self.initial_document_context = (initial_document_context or "").strip()
         self.max_iterations = max_iterations
         self.scratchpad = ""
-    
+
     def _build_prompt(self, question: str) -> str:
-        """Combine system prompt + user question + scratchpad"""
+        """Combine system prompt + user question + scratchpad; inject document context when present."""
         tools_description = self.toolkit.get_tools_prompt()
         system_prompt = REACT_SYSTEM_PROMPT.format(tools=tools_description)
-        
+
+        user_block = f"User Question: {question}"
+        if self.initial_document_context:
+            user_block = (
+                "## Context from the user's selected/attached documents (you MUST use this to answer)\n"
+                f"{self.initial_document_context}\n\n"
+                f"{user_block}"
+            )
+
         prompt = f"""{system_prompt}
 
 ## Current Session
-User Question: {question}
+{user_block}
 
 {self.scratchpad}"""
         return prompt
@@ -442,12 +452,36 @@ async def query_with_react_agent(
     Yields:
         Streaming events
     """
+    initial_document_context = ""
+    if document_ids or attachments:
+        loop = asyncio.get_event_loop()
+        try:
+            from utils.vector_store import get_retriever
+            retriever = get_retriever(
+                collection_name="user_knowledge",
+                k=16,
+                folder_id=folder_id,
+                document_ids=document_ids or None,
+            )
+            docs = await loop.run_in_executor(None, lambda: retriever.invoke(question))
+            if document_ids and (not docs or all(d.metadata.get("document_id") not in document_ids for d in docs)):
+                retriever_fb = get_retriever(
+                    collection_name="user_knowledge", k=24, folder_id=folder_id, document_ids=None
+                )
+                raw = await loop.run_in_executor(None, lambda: retriever_fb.invoke(question))
+                docs = [d for d in raw if d.metadata.get("document_id") in document_ids or d.metadata.get("source") in document_ids][:16]
+            if docs:
+                parts = [f"[{d.metadata.get('source', 'Document')}]\n{d.page_content}" for d in docs]
+                initial_document_context = "\n\n---\n\n".join(parts)[:8000]
+        except Exception as e:
+            print(f"Pre-fetch document context failed: {e}")
+
     agent = ReactLearningAgent(
         folder_id=folder_id,
         session_id=session_id,
         document_ids=document_ids,
-        attachments=attachments
+        attachments=attachments,
+        initial_document_context=initial_document_context or None,
     )
-    
     async for event in agent.run(question):
         yield event

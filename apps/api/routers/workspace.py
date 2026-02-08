@@ -433,13 +433,20 @@ async def delete_file(
         
         # 2. Delete from DB
         supabase.table("files").delete().eq("id", file_id).eq("user_id", user_id).execute()
-        
-        # 3. Delete from Storage (Best effort)
+
+        # 3. Delete from Vector DB (all chunks for this file)
+        try:
+            from utils.vector_store import delete_documents_by_file_id
+            delete_documents_by_file_id(file_id)
+        except Exception as e:
+            print(f"Vector DB delete warning: {e}")
+
+        # 4. Delete from Storage (Best effort)
         try:
             storage.from_("documents").remove([storage_path])
         except Exception as e:
             print(f"Storage delete warning: {e}")
-            
+
         return {"success": True, "deleted_id": file_id}
         
     except HTTPException:

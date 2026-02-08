@@ -72,6 +72,27 @@ def add_documents_to_vector_store(
     return document_ids
 
 
+def delete_documents_by_file_id(file_id: str) -> bool:
+    """
+    Permanently delete all vector store chunks for the given file (document_id).
+    Returns True if delete succeeded, False on error.
+    """
+    try:
+        supabase = get_supabase_client()
+        file_id_str = str(file_id)
+        # Supabase: delete rows where metadata contains document_id = file_id
+        res = (
+            supabase.table("documents")
+            .delete()
+            .contains("metadata", {"document_id": file_id_str})
+            .execute()
+        )
+        return True
+    except Exception as e:
+        print(f"Vector DB delete by document_id failed: {e}")
+        return False
+
+
 
 class CustomSupabaseRetriever(BaseRetriever):
     client: Any
