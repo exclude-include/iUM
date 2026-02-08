@@ -58,7 +58,7 @@ def get_user_id_from_token(authorization: str) -> str:
 
 def get_supabase_client() -> Client:
     """
-    Get or create Supabase client instance (service role or anon).
+    Get or create Supabase client instance. Must use service_role key so folder/files APIs bypass RLS.
     
     Returns:
         Client: Supabase client instance
@@ -70,11 +70,12 @@ def get_supabase_client() -> Client:
     
     if _supabase_client is None:
         supabase_url = os.getenv("SUPABASE_URL")
-        supabase_key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+        supabase_key = os.getenv("SUPABASE_SERVICE_KEY")
         
         if not supabase_url or not supabase_key:
             raise ValueError(
-                "Missing Supabase credentials. Please set SUPABASE_URL and SUPABASE_SERVICE_KEY (or SUPABASE_ANON_KEY)"
+                "Missing Supabase credentials. Set SUPABASE_URL and SUPABASE_SERVICE_KEY (Dashboard > API > service_role secret). "
+                "Do not use the anon key here or folder create will fail with RLS (42501)."
             )
         
         _supabase_client = create_client(supabase_url, supabase_key)

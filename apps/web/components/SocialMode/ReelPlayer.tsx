@@ -15,6 +15,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { useSocialStore } from "./useSocialStore";
 import { QuizOverlay } from "./QuizOverlay";
@@ -472,14 +473,15 @@ export function ReelPlayer() {
           </Button>
         )}
 
-        {/* Bottom Left: Author Info */}
+        {/* Bottom Left: Author Info (실제 설정에서 지정한 프로필 사진 반영) */}
         <div className="absolute bottom-20 left-4 z-20 text-white max-w-[60%]">
           <div className="flex items-center gap-2 mb-2">
-            <div className="h-8 w-8 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-              <span className="text-xs font-bold">
+            <Avatar className="h-8 w-8 border-2 border-white/30">
+              <AvatarImage src={currentReel.authorAvatar} alt={currentReel.author} />
+              <AvatarFallback className="bg-white/20 text-xs font-bold">
                 {currentReel.author.charAt(0).toUpperCase()}
-              </span>
-            </div>
+              </AvatarFallback>
+            </Avatar>
             <div>
               <p className="text-sm font-semibold">@{currentReel.author}</p>
               <p className="text-xs text-white/80">{currentReel.folderName}</p>
@@ -487,7 +489,7 @@ export function ReelPlayer() {
           </div>
           <p className="text-sm font-medium mb-1">{currentReel.title}</p>
           <p className="text-xs text-white/70 line-clamp-2 mb-2">
-            {currentReel.description}
+            {currentReel.description || ""}
           </p>
 
           {/* Hashtags */}

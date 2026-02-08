@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { X, Send, Trash2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
 import { supabase } from "@/lib/supabase/client";
@@ -202,12 +203,13 @@ export function CommentDrawer({ reelId, isOpen, onClose }: CommentDrawerProps) {
                 key={comment.id}
                 className="flex gap-3 group"
               >
-                {/* Avatar */}
-                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <span className="text-xs font-semibold text-primary">
+                {/* Avatar (설정에서 지정한 프로필 사진 반영) */}
+                <Avatar className="h-8 w-8 flex-shrink-0">
+                  <AvatarImage src={comment.author_avatar} alt={comment.author_name} />
+                  <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
                     {comment.author_name?.charAt(0).toUpperCase() || "U"}
-                  </span>
-                </div>
+                  </AvatarFallback>
+                </Avatar>
 
                 {/* Comment Content */}
                 <div className="flex-1 min-w-0">

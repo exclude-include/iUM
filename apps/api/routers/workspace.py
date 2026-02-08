@@ -136,6 +136,11 @@ async def create_folder(
                 status_code=503,
                 detail="Folders table not set up. Run Supabase migration: apps/web/supabase/migrations/003_create_folders_table.sql",
             )
+        if "42501" in err_msg or "row-level security" in err_msg.lower():
+            raise HTTPException(
+                status_code=503,
+                detail="RLS violation: set SUPABASE_SERVICE_KEY to the service_role (secret) key in Render, not the anon key. Supabase Dashboard > Project Settings > API > service_role.",
+            )
         raise HTTPException(status_code=500, detail=f"Failed to create folder: {err_msg}")
 
 
