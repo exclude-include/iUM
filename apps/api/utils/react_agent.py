@@ -5,6 +5,7 @@ Reasoning + Acting pattern learning agent
 import os
 import re
 import json
+import random
 import asyncio
 from typing import Optional, Dict, Any, List, AsyncGenerator
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -443,6 +444,15 @@ class ReactLearningAgent:
                     else:
                         # Try direct JSON parse
                         quiz_data = json.loads(content)
+                    # Shuffle options so correct answer is randomly A/B/C/D
+                    if isinstance(quiz_data, list):
+                        for q in quiz_data:
+                            if isinstance(q, dict) and q.get("options") and len(q["options"]) >= 2:
+                                opts = q["options"]
+                                random.shuffle(opts)
+                                for i, o in enumerate(opts):
+                                    if isinstance(o, dict):
+                                        o["id"] = chr(65 + i)
                 except:
                     combined_content += f"\n\n## Quiz\n{unit['content']}"
             elif unit["type"] == "flashcard":

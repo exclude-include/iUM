@@ -12,6 +12,7 @@ import uuid
 import os
 import re
 import json
+import random
 import requests
 from datetime import datetime, timezone
 import numpy as np
@@ -49,6 +50,22 @@ class DriveImportRequest(BaseModel):
     description: Optional[str] = None
     folder_name: Optional[str] = None
     tags: Optional[list[str]] = None
+
+
+def _shuffle_quiz_options(quiz: Quiz) -> Quiz:
+    """Shuffle option order and re-key as A,B,C,D so the correct answer is randomly A/B/C/D."""
+    if not quiz.options or len(quiz.options) < 2:
+        return quiz
+    correct_key = quiz.answer
+    opts = list(quiz.options)
+    random.shuffle(opts)
+    new_options = [QuizOption(key=chr(65 + i), text=o.text) for i, o in enumerate(opts)]
+    new_answer = "A"
+    for i, o in enumerate(opts):
+        if o.key == correct_key:
+            new_answer = chr(65 + i)
+            break
+    return quiz.model_copy(update={"options": new_options, "answer": new_answer})
 
 
 def _cell_quiz_to_reel_quiz(quiz_data: List[dict]) -> Optional[Quiz]:
@@ -563,6 +580,9 @@ async def generate_reel_from_cell(request: GenerateFromCellRequest):
             cell_quiz = _cell_quiz_to_reel_quiz(request.quiz_data)
             if cell_quiz:
                 quiz = cell_quiz
+        # Shuffle options so correct answer is randomly A/B/C/D
+        if quiz and len(quiz.options or []) >= 2:
+            quiz = _shuffle_quiz_options(quiz)
         # Show quiz after 3 seconds in the reel
         if quiz:
             quiz = quiz.model_copy(update={"timestamp_seconds": 3.0})
