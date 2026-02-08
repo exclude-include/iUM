@@ -32,7 +32,7 @@ async def chat_with_agent(request: ChatRequest):
     # [수정 포인트 2] Google API Key 체크로 변경 (이미 잘 적용되어 있습니다!)
     if not os.getenv("GOOGLE_API_KEY"):
         return ChatResponse(
-            message="[System] Google API Key가 설정되지 않았습니다. .env 파일에 GOOGLE_API_KEY가 있는지 확인해주세요.",
+            message="[System] Google API Key is not configured. Please check if GOOGLE_API_KEY exists in your .env file.",
             conversation_id=request.conversation_id or "conv-1",
             sources=[],
             reasoning_chain=["API Key Missing"]
@@ -91,7 +91,7 @@ async def chat_with_agent(request: ChatRequest):
         print(f"Error during RAG chat (Model: {MODEL_NAME}): {str(e)}")
         
         return ChatResponse(
-            message=f"죄송합니다, iUM 에이전트 처리 중 오류가 발생했습니다.\n(에러 내용: {str(e)})\n\n문서가 업로드되어 있는지, 또는 Google API 키가 올바른지 확인해 주세요.",
+            message=f"Sorry, an error occurred while processing your request with iUM agent.\n(Error: {str(e)})\n\nPlease check if documents are uploaded or if your Google API key is valid.",
             conversation_id=request.conversation_id or "conv-1",
             sources=[],
             reasoning_chain=[f"Internal Error: {str(e)}"]
@@ -105,7 +105,7 @@ async def get_conversation_history(conversation_id: str):
         ChatMessage(
             id="msg-1",
             role="assistant",
-            content="안녕하세요! 저는 당신의 학습을 돕는 iUM AI 에이전트입니다. 무엇을 도와드릴까요?",
+            content="Hello! I'm the iUM AI agent here to help with your learning. How can I assist you today?",
             timestamp="2024-01-20T10:00:00Z"
         )
     ]
@@ -270,7 +270,7 @@ async def get_conversation_history(conversation_id: str):
         ChatMessage(
             id="msg-1",
             role="assistant",
-            content="안녕하세요! 저는 당신의 학습을 돕는 iUM AI 에이전트입니다. 무엇을 도와드릴까요?",
+            content="Hello! I'm the iUM AI agent here to help with your learning. How can I assist you today?",
             timestamp="2024-01-20T10:00:00Z"
         )
     ]

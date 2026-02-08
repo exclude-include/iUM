@@ -1,6 +1,6 @@
 """
 iUM Learning Tools for ReAct Agent
-학습 플랫폼 전용 도구 모음
+Learning platform-specific tool collection
 """
 import os
 import json
@@ -10,7 +10,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 
 class Tool:
-    """도구 정의 클래스"""
+    """Tool definition class"""
     def __init__(self, name: str, description: str, func: Callable, params: List[str] = None):
         self.name = name
         self.description = description
@@ -18,13 +18,13 @@ class Tool:
         self.params = params or []
 
     def to_prompt_string(self) -> str:
-        """프롬프트에 포함할 도구 설명 문자열 생성"""
-        params_str = ", ".join(self.params) if self.params else "없음"
-        return f"- {self.name}: {self.description} (파라미터: {params_str})"
+        """Generate tool description string for prompt"""
+        params_str = ", ".join(self.params) if self.params else "none"
+        return f"- {self.name}: {self.description} (params: {params_str})"
 
 
 class LearningToolkit:
-    """iUM 학습 플랫폼 전용 도구 모음"""
+    """iUM learning platform-specific tool collection"""
     
     def __init__(
         self, 
@@ -47,62 +47,62 @@ class LearningToolkit:
         return {
             "search_knowledge": Tool(
                 name="search_knowledge",
-                description="업로드된 문서에서 관련 내용을 검색합니다",
+                description="Search for relevant content in uploaded documents",
                 func=self._search_knowledge,
                 params=["query"]
             ),
             "generate_concept_cell": Tool(
                 name="generate_concept_cell", 
-                description="주제에 대한 개념 설명 Learning Unit을 생성합니다",
+                description="Generate a concept explanation Learning Unit for the topic",
                 func=self._generate_concept_cell,
                 params=["topic"]
             ),
             "create_quiz_cell": Tool(
                 name="create_quiz_cell",
-                description="주제에 대한 퀴즈 셀을 생성합니다",
+                description="Generate quiz questions for the topic",
                 func=self._create_quiz_cell,
-                params=["topic", "num_questions(기본값=3)"]
+                params=["topic", "num_questions(default=3)"]
             ),
             "check_prerequisites": Tool(
                 name="check_prerequisites",
-                description="주제를 학습하기 위해 필요한 선행 지식을 분석합니다",
+                description="Analyze prerequisite knowledge needed to learn the topic",
                 func=self._check_prerequisites,
                 params=["topic"]
             ),
             "get_learning_history": Tool(
                 name="get_learning_history",
-                description="사용자의 최근 학습 기록을 조회합니다",
+                description="Retrieve user's recent learning history",
                 func=self._get_learning_history,
                 params=[]
             ),
             "suggest_next_topic": Tool(
                 name="suggest_next_topic",
-                description="현재 학습 진도에 기반하여 다음 학습 주제를 추천합니다",
+                description="Recommend next learning topics based on current progress",
                 func=self._suggest_next_topic,
                 params=["current_topic"]
             ),
         }
     
     def get_tools_prompt(self) -> str:
-        """모든 도구 설명을 프롬프트 형식으로 반환"""
+        """Return all tool descriptions in prompt format"""
         return "\n".join([tool.to_prompt_string() for tool in self.tools.values()])
     
     async def execute(self, tool_name: str, **kwargs) -> str:
-        """도구 실행"""
+        """Execute tool"""
         if tool_name not in self.tools:
-            return f"[Error] 알 수 없는 도구: {tool_name}"
+            return f"[Error] Unknown tool: {tool_name}"
         
         tool = self.tools[tool_name]
         try:
             result = await tool.func(**kwargs)
             return result
         except Exception as e:
-            return f"[Error] 도구 실행 실패: {str(e)}"
+            return f"[Error] Tool execution failed: {str(e)}"
     
-    # ========== 도구 구현 ==========
+    # ========== Tool Implementations ==========
     
     async def _search_knowledge(self, query: str) -> str:
-        """문서에서 관련 내용 검색 (기존 RAG retriever 활용)"""
+        """Search relevant content in documents (using existing RAG retriever)"""
         try:
             from utils.vector_store import get_retriever
             
@@ -115,7 +115,7 @@ class LearningToolkit:
             docs = retriever.invoke(query)
             
             if not docs:
-                return "관련 문서를 찾지 못했습니다."
+                return "No relevant documents found."
             
             results = []
             for i, doc in enumerate(docs):
@@ -125,40 +125,40 @@ class LearningToolkit:
             
             return "\n\n".join(results)
         except Exception as e:
-            return f"검색 실패: {str(e)}"
+            return f"Search failed: {str(e)}"
     
     async def _generate_concept_cell(self, topic: str) -> str:
-        """개념 설명 셀 생성"""
-        prompt = f"""'{topic}'에 대해 학습자가 이해하기 쉽게 설명해주세요.
+        """Generate concept explanation cell"""
+        prompt = f"""Explain '{topic}' in a way that is easy for learners to understand.
 
-다음 형식으로 작성해주세요:
-1. 핵심 정의 (1-2문장)
-2. 주요 특징 (3가지)
-3. 실생활 예시 (1개)
-4. Mermaid 다이어그램 (graph TD 형식, 간단하게)
+Please write in the following format:
+1. Core Definition (1-2 sentences)
+2. Key Features (3 points)
+3. Real-world Example (1)
+4. Mermaid Diagram (graph TD format, keep it simple)
 
-응답은 마크다운 형식으로 작성해주세요."""
+Write your response in markdown format."""
 
         response = await self.llm.ainvoke(prompt)
         return response.content
     
     async def _create_quiz_cell(self, topic: str, num_questions: int = 3) -> str:
-        """퀴즈 셀 생성"""
-        prompt = f"""'{topic}'에 대한 {num_questions}개의 객관식 퀴즈를 만들어주세요.
+        """Generate quiz cell"""
+        prompt = f"""Create {num_questions} multiple-choice quiz questions about '{topic}'.
 
-다음 JSON 형식으로 응답해주세요:
+Please respond in the following JSON format:
 ```json
 [
   {{
     "id": "1",
-    "question_text": "질문 내용",
+    "question_text": "Question content",
     "options": [
-      {{"id": "A", "text": "선택지 A", "is_correct": false}},
-      {{"id": "B", "text": "선택지 B", "is_correct": true}},
-      {{"id": "C", "text": "선택지 C", "is_correct": false}},
-      {{"id": "D", "text": "선택지 D", "is_correct": false}}
+      {{"id": "A", "text": "Option A", "is_correct": false}},
+      {{"id": "B", "text": "Option B", "is_correct": true}},
+      {{"id": "C", "text": "Option C", "is_correct": false}},
+      {{"id": "D", "text": "Option D", "is_correct": false}}
     ],
-    "explanation": "정답 설명"
+    "explanation": "Explanation for the correct answer"
   }}
 ]
 ```"""
@@ -167,27 +167,27 @@ class LearningToolkit:
         return response.content
     
     async def _check_prerequisites(self, topic: str) -> str:
-        """선행 지식 분석"""
-        prompt = f"""'{topic}'을 효과적으로 학습하기 위해 미리 알아야 할 선행 지식을 분석해주세요.
+        """Analyze prerequisite knowledge"""
+        prompt = f"""Analyze the prerequisite knowledge needed to effectively learn '{topic}'.
 
-다음 형식으로 응답해주세요:
-1. **필수 선행 지식** (반드시 알아야 함)
-   - 개념 1: 간단한 설명
-   - 개념 2: 간단한 설명
+Please respond in the following format:
+1. **Essential Prerequisites** (must know)
+   - Concept 1: Brief explanation
+   - Concept 2: Brief explanation
 
-2. **권장 선행 지식** (알면 도움됨)
-   - 개념 1: 간단한 설명
+2. **Recommended Prerequisites** (helpful to know)
+   - Concept 1: Brief explanation
 
-3. **학습 순서 제안**
-   선행 지식 → {topic} 순서로 학습 로드맵 제시"""
+3. **Suggested Learning Path**
+   Prerequisites → {topic} learning roadmap"""
 
         response = await self.llm.ainvoke(prompt)
         return response.content
     
     async def _get_learning_history(self) -> str:
-        """학습 기록 조회 (Memory Manager 활용)"""
+        """Retrieve learning history (using Memory Manager)"""
         if not self.session_id:
-            return "세션 정보가 없어 학습 기록을 조회할 수 없습니다."
+            return "Session information unavailable. Cannot retrieve learning history."
         
         try:
             from utils.memory_manager import get_memory_manager
@@ -195,15 +195,15 @@ class LearningToolkit:
             context = await memory.get_context(self.session_id)
             
             if not context:
-                return "이전 학습 기록이 없습니다. 새로운 학습을 시작해보세요!"
+                return "No previous learning history found. Start your learning journey!"
             
-            return f"최근 대화 기록:\n{context}"
+            return f"Recent conversation history:\n{context}"
         except Exception as e:
-            return f"학습 기록 조회 실패: {str(e)}"
+            return f"Failed to retrieve learning history: {str(e)}"
     
     async def _suggest_next_topic(self, current_topic: str) -> str:
-        """다음 학습 주제 추천"""
-        # 학습 기록이 있다면 함께 활용
+        """Suggest next learning topics"""
+        # Include learning history if available
         history = ""
         if self.session_id:
             try:
@@ -213,34 +213,34 @@ class LearningToolkit:
             except:
                 pass
         
-        history_context = f"\n\n사용자의 최근 학습 기록:\n{history}" if history else ""
+        history_context = f"\n\nUser's recent learning history:\n{history}" if history else ""
         
-        prompt = f"""'{current_topic}'을 학습한 후 다음으로 학습하면 좋을 주제를 추천해주세요.{history_context}
+        prompt = f"""Recommend topics to learn after completing '{current_topic}'.{history_context}
 
-다음 형식으로 응답해주세요:
-1. **추천 주제 1**: 
-   - 주제명
-   - 추천 이유 (1문장)
-   - 난이도: 쉬움/보통/어려움
+Please respond in the following format:
+1. **Recommended Topic 1**: 
+   - Topic name
+   - Reason for recommendation (1 sentence)
+   - Difficulty: Easy/Medium/Hard
 
-2. **추천 주제 2**:
-   - 주제명
-   - 추천 이유 (1문장)
-   - 난이도: 쉬움/보통/어려움
+2. **Recommended Topic 2**:
+   - Topic name
+   - Reason for recommendation (1 sentence)
+   - Difficulty: Easy/Medium/Hard
 
-3. **학습 팁**: {current_topic}에서 다음 단계로 넘어갈 때 주의할 점"""
+3. **Learning Tips**: Key points when transitioning from {current_topic} to the next level"""
 
         response = await self.llm.ainvoke(prompt)
         return response.content
 
 
-# 싱글톤 인스턴스 (선택적 사용)
+# Singleton instance (optional use)
 def get_learning_toolkit(
     folder_id: Optional[str] = None,
     session_id: Optional[str] = None,
     document_ids: Optional[List[str]] = None
 ) -> LearningToolkit:
-    """LearningToolkit 인스턴스 생성 헬퍼"""
+    """LearningToolkit instance creation helper"""
     return LearningToolkit(
         folder_id=folder_id,
         session_id=session_id,
