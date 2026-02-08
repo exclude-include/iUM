@@ -81,6 +81,8 @@ export interface Cell {
   sourceTabId?: string;
   sourceCellId?: string;
   sourceBlockIndex?: number;
+  /** Exact text the user selected for this Deep Dive (for partial highlight) */
+  sourceSelectedText?: string;
   /** Notebook cell: added from Deep sidebar */
   fromDeep?: boolean;
 }
@@ -324,6 +326,10 @@ interface AppState {
   setScrollToDeepCardId: (id: string | null) => void;
   clearScrollToDeepCardTarget: () => void;
   clearDeepHistory: () => void;
+  setDeepHistory: (history: Cell[]) => void;
+  hydrateNotebookBackup: (data: { tabs?: NotebookTab[]; activeTabId?: string | null; deepHistory?: Cell[] }) => void;
+  saveUserNotebookStateToSupabase: () => Promise<void>;
+  loadUserNotebookStateFromSupabase: () => Promise<void>;
 
   // ✨ [추가] 서버에서 파일 목록 불러오기 액션
   fetchFiles: () => Promise<void>;
@@ -1157,6 +1163,70 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   clearDeepHistory: () => set({ deepHistory: [], scrollToDeepCardId: null }),
+  setDeepHistory: (history) => set({ deepHistory: Array.isArray(history) ? history : [] }),
+  hydrateNotebookBackup: (data) => {
+    set((state) => {
+      const next: Partial<AppState> = {};
+      const tabs = data.tabs != null && Array.isArray(data.tabs) && data.tabs.length > 0 ? data.tabs : null;
+      if (tabs) next.notebookTabs = tabs;
+      if (data.activeTabId !== undefined) next.notebookActiveTabId = data.activeTabId;
+      if (data.deepHistory != null && Array.isArray(data.deepHistory)) next.deepHistory = data.deepHistory;
+      if (tabs && data.activeTabId) {
+        const activeTab = tabs.find((t) => t.id === data.activeTabId);
+        if (activeTab) {
+          const fid = activeTab.folderId || "folder-1";
+          next.folderActiveTabs = { ...state.folderActiveTabs, [fid]: activeTab.id };
+        }
+      }
+      return next;
+    });
+  },
+
+  saveUserNotebookStateToSupabase: async () => {
+    const { supabase } = await import("@/lib/supabase/client");
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) return;
+    const state = get();
+    const payload = {
+      tabs: state.notebookTabs,
+      activeTabId: state.notebookActiveTabId,
+      deepHistory: state.deepHistory,
+    };
+    try {
+      await supabase
+        .from("user_notebook_state")
+        .upsert(
+          { user_id: session.user.id, payload, updated_at: new Date().toISOString() },
+          { onConflict: "user_id" }
+        );
+    } catch (e) {
+      console.warn("[Store] saveUserNotebookStateToSupabase failed:", e);
+    }
+  },
+
+  loadUserNotebookStateFromSupabase: async () => {
+    const { supabase } = await import("@/lib/supabase/client");
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from("user_notebook_state")
+        .select("payload")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+      if (error || !data?.payload || typeof data.payload !== "object") return;
+      const p = data.payload as { tabs?: unknown; activeTabId?: string | null; deepHistory?: unknown };
+      const payload: { tabs?: NotebookTab[]; activeTabId?: string | null; deepHistory?: Cell[] } = {};
+      if (Array.isArray(p.tabs) && p.tabs.length > 0) payload.tabs = p.tabs as NotebookTab[];
+      if (p.activeTabId !== undefined) payload.activeTabId = p.activeTabId ?? null;
+      if (Array.isArray(p.deepHistory)) payload.deepHistory = p.deepHistory as Cell[];
+      if (payload.tabs || payload.deepHistory || payload.activeTabId !== undefined) {
+        get().hydrateNotebookBackup(payload);
+      }
+    } catch (e) {
+      console.warn("[Store] loadUserNotebookStateFromSupabase failed:", e);
+    }
+  },
 
   // ✨ [추가] 파일 목록 동기화 액션
   fetchFiles: async () => {

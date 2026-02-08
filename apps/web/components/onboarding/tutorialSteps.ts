@@ -4,6 +4,7 @@ export type TutorialStepId =
   | "tutorial-sidebar-folders"
   | "tutorial-main-new-tab"
   | "tutorial-chat"
+  | "tutorial-deep"
   | "tutorial-nav-profile"
   | "tutorial-nav-settings";
 
@@ -43,6 +44,12 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
     id: "tutorial-chat",
     title: "AI Chat",
     body: "Ask anything in the chat panel. You can also attach files.",
+    placement: "left",
+  },
+  {
+    id: "tutorial-deep",
+    title: "Deep Dive",
+    body: "Select text in your note and use Deep Dive to get a focused explanation. The selected part will be highlighted; click it to jump to the explanation.",
     placement: "left",
   },
   {

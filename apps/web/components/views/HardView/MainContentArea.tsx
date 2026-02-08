@@ -27,9 +27,10 @@ import { SingleCellErrorBoundary } from "./SingleCellErrorBoundary";
 import { DeepModeCursor } from "./DeepModeCursor";
 import { TextSelectionMenu } from "./TextSelectionMenu";
 import { cn } from "@/lib/utils";
-import { useAppStore } from "@/lib/store";
+import { useAppStore, type NotebookTab, type Cell } from "@/lib/store";
 import { api } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { supabase } from "@/lib/supabase/client";
 import "katex/dist/katex.min.css";
 
@@ -59,8 +60,13 @@ export function MainContentArea() {
     sidebarMode,
     knowledgeFolders, // ✨ Added for star status
     loadTabFromIum, // ✨ Added for duplicate functionality
+    deepHistory,
+    hydrateNotebookBackup,
+    saveUserNotebookStateToSupabase,
+    loadUserNotebookStateFromSupabase,
   } = useAppStore();
 
+  const { user } = useAuth();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
@@ -115,23 +121,57 @@ export function MainContentArea() {
     return () => clearInterval(autoSaveInterval);
   }, [notebookTabs]);
 
-  // LocalStorage backup (keep existing logic)
+  // LocalStorage + Supabase backup: tabs, activeTabId, deepHistory (persist on refresh and across devices)
   useEffect(() => {
     const backupInterval = setInterval(() => {
-      if (notebookTabs.length > 0) {
-        try {
+      try {
+        const state = useAppStore.getState();
+        const hasTabs = state.notebookTabs.length > 0;
+        const hasDeep = state.deepHistory.length > 0;
+        if (hasTabs || hasDeep) {
           localStorage.setItem("ium_notebooks_autosave", JSON.stringify({
-            tabs: notebookTabs,
-            activeTabId: notebookActiveTabId,
+            tabs: state.notebookTabs,
+            activeTabId: state.notebookActiveTabId,
+            deepHistory: state.deepHistory,
             savedAt: Date.now(),
           }));
-        } catch (error) {
-          // ignore
+          if (user) state.saveUserNotebookStateToSupabase();
         }
+      } catch (error) {
+        // ignore
       }
     }, 30000);
     return () => clearInterval(backupInterval);
-  }, [notebookTabs, notebookActiveTabId]);
+  }, [notebookTabs, notebookActiveTabId, deepHistory, user]);
+
+  // Restore tabs + deepHistory: from Supabase when logged in, else from localStorage
+  useEffect(() => {
+    if (!mounted) return;
+    let cancelled = false;
+    (async () => {
+      if (user) {
+        await loadUserNotebookStateFromSupabase();
+        if (cancelled) return;
+        return;
+      }
+      try {
+        const raw = localStorage.getItem("ium_notebooks_autosave");
+        if (!raw) return;
+        const data = JSON.parse(raw) as { tabs?: unknown; activeTabId?: string | null; deepHistory?: unknown; savedAt?: number };
+        if (!data || typeof data !== "object") return;
+        const payload: { tabs?: NotebookTab[]; activeTabId?: string | null; deepHistory?: Cell[] } = {};
+        if (Array.isArray(data.tabs) && data.tabs.length > 0) payload.tabs = data.tabs as NotebookTab[];
+        if (data.activeTabId !== undefined) payload.activeTabId = data.activeTabId ?? null;
+        if (Array.isArray(data.deepHistory)) payload.deepHistory = data.deepHistory as Cell[];
+        if (payload.tabs || payload.deepHistory || payload.activeTabId !== undefined) {
+          hydrateNotebookBackup(payload);
+        }
+      } catch (_) {
+        // ignore
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [mounted, user, loadUserNotebookStateFromSupabase, hydrateNotebookBackup]);
 
   // Handle scroll-to-cell after layout settles to avoid Radix "intersectRect" errors when adding cells
   useEffect(() => {
@@ -522,7 +562,7 @@ export function MainContentArea() {
       mermaid_code: "",
     });
 
-    // Link deep card to source block in main tab (for badge) — do this immediately so badge shows right away
+    // Link deep card to source block + selected text (for partial highlight) — do this immediately
     if (blockForBadge) {
       const sourceTabId = blockForBadge.getAttribute("data-tab-id");
       const sourceCellId = blockForBadge.getAttribute("data-cell-id");
@@ -532,6 +572,7 @@ export function MainContentArea() {
           sourceTabId,
           sourceCellId,
           sourceBlockIndex: parseInt(sourceBlockIndex, 10),
+          sourceSelectedText: text.trim(),
         });
       }
     }

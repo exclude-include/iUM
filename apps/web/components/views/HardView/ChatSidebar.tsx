@@ -439,6 +439,7 @@ export function ChatSidebar() {
                 : "text-muted-foreground hover:text-foreground"
             )}
             onClick={() => setSidebarMode("deep")}
+            data-tutorial="tutorial-deep"
           >
             Deep
           </Button>

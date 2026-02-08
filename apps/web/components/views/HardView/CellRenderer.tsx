@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useRef, useMemo } from "react";
+import React, { forwardRef, useRef, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { QuizView } from "@/components/QuizView";
 import { Mermaid } from "@/components/Mermaid";
@@ -55,6 +55,7 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
   );
 
   const blockComponents = useMemo(() => {
+    const highlightClass = "rounded-sm border-l-2 border-primary/50 pl-0.5 -ml-0.5 cursor-pointer bg-yellow-200/60 dark:bg-amber-400/25 hover:bg-yellow-300/70 dark:hover:bg-amber-400/35 transition-colors";
     const wrapBlock = (Tag: keyof JSX.IntrinsicElements, className: string, props: any, children: React.ReactNode) => {
       const blockIdx = blockIndexRef.current++;
       const deepCard = cardsForThisCell.find((c) => c.sourceBlockIndex === blockIdx);
@@ -65,16 +66,21 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
           setRightPanelMinimized(false);
         }
       };
-      return (
-        <div
-          key={`block-${blockIdx}`}
-          className="group/block"
-          data-cell-id={cellId}
-          data-tab-id={tabId}
-          data-block-index={blockIdx}
-        >
-          {deepCard ? (
-            <div
+      const sel = deepCard?.sourceSelectedText?.trim();
+      const singleText = React.Children.count(children) === 1 ? (React.Children.only(children) as unknown) : null;
+      const text = typeof singleText === "string" ? singleText : null;
+      const canPartialHighlight = sel && text && text.includes(sel);
+
+      let content: React.ReactNode;
+      if (deepCard && canPartialHighlight && text) {
+        const idx = text.indexOf(sel!);
+        const before = text.slice(0, idx);
+        const match = sel!;
+        const after = text.slice(idx + match.length);
+        content = (
+          <Tag className={className} {...props}>
+            {before}
+            <span
               role="button"
               tabIndex={0}
               onClick={handleOpenDeep}
@@ -84,15 +90,46 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
                   handleOpenDeep();
                 }
               }}
-              className="rounded-md border-l-2 border-primary/50 pl-1 -ml-1 cursor-pointer bg-yellow-200/60 dark:bg-amber-400/25 hover:bg-yellow-300/70 dark:hover:bg-amber-400/35 transition-colors"
+              className={highlightClass}
               title="View Deep explanation"
               aria-label="View Deep explanation"
             >
-              <Tag className={className} {...props}>{children}</Tag>
-            </div>
-          ) : (
+              {match}
+            </span>
+            {after}
+          </Tag>
+        );
+      } else if (deepCard) {
+        content = (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={handleOpenDeep}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                handleOpenDeep();
+              }
+            }}
+            className="rounded-md border-l-2 border-primary/50 pl-1 -ml-1 cursor-pointer bg-yellow-200/60 dark:bg-amber-400/25 hover:bg-yellow-300/70 dark:hover:bg-amber-400/35 transition-colors"
+            title="View Deep explanation"
+            aria-label="View Deep explanation"
+          >
             <Tag className={className} {...props}>{children}</Tag>
-          )}
+          </div>
+        );
+      } else {
+        content = <Tag className={className} {...props}>{children}</Tag>;
+      }
+      return (
+        <div
+          key={`block-${blockIdx}`}
+          className="group/block"
+          data-cell-id={cellId}
+          data-tab-id={tabId}
+          data-block-index={blockIdx}
+        >
+          {content}
         </div>
       );
     };
@@ -112,16 +149,19 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
             setRightPanelMinimized(false);
           }
         };
-        return (
-          <div
-            key={`block-${blockIdx}`}
-            className="group/block"
-            data-cell-id={cellId}
-            data-tab-id={tabId}
-            data-block-index={blockIdx}
-          >
-            {deepCard ? (
-              <div
+        const children = props.children;
+        const sel = deepCard?.sourceSelectedText?.trim();
+        const singleText = React.Children.count(children) === 1 ? (React.Children.only(children) as unknown) : null;
+        const text = typeof singleText === "string" ? singleText : null;
+        const canPartialHighlight = sel && text && text.includes(sel);
+        const blockquoteClass = "my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground";
+        let content: React.ReactNode;
+        if (deepCard && canPartialHighlight && text) {
+          const idx = text.indexOf(sel!);
+          content = (
+            <blockquote className={blockquoteClass} {...props}>
+              {text.slice(0, idx)}
+              <span
                 role="button"
                 tabIndex={0}
                 onClick={handleOpenDeep}
@@ -131,15 +171,46 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
                     handleOpenDeep();
                   }
                 }}
-                className="rounded-md border-l-2 border-primary/50 pl-1 -ml-1 cursor-pointer bg-yellow-200/60 dark:bg-amber-400/25 hover:bg-yellow-300/70 dark:hover:bg-amber-400/35 transition-colors"
+                className={highlightClass}
                 title="View Deep explanation"
                 aria-label="View Deep explanation"
               >
-                <blockquote className="my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground" {...props} />
-              </div>
-            ) : (
-              <blockquote className="my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground" {...props} />
-            )}
+                {sel}
+              </span>
+              {text.slice(idx + sel!.length)}
+            </blockquote>
+          );
+        } else if (deepCard) {
+          content = (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={handleOpenDeep}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleOpenDeep();
+                }
+              }}
+              className="rounded-md border-l-2 border-primary/50 pl-1 -ml-1 cursor-pointer bg-yellow-200/60 dark:bg-amber-400/25 hover:bg-yellow-300/70 dark:hover:bg-amber-400/35 transition-colors"
+              title="View Deep explanation"
+              aria-label="View Deep explanation"
+            >
+              <blockquote className={blockquoteClass} {...props} />
+            </div>
+          );
+        } else {
+          content = <blockquote className={blockquoteClass} {...props} />;
+        }
+        return (
+          <div
+            key={`block-${blockIdx}`}
+            className="group/block"
+            data-cell-id={cellId}
+            data-tab-id={tabId}
+            data-block-index={blockIdx}
+          >
+            {content}
           </div>
         );
       },
