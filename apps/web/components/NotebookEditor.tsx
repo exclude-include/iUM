@@ -142,7 +142,7 @@ function CellEditor({ cell, onUpdate, onDelete }: CellEditorProps) {
         value={cell.content}
         onChange={(e) => onUpdate({ content: e.target.value })}
         placeholder="Write your content in Markdown..."
-        className="min-h-[120px] resize-y text-sm font-mono"
+        className="min-h-[120px] resize-y text-sm font-mono break-all whitespace-pre-wrap"
       />
 
       {/* Cell Footer */}
@@ -246,7 +246,7 @@ export function NotebookEditor({
           ) : (
             <>
               <Plus className="h-4 w-4 mr-2" />
-              Create New Notebook
+              Create New Tab
             </>
           )}
         </Button>
@@ -301,7 +301,7 @@ export function NotebookEditor({
         {content.cells.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <FileText className="h-12 w-12 text-muted-foreground/30 mb-4" />
-            <p className="text-muted-foreground mb-2">This notebook is empty</p>
+            <p className="text-muted-foreground mb-2">This tab is empty</p>
             <p className="text-sm text-muted-foreground/70">
               Add a cell below to get started
             </p>

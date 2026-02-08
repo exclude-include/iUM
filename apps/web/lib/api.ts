@@ -296,6 +296,15 @@ export const workspaceApi = {
       }
     });
   },
+
+  async deleteFolder(workspaceId: string = "default", folderId: string, token: string): Promise<any> {
+    return fetchApi(`/api/workspace/${workspaceId}/folders/${folderId}`, {
+      method: "DELETE",
+      headers: {
+        "Authorization": `Bearer ${token}`
+      }
+    });
+  },
 };
 
 /**

@@ -307,14 +307,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     let finalTitle: string;
 
     // Auto-generate unique title if not provided or is default
-    if (!title || title === "New Notebook" || title === "Untitled Notebook") {
+    if (!title || title === "New Tab" || title === "Untitled Tab" || title === "New Notebook" || title === "Untitled Notebook") {
       const existingTitles = state.notebookTabs.map((t) => t.title);
       let counter = 1;
-      let candidateTitle = "Notebook 1";
+      let candidateTitle = "Tab 1";
 
       while (existingTitles.includes(candidateTitle)) {
         counter++;
-        candidateTitle = `Notebook ${counter}`;
+        candidateTitle = `Tab ${counter}`;
       }
       finalTitle = candidateTitle;
     } else {
@@ -1232,11 +1232,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             knowledgeFolders: state.knowledgeFolders.map((folder) =>
               folder.id === syncInfo.folderId
                 ? {
-                    ...folder,
-                    files: folder.files.map((f) =>
-                      f.id === syncInfo.fileId ? { ...f, name: newFileName } : f
-                    ),
-                  }
+                  ...folder,
+                  files: folder.files.map((f) =>
+                    f.id === syncInfo.fileId ? { ...f, name: newFileName } : f
+                  ),
+                }
                 : folder
             ),
           }));
