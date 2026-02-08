@@ -45,6 +45,7 @@ interface ReelSlideProps {
   quizCompleted: boolean;
   elapsedTime: number; // For placeholder timer display
   showMoreMenu: boolean;
+  canPlay?: boolean; // Global Lock Prop
   
   // Callbacks
   onVideoRef: (el: HTMLVideoElement | null, reelId: string) => void;
@@ -102,6 +103,7 @@ export function ReelSlide({
   setShowMoreMenu,
   onQuizCorrect,
   onQuizClose,
+  canPlay = true, // Default to true for backward compatibility
 }: ReelSlideProps) {
   // Fix for AnimatePresence keeping exiting slides active:
   // Check global store to see if this reel is TRULY the active one.
@@ -130,15 +132,15 @@ export function ReelSlide({
     const video = internalVideoRef.current;
     if (!video) return;
 
-    // Use isActuallyActive (from store) combined with isActive (prop)
-    // This ensures exiting slides (which have stale isActive=true prop) stop playing.
-    if (isActive && isActuallyActive && !showQuiz) {
+    // Use isActuallyActive (from store) combined with isActive (prop) and canPlay (Global Lock)
+    // This ensures exiting slides stop playing AND duplicate players don't play.
+    if (isActive && isActuallyActive && canPlay && !showQuiz) {
        // Try to play if active
        video.play().catch(() => { /* ignore */ });
     } else {
        video.pause();
     }
-  }, [isActive, isActuallyActive, showQuiz]);
+  }, [isActive, isActuallyActive, canPlay, showQuiz]);
 
   // Author info fetch (copied from ReelPlayer)
   useEffect(() => {

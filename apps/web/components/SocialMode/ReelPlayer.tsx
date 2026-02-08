@@ -62,7 +62,23 @@ export function ReelPlayer({ initialReelId }: ReelPlayerProps = {}) {
     navigateToReel,
     feedBuffer,
     currentBufferIndex,
+    activePlayerId,
+    setActivePlayerId,
   } = feedStore;
+
+  // Generate a unique ID for this player instance
+  const [playerId] = useState(() => Math.random().toString(36).substring(7));
+
+  // Register as the active player on mount/focus
+  useEffect(() => {
+    if (setActivePlayerId) {
+        setActivePlayerId(playerId);
+        console.log(`ReelPlayer mounted/active: ${playerId}`);
+    }
+    return () => {
+      // Optional cleanup
+    };
+  }, [playerId, setActivePlayerId]);
   
   const socialStore = useSocialStore();
   const {
@@ -468,25 +484,9 @@ export function ReelPlayer({ initialReelId }: ReelPlayerProps = {}) {
           >
            <ReelSlide
              reel={currentReel}
-             isActive={true} // It's active if it's rendered by us here? AnimatePresence handles "exit" one.
-             // Actually, when exiting, isActive should probably be false if we want it to pause?
-             // But AnimatePresence keeps it mounted.
-             // We can check if reel.id === currentReel.id? 
-             // But 'currentReel' variable in this scope is the *current* global one.
-             // The OLD component instance has the OLD props captured?
-             // No, ReelPlayer re-renders with new currentReel.
-             // The old motion.div is exiting.
-             // We are passing `currentReel` here.
-             // Wait. `<motion.div key={currentReel.id}>`.
-             // This means when currentReel changes, a NEW component is created with the NEW 'currentReel'.
-             // The OLD component (with the OLD key) is preserved by AnimatePresence.
-             // Does it receive new props? No, it's unmounted from the React tree but kept by Framer Motion. 
-             // It retains its state/props from when it was removed.
-             // So `currentReel` passed to the *exiting* slide is the *old* reel.
-             // So `isActive` passed to it was `true` (from the time it was rendered).
-             // We might want to pass `isActive={false}` to the exiting one?
-             // We can't easily. But `ReelSlide` has logic to `play()` if active.
-             // If we just want controls to work on the NEW one, that's fine.
+             isActive={true} 
+             // Global Lock: Only play if this specific Player instance is the active one
+             canPlay={activePlayerId === playerId}
              isMuted={isMuted}
              isLiked={isLiked}
              isBookmarked={isBookmarked}

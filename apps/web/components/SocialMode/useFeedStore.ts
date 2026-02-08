@@ -32,6 +32,10 @@ interface FeedState {
   getCurrentReel: () => ReelItem | null;
   setActiveFolderIds: (ids: string[]) => void;
   setShowAllFolders: (show: boolean) => void;
+  
+  // Global Playback Lock
+  activePlayerId: string | null;
+  setActivePlayerId: (id: string | null) => void;
 }
 
 const BUFFER_SIZE_AHEAD = 10;  // Keep 10 reels ahead
@@ -249,4 +253,8 @@ export const useFeedStore = create<FeedState>((set, get) => ({
   setActiveFolderIds: (ids) => set({ activeFolderIds: ids }),
   
   setShowAllFolders: (show) => set({ showAllFolders: show }),
+
+  // Global Playback Lock
+  activePlayerId: null,
+  setActivePlayerId: (id) => set({ activePlayerId: id }),
 }));
