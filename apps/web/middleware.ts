@@ -42,7 +42,7 @@ export async function middleware(request: NextRequest) {
   // Redirect authenticated users away from login page
   if (user && request.nextUrl.pathname === '/login') {
     const url = request.nextUrl.clone()
-    url.pathname = '/social'
+    url.pathname = '/'
     return NextResponse.redirect(url)
   }
 

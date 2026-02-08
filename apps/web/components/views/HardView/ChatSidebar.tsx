@@ -1,14 +1,10 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import {
   Send,
   Loader2,
   MessageCircle,
-  LogOut,
-  User,
-  Settings,
   ThumbsUp,
   ThumbsDown,
   Sparkles,
@@ -23,16 +19,20 @@ import {
   Check,
   Paperclip,
   X,
+  Settings,
+  LogOut,
+  User,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { ChatMessage } from "@/types/api";
@@ -66,10 +66,28 @@ export function ChatSidebar() {
     setSidebarMode, // ✨
   } = useAppStore();
 
-  const router = useRouter();
   const { toast } = useToast();
+  const router = useRouter();
   const supabase = createClient();
   const activeFolder = knowledgeFolders.find((f) => f.id === activeFolderId);
+
+  const getInitials = (email: string) => {
+    if (!email) return "U";
+    const part = email.split("@")[0];
+    return part ? part.slice(0, 2).toUpperCase() : "U";
+  };
+
+  const handleSignOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      toast({ title: "Signed out", description: "You have been successfully signed out." });
+      router.push("/");
+      router.refresh();
+    } catch (err: any) {
+      toast({ title: "Error", description: err?.message || "Failed to sign out", variant: "destructive" });
+    }
+  };
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   // ✨ [수정] 단순 boolean 대신 현재 진행 상태 메시지를 저장 (null이면 로딩 아님)
@@ -116,28 +134,6 @@ export function ChatSidebar() {
 
     return () => subscription.unsubscribe();
   }, [supabase]);
-
-  const handleSignOut = async () => {
-    try {
-      await supabase.auth.signOut();
-      toast({
-        title: "Signed out",
-        description: "You have been signed out successfully.",
-      });
-      router.push("/login");
-      router.refresh();
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to sign out",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const getInitials = (email: string) => {
-    return email.charAt(0).toUpperCase();
-  };
 
   // Load messages from active folder's chat history
   useEffect(() => {
@@ -263,26 +259,23 @@ export function ChatSidebar() {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSend = async () => {
-    if ((!input.trim() && selectedFiles.length === 0) || loadingStatus || isUploading) return;
+  // ✨ [Added] Message Queue State
+  const queueRef = useRef<{ content: string; files: File[] }[]>([]);
+  const isProcessingRef = useRef(false);
 
-    if (!activeFolderId) {
-      toast({
-        title: "No folder selected",
-        description: "Chatting without a folder will search all documents. Create or select a folder for focused learning.",
-        variant: "default",
-      });
-    }
+  // ✨ [Refactored] Actual execution logic (previously handleSend)
+  const executeMessageTask = async (content: string, files: File[]) => {
+    // Note: We use arguments instead of state because state might have changed
 
     // ✨ [수정] 파일 업로드 처리
     let attachments: { type: string; url?: string; file_id?: string; storage_path?: string; name?: string }[] = [];
 
-    if (selectedFiles.length > 0) {
+    if (files.length > 0) {
       setIsUploading(true);
       setLoadingStatus("Uploading files...");
 
       try {
-        const uploadPromises = selectedFiles.map(file =>
+        const uploadPromises = files.map(file =>
           api.ingest.uploadFile(
             file,
             "user_knowledge",
@@ -293,10 +286,10 @@ export function ChatSidebar() {
         const uploadResults = await Promise.all(uploadPromises);
 
         attachments = uploadResults.map((result, index) => ({
-          type: selectedFiles[index].type.startsWith("image/") ? "image" : "file",
+          type: files[index].type.startsWith("image/") ? "image" : "file",
           storage_path: result.storage_path,
           file_id: result.document_ids[0],
-          name: selectedFiles[index].name
+          name: files[index].name
         }));
 
       } catch (error) {
@@ -317,9 +310,9 @@ export function ChatSidebar() {
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: input.trim(),
+      content: content.trim(),
       timestamp: new Date().toISOString(),
-      // ✨ [추가] 첨부파일 메타데이터 (UI 표시용 - 실제 API 응답과 다를 수 있음)
+      // ✨ [추가] 첨부파일 메타데이터 (UI 표시용)
       sources: attachments.map(att => ({
         title: att.name || "Attached File",
         id: att.file_id || "",
@@ -334,11 +327,9 @@ export function ChatSidebar() {
       addMessageToFolder(activeFolderId, userMessage);
     }
 
-    setInput("");
-    setSelectedFiles([]); // ✨ 파일 초기화
-
-    setLoadingStatus("Starting agent...");
+    // Input clearing is handled in handleSend now
     userMessageCountRef.current += 1;
+    setLoadingStatus("Starting agent...");
 
     try {
       const response = await api.chat.sendMessage(
@@ -347,7 +338,7 @@ export function ChatSidebar() {
           conversationId: conversationId || undefined,
           collectionName: "user_knowledge",
           folderId: activeFolderId || undefined,
-          attachments: attachments, // ✨ [추가] 첨부파일 전달
+          attachments: attachments,
         },
         (statusMessage) => {
           setLoadingStatus(statusMessage);
@@ -368,18 +359,10 @@ export function ChatSidebar() {
       if (response.learning_unit) {
         console.log("[ChatSidebar] Learning unit received:", response.learning_unit);
         appendCellToActiveTab(response.learning_unit);
-      } else if (response.message && response.message.trim().length > 20) {
-        // Fallback: learning_unit이 없으면 응답 메시지로 셀 생성
-        console.log("[ChatSidebar] No learning_unit, creating fallback cell from message");
-        const fallbackUnit = {
-          type: "concept" as const,
-          title: "AI Response",
-          content: response.message,
-          equations: [],
-          quiz_data: []
-        };
-        appendCellToActiveTab(fallbackUnit);
       }
+
+      // ✨ [Removed] Fallback cell creation to prevent "AI Response" cells with generic text
+
 
       const assistantMessage: ChatMessage = {
         id: `assistant-${Date.now()}`,
@@ -427,8 +410,54 @@ export function ChatSidebar() {
     }
   };
 
+  // ✨ [Added] Queue Processor
+  const processQueue = async () => {
+    if (isProcessingRef.current) return;
+    isProcessingRef.current = true;
+
+    while (queueRef.current.length > 0) {
+      const task = queueRef.current.shift();
+      if (task) {
+        await executeMessageTask(task.content, task.files);
+      }
+    }
+
+    isProcessingRef.current = false;
+  };
+
+  // ✨ [Modified] New handleSend pushes to queue
+  const handleSend = async (manualContent?: string) => {
+    const contentToSend = manualContent || input;
+    const filesToSend = [...selectedFiles];
+
+    if ((!contentToSend.trim() && filesToSend.length === 0)) return;
+
+    if (!activeFolderId) {
+      toast({
+        title: "No folder selected",
+        description: "Chatting without a folder will search all documents. Create or select a folder for focused learning.",
+        variant: "default",
+      });
+      // Allow sending anyway for general chat? The original logic didn't return.
+    }
+
+    // Clear Input Immediately
+    if (!manualContent) {
+      setInput("");
+      setSelectedFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+
+    // Push to Queue
+    queueRef.current.push({ content: contentToSend, files: filesToSend });
+
+    // Trigger Processor
+    processQueue();
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // ✨ [Fixed] Prevent double submission during IME composition (Korean)
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
     }
@@ -713,7 +742,31 @@ export function ChatSidebar() {
               </div>
             )}
 
-            <div className="flex gap-2">
+            {/* Save Progress (from hover-onboarding) */}
+            {messages.filter((m) => m.role === "user").length >= 1 && !isSaved && (
+              <div className="flex justify-end mb-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-[10px] px-2"
+                  onClick={generateStudySummary}
+                  disabled={isGeneratingSummary || isSaved}
+                >
+                  {isGeneratingSummary ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      Saving...
+                    </>
+                  ) : isSaved ? (
+                    "Saved!"
+                  ) : (
+                    "Save Progress"
+                  )}
+                </Button>
+              </div>
+            )}
+
+            <div data-tutorial="tutorial-chat" className="flex gap-2">
               <input
                 type="file"
                 ref={fileInputRef}
@@ -743,17 +796,20 @@ export function ChatSidebar() {
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyPress}
-                  disabled={!!loadingStatus || isUploading}
+                  // ✨ [Fixed] Allow typing even when loading
+                  disabled={isUploading}
                 />
               </div>
               <Button
-                onClick={handleSend}
-                disabled={(!input.trim() && selectedFiles.length === 0) || !!loadingStatus || isUploading}
+                onClick={() => handleSend()}
+                // ✨ [Fixed] Allow queuing even when loading
+                disabled={(!input.trim() && selectedFiles.length === 0) || isUploading}
                 size="icon"
                 className="shrink-0 h-9 w-9"
               >
                 {loadingStatus ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  // Show loading spinner but button is active for queuing
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 ) : (
                   <Send className="h-4 w-4" />
                 )}

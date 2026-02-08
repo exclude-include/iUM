@@ -35,11 +35,12 @@ Final Answer: [Final response to the user]
 
 ## Rules
 1. For complex questions, use multiple tools sequentially.
-2. For quiz requests, use the create_quiz_cell tool.
-3. For topics requiring prior knowledge, run check_prerequisites first.
-4. For file/document summarization, use the create_summary_cell tool.
-5. Always start each step with Thought.
-6. Format your Final Answer in markdown.
+2. **CRITICAL**: If the user asks for an explanation, proof, concept definition, or detailed information, **YOU MUST USE `generate_concept_cell`**. Do NOT write the explanation in the Final Answer.
+3. For quiz requests, use the create_quiz_cell tool.
+4. For topics requiring prior knowledge, run check_prerequisites first.
+5. For file/document summarization, use the create_summary_cell tool.
+6. Always start each step with Thought.
+7. Your Final Answer should be a short confirmation like "I have generated the content in the workspace." followed by the actual content generation via tools.
 
 ## Example
 User: "Explain calculus and also create a quiz"
@@ -151,6 +152,24 @@ User Question: {question}
             return match.group(1).strip()
         return ""
     
+    def _get_friendly_action_message(self, action_name: str, action_input: Dict[str, Any]) -> str:
+        """Generate user-friendly status message based on action"""
+        topic = action_input.get("topic")
+        query = action_input.get("query")
+        
+        if action_name == "generate_concept_cell":
+            return f"Thinking about '{topic}' and writing an explanation... ✍️" if topic else "Drafting an explanation... ✍️"
+        elif action_name == "create_quiz_cell":
+            return f"Creating quiz questions for '{topic}'... 📝" if topic else "Preparing a quiz... 📝"
+        elif action_name == "check_prerequisites":
+            return f"Checking what you need to know before learning '{topic}'... 🔍" if topic else "Checking prerequisites... 🔍"
+        elif action_name == "create_summary_cell":
+            return "Summarizing the content... 📋"
+        elif action_name == "vector_search":
+            return f"Searching knowledge base for '{query}'... 🔎" if query else "Searching knowledge base... 🔎"
+        else:
+            return f"Working on it ({action_name})... 🔧"
+
     @track(name="react_agent_run", type="tool")
     async def run(self, question: str) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -225,11 +244,12 @@ User Question: {question}
             action_name = action["action"]
             action_input = action["action_input"]
             
-            # 4. Stream progress status
+            # 4. Stream progress status with friendly message
+            friendly_msg = self._get_friendly_action_message(action_name, action_input)
             yield {
                 "status": "progress",
                 "step": f"action_{iteration + 1}",
-                "message": f"Executing tool: {action_name} 🔧"
+                "message": friendly_msg
             }
             
             # 5. Execute tool
@@ -248,10 +268,50 @@ User Question: {question}
                 else:
                     unit_type = "concept"
                 
+                content = observation
+                graph_data = None
+                
+                # ✨ [Fix] Parse JSON output from generate_concept_cell
+                if action_name == "generate_concept_cell":
+                    try:
+                        # Try to find JSON object boundaries
+                        json_match = re.search(r'\{.*\}', observation, re.DOTALL)
+                        if json_match:
+                            parsed = json.loads(json_match.group(0))
+                            if "text_content" in parsed:
+                                content = parsed["text_content"]
+                            if "graph_data" in parsed:
+                                graph_data = parsed["graph_data"]
+                    except:
+                        # Fallback: Regex Extraction (Robust against bad escaping)
+                        # Extract text_content
+                        try:
+                            text_match = re.search(r'"text_content"\s*:\s*"(.*?)(?<!\\)",', observation, re.DOTALL)
+                            if text_match:
+                                # Start of manual unescape
+                                extracted_text = text_match.group(1)
+                                extracted_text = extracted_text.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+                                content = extracted_text
+                            
+                            # Extract graph_data
+                            graph_match = re.search(r'"graph_data"\s*:\s*(\{.*\})\s*\}', observation, re.DOTALL)
+                            if graph_match:
+                                graph_json = graph_match.group(1)
+                                # Try parsing just the graph part
+                                try:
+                                    graph_data = json.loads(graph_json)
+                                except:
+                                    pass
+                        except:
+                            pass
+                        # If all fails, content remains as observation (raw JSON) -> better than crash, but user will complain
+                        # But at least we tried harder.
+
                 self.accumulated_learning_units.append({
                     "type": unit_type,
-                    "content": observation,
-                    "title": action_input.get("topic", "Learning Content")
+                    "content": content,
+                    "title": action_input.get("topic", "Learning Content"),
+                    "graph_data": graph_data
                 })
                 # Track topic for chat message
                 if action_input.get("topic"):
@@ -296,7 +356,7 @@ User Question: {question}
     def _generate_chat_message(self) -> str:
         """Generate short status message for chat sidebar"""
         if not self.accumulated_learning_units:
-            return "I've analyzed your question. Check the workspace for details!"
+            return "답변하기 어렵거나 에러가 발생한 것 같습니다!"
         
         # Count what was created
         has_concept = any(u["type"] == "concept" for u in self.accumulated_learning_units)
@@ -325,6 +385,7 @@ User Question: {question}
         combined_content = ""
         unit_type = "concept"
         quiz_data = []
+        graph_data = None # ✨ [Added]
         
         for unit in self.accumulated_learning_units:
             if unit["type"] == "quiz":
@@ -346,13 +407,16 @@ User Question: {question}
                 combined_content += f"\n\n{unit['content']}"
             else:
                 combined_content += f"\n\n{unit['content']}"
+                if unit.get("graph_data"):
+                    graph_data = unit["graph_data"] # ✨ [Added] Use graph data from concept unit
         
         learning_unit = {
             "title": self.detected_topic or "Learning Content",
             "type": unit_type,
             "content": combined_content.strip(),
             "equations": [],
-            "quiz_data": quiz_data if unit_type == "quiz" else []
+            "quiz_data": quiz_data if unit_type == "quiz" else [],
+            "graph_data": graph_data # ✨ [Added] Pass graph data
         }
         
         return learning_unit
