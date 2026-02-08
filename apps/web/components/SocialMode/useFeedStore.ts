@@ -77,15 +77,22 @@ export const useFeedStore = create<FeedState>((set, get) => ({
   showAllFolders: true,
 
   loadInitialFeed: async () => {
-    const { isLoading, pageSize } = get();
+    const { isLoading, pageSize, activeFolderIds, showAllFolders } = get();
     if (isLoading) return;
 
     set({ isLoading: true });
 
     try {
+      // Get active folder IDs from global store
+      const { activeFolderId } = await import("@/lib/store").then(m => ({ activeFolderId: m.useAppStore.getState().activeFolderId }));
+      
+      // Build folder IDs array: use activeFolderId from AppStore if available
+      const folderIds = activeFolderId ? [activeFolderId] : [];
+      
       const data = await fetchFeed({
         page: 0,
         pageSize: pageSize + 5, // Load 15 initially
+        activeFolderIds: folderIds,
       });
 
       // Transform API response to ReelItem format
@@ -113,10 +120,17 @@ export const useFeedStore = create<FeedState>((set, get) => ({
     set({ isLoading: true });
 
     try {
+      // Get active folder IDs from global store
+      const { activeFolderId } = await import("@/lib/store").then(m => ({ activeFolderId: m.useAppStore.getState().activeFolderId }));
+      
+      // Build folder IDs array
+      const folderIds = activeFolderId ? [activeFolderId] : [];
+      
       const data = await fetchFeed({
         page: currentPage + 1,
         pageSize,
         lastReelId: lastReelId || undefined,
+        activeFolderIds: folderIds,
       });
 
       // Transform API response to ReelItem format

@@ -32,41 +32,95 @@ async def get_feed(
     page_size: int = Query(10, ge=1, le=50, description="Number of reels per page"),
     last_reel_id: Optional[str] = Query(None, description="Last reel ID for cursor-based pagination"),
     user_id: Optional[str] = Query(None, description="User ID for personalization (future)"),
+    active_folder_ids: Optional[str] = Query(None, description="Comma-separated active folder IDs for filtering"),
+    similarity_threshold: float = Query(0.7, ge=0.0, le=1.0, description="Similarity threshold for quiz reels"),
 ):
     """
-    Get paginated feed of reels
+    Get paginated feed of reels with folder-aware filtering
+    
+    Filtering logic:
+    - No folders active: Return only non-quiz reels
+    - Folders active: Return quiz reels (similarity >= threshold) + all non-quiz reels
+    - Results are randomized
     
     Args:
         page: Page number (0-indexed)
         page_size: Number of reels to return
         last_reel_id: Last reel ID for cursor-based pagination (future)
         user_id: User ID for personalization (future)
+        active_folder_ids: Comma-separated folder IDs (e.g., "folder-1,folder-2")
+        similarity_threshold: Minimum similarity score for quiz reels (default 0.7)
         
     Returns:
         FeedResponse: Paginated list of reels
     """
     try:
+        from utils.similarity_service import calculate_folder_centroid, cosine_similarity
+        import random
+        
         supabase = get_supabase_client()
         
-        # Calculate offset
-        offset = page * page_size
+        # Parse folder IDs
+        folder_id_list = []
+        if active_folder_ids:
+            folder_id_list = [fid.strip() for fid in active_folder_ids.split(",") if fid.strip()]
         
-        # Query reels with pagination
-        # Order by created_at DESC for newest first
-        query = supabase.table("reels").select("*", count="exact")
+        # Get all reels (we'll filter in Python for simplicity)
+        # In production, you might want to use SQL functions for better performance
+        all_reels_result = supabase.table("reels").select("*").execute()
+        
+        if not all_reels_result.data:
+            return FeedResponse(
+                reels=[],
+                hasMore=False,
+                page=page,
+                pageSize=page_size
+            )
+        
+        candidate_reels = []
+        
+        # Case 1: No folders active - only non-quiz reels
+        if not folder_id_list:
+            candidate_reels = [
+                reel for reel in all_reels_result.data
+                if reel.get("quiz") is None
+            ]
+        
+        # Case 2: Folders active - filter quiz reels by similarity
+        else:
+            # Calculate folder centroid
+            centroid = calculate_folder_centroid(folder_id_list)
+            
+            if centroid is None:
+                # No documents in folders, treat as no folders
+                candidate_reels = [
+                    reel for reel in all_reels_result.data
+                    if reel.get("quiz") is None
+                ]
+            else:
+                for reel in all_reels_result.data:
+                    # Non-quiz reels: always include
+                    if reel.get("quiz") is None:
+                        candidate_reels.append(reel)
+                    
+                    # Quiz reels: check similarity
+                    elif reel.get("quiz_embedding") is not None:
+                        quiz_emb = reel["quiz_embedding"]
+                        similarity = cosine_similarity(centroid, quiz_emb)
+                        
+                        if similarity >= similarity_threshold:
+                            candidate_reels.append(reel)
+        
+        # Randomize order
+        random.shuffle(candidate_reels)
         
         # Apply pagination
-        result = query.order("created_at", desc=True).range(
-            offset, 
-            offset + page_size  # Get one extra to check if there are more
-        ).execute()
-        
-        # Check if there are more reels
-        total_count = result.count if result.count is not None else 0
+        offset = page * page_size
+        total_count = len(candidate_reels)
         has_more = (offset + page_size) < total_count
         
-        # Limit to page_size (we fetched one extra)
-        reels_data = result.data[:page_size] if result.data else []
+        # Get page of reels
+        reels_data = candidate_reels[offset:offset + page_size]
         reels = [Reel(**reel_data) for reel_data in reels_data]
         
         return FeedResponse(
