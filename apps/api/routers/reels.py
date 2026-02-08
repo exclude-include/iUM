@@ -551,7 +551,8 @@ async def generate_reel_from_cell(request: GenerateFromCellRequest):
         from utils.video_generator import choose_random_pastel
 
         supabase = get_supabase_client()
-        title = (request.cell_title or "From notebook").strip()[:200]
+        # Reel title kept short for feed display (e.g. 50 chars)
+        title = (request.cell_title or "From notebook").strip()[:50]
         description = (request.cell_content or "").strip()[:500]
 
         # 1. Quiz: use existing cell quiz if provided, else generate from content (one LLM call for tags + quiz)
@@ -562,6 +563,9 @@ async def generate_reel_from_cell(request: GenerateFromCellRequest):
             cell_quiz = _cell_quiz_to_reel_quiz(request.quiz_data)
             if cell_quiz:
                 quiz = cell_quiz
+        # Show quiz after 3 seconds in the reel
+        if quiz:
+            quiz = quiz.model_copy(update={"timestamp_seconds": 3.0})
 
         # 3. Create reel (same logic as create-with-quiz, no video)
         color = choose_random_pastel()
