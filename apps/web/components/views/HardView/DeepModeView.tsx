@@ -2,7 +2,6 @@
 
 import { useRef, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Plus, ExternalLink, Sparkles, GripVertical } from "lucide-react";
@@ -51,12 +50,12 @@ export function DeepModeView() {
     };
 
     return (
-        <div className="flex flex-col h-full bg-background deep-mode-view">
-            <div className="p-3 border-b text-xs text-muted-foreground bg-muted/20">
+        <div className="flex flex-col h-full min-h-0 bg-background deep-mode-view overflow-hidden">
+            <div className="p-3 border-b text-xs text-muted-foreground bg-muted/20 shrink-0">
                 <p>Select text in the main tab and right-click to "Deep Dive".</p>
             </div>
 
-            <ScrollArea className="flex-1 min-h-0 p-3">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3">
                 {deepHistory.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-64 text-center text-muted-foreground p-4">
                         <Sparkles className="w-12 h-12 mb-3 opacity-20" />
@@ -147,7 +146,7 @@ export function DeepModeView() {
                         ))}
                     </div>
                 )}
-            </ScrollArea>
+            </div>
         </div>
     );
 }

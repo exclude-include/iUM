@@ -13,7 +13,6 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import { BlockMath, InlineMath } from "react-katex";
-import { Sparkles } from "lucide-react";
 import "katex/dist/katex.min.css";
 
 // Custom Markdown Renderer Component to reuse logic (no block wrapper)
@@ -74,21 +73,26 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
           data-tab-id={tabId}
           data-block-index={blockIdx}
         >
-          {deepCard && (
-            <div className="flex justify-end mb-0.5">
-              <button
-                type="button"
-                onClick={handleOpenDeep}
-                title="View Deep explanation"
-                className="relative overflow-hidden flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary text-primary-foreground shadow-sm border border-primary/40 hover:bg-primary/90 transition-colors before:absolute before:inset-0 before:bg-[linear-gradient(135deg,transparent_45%,rgba(255,255,255,0.35)_50%,transparent_55%)] before:pointer-events-none"
-                aria-label="View Deep explanation"
-              >
-                <Sparkles className="h-3 w-3 shrink-0" />
-                <span className="text-[9px] font-medium leading-none">Deep</span>
-              </button>
+          {deepCard ? (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={handleOpenDeep}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleOpenDeep();
+                }
+              }}
+              className="rounded-md border-l-2 border-primary/50 pl-1 -ml-1 cursor-pointer bg-yellow-200/60 dark:bg-amber-400/25 hover:bg-yellow-300/70 dark:hover:bg-amber-400/35 transition-colors"
+              title="View Deep explanation"
+              aria-label="View Deep explanation"
+            >
+              <Tag className={className} {...props}>{children}</Tag>
             </div>
+          ) : (
+            <Tag className={className} {...props}>{children}</Tag>
           )}
-          <Tag className={className} {...props}>{children}</Tag>
         </div>
       );
     };
@@ -116,21 +120,26 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
             data-tab-id={tabId}
             data-block-index={blockIdx}
           >
-            {deepCard && (
-              <div className="flex justify-end mb-0.5">
-                <button
-                  type="button"
-                  onClick={handleOpenDeep}
-                  title="View Deep explanation"
-                  className="relative overflow-hidden flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary text-primary-foreground shadow-sm border border-primary/40 hover:bg-primary/90 transition-colors before:absolute before:inset-0 before:bg-[linear-gradient(135deg,transparent_45%,rgba(255,255,255,0.35)_50%,transparent_55%)] before:pointer-events-none"
-                  aria-label="View Deep explanation"
-                >
-                  <Sparkles className="h-3 w-3 shrink-0" />
-                  <span className="text-[9px] font-medium leading-none">Deep</span>
-                </button>
+            {deepCard ? (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={handleOpenDeep}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleOpenDeep();
+                  }
+                }}
+                className="rounded-md border-l-2 border-primary/50 pl-1 -ml-1 cursor-pointer bg-yellow-200/60 dark:bg-amber-400/25 hover:bg-yellow-300/70 dark:hover:bg-amber-400/35 transition-colors"
+                title="View Deep explanation"
+                aria-label="View Deep explanation"
+              >
+                <blockquote className="my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground" {...props} />
               </div>
+            ) : (
+              <blockquote className="my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground" {...props} />
             )}
-            <blockquote className="my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground" {...props} />
           </div>
         );
       },

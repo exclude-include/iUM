@@ -484,7 +484,9 @@ export function ChatSidebar() {
       </div>
 
       {sidebarMode === "deep" ? (
-        <DeepModeView />
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <DeepModeView />
+        </div>
       ) : (
         <>
           {/* Content Area - min-h-0 so flex child can shrink and scroll to bottom */}
