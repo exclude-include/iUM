@@ -27,6 +27,15 @@ import 'katex/dist/katex.min.css';
 // @ts-ignore
 declare module 'dagre';
 
+const estimateNodeSize = (label: string) => {
+    // Basic heuristic: 8px per char, 20px per line, with minimums
+    const lines = String(label || "").split('\n');
+    const maxLineLength = Math.max(...lines.map(l => l.length));
+    const width = Math.max(150, Math.min(400, maxLineLength * 8 + 40));
+    const height = Math.max(50, lines.length * 20 + 40);
+    return { width, height };
+};
+
 const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
     // ✨ [Fix] Create graph instance INSIDE function to prevent stale state across renders
     const dagreGraph = new dagre.graphlib.Graph();
@@ -37,7 +46,7 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
 
     nodes.forEach((node: any) => {
         // ✨ [Updated] Use dynamic size
-        const { width, height } = estimateNodeSize(node.data.label || "");
+        const { width, height } = estimateNodeSize(node.data.rawLabel || "");
         dagreGraph.setNode(node.id, { width, height });
     });
 
@@ -54,7 +63,7 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
 
     const layoutedNodes = nodes.map((node: any) => {
         const nodeWithPosition = dagreGraph.node(node.id);
-        const { width, height } = estimateNodeSize(node.data.label || "");
+        const { width, height } = estimateNodeSize(node.data.rawLabel || "");
 
         // Shift dagre's center-point based position to ReactFlow's top-left based position
         return {
@@ -92,6 +101,7 @@ function FlowChartInner({ data }: FlowChartProps) {
                 id: n.id,
                 // ✨ [Updated] Render label with Markdown/Math support
                 data: {
+                    rawLabel: n.label, // Store raw string for layout estimation
                     label: (
                         <div className="math-node-label">
                             <ReactMarkdown

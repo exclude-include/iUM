@@ -1,6 +1,6 @@
 "use client";
 
-import { Bookmark, BookmarkCheck, ExternalLink, Trash2 } from "lucide-react";
+import { Bookmark, BookmarkCheck, ChevronDown, ChevronUp, ExternalLink, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import type { CellType } from "@/lib/store";
@@ -12,6 +12,10 @@ interface CellToolbarProps {
   onDelete: () => void;
   onBookmark: () => void;
   onMoveToNewTab: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
   floating?: boolean; // ✨ Toggle absolute vs static
   className?: string;
 }
@@ -22,6 +26,10 @@ export function CellToolbar({
   onDelete,
   onBookmark,
   onMoveToNewTab,
+  onMoveUp,
+  onMoveDown,
+  canMoveUp = true,
+  canMoveDown = true,
   floating = true,
   className,
 }: CellToolbarProps) {
@@ -59,6 +67,32 @@ export function CellToolbar({
             <Bookmark className="h-3.5 w-3.5" />
           )}
         </Button>
+
+        {onMoveUp && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={onMoveUp}
+            disabled={!canMoveUp}
+            title="Move cell up"
+          >
+            <ChevronUp className="h-3.5 w-3.5" />
+          </Button>
+        )}
+
+        {onMoveDown && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={onMoveDown}
+            disabled={!canMoveDown}
+            title="Move cell down"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        )}
 
         <Button
           variant="ghost"

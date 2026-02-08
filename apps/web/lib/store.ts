@@ -238,6 +238,7 @@ interface AppState {
   deleteNotebookTab: (tabId: string) => void;
   setNotebookActiveTab: (tabId: string | null) => void;
   renameNotebookTab: (tabId: string, newTitle: string) => void;
+  reorderNotebookTabs: (newTabs: NotebookTab[]) => void;
 
   // Cell Actions
   appendCellToActiveTab: (unit: LearningUnitInput) => string;
@@ -245,6 +246,7 @@ interface AppState {
   deleteCell: (tabId: string, cellId: string) => void;
   moveCellToNewTab: (sourceTabId: string, cellId: string, newTabTitle?: string) => string;
   updateCell: (tabId: string, cellId: string, updates: Partial<Cell>) => void;
+  moveCell: (tabId: string, cellId: string, direction: 'up' | 'down') => void;
 
   // Bookmark Actions
   toggleBookmark: (tabId: string, cellId: string) => void;
@@ -330,6 +332,7 @@ interface AppState {
   hydrateNotebookBackup: (data: { tabs?: NotebookTab[]; activeTabId?: string | null; deepHistory?: Cell[] }) => void;
   saveUserNotebookStateToSupabase: () => Promise<void>;
   loadUserNotebookStateFromSupabase: () => Promise<void>;
+  deleteDeepCard: (id: string) => void;
 
   // ✨ [추가] 서버에서 파일 목록 불러오기 액션
   fetchFiles: () => Promise<void>;
@@ -486,6 +489,38 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     // Immediate sync for rename (user expects file name to change right away)
     get().queueTabSync(tabId, true);
+  },
+
+  reorderNotebookTabs: (newTabs) => {
+    set((state) => {
+      // Create a map of updated tabs for quick lookup
+      const updatedTabMap = new Map(newTabs.map(t => [t.id, t]));
+
+      // Construct the new full notebookTabs array:
+      // Keep tabs that were NOT in the newTabs list in their original position,
+      // and replace the ones that WERE in the newTabs list with the new order.
+      // This is necessary because newTabs only contains tabs for the current folder.
+
+      // Step 1: Identify the indices of the tabs being reordered in the global list
+      const folderId = newTabs.length > 0 ? (newTabs[0].folderId || "folder-1") : null;
+      if (!folderId) return state;
+
+      const updatedFullTabs = [...state.notebookTabs];
+
+      // Find where the tabs for this folder are located
+      const indices = state.notebookTabs
+        .map((t, i) => (t.folderId || "folder-1") === folderId ? i : -1)
+        .filter(i => i !== -1);
+
+      // Step 2: Replace only those indices with the new order
+      newTabs.forEach((tab, i) => {
+        if (i < indices.length) {
+          updatedFullTabs[indices[i]] = tab;
+        }
+      });
+
+      return { notebookTabs: updatedFullTabs };
+    });
   },
 
   appendCellToActiveTab: (unit) => {
@@ -687,6 +722,30 @@ export const useAppStore = create<AppState>((set, get) => ({
         }));
       }
     }
+  },
+
+  moveCell: (tabId, cellId, direction) => {
+    set((state) => ({
+      notebookTabs: state.notebookTabs.map((tab) => {
+        if (tab.id !== tabId) return tab;
+
+        const cells = [...tab.cells];
+        const index = cells.findIndex((c) => c.id === cellId);
+        if (index === -1) return tab;
+
+        const targetIndex = direction === 'up' ? index - 1 : index + 1;
+        if (targetIndex < 0 || targetIndex >= cells.length) return tab;
+
+        // Swap cells
+        const temp = cells[index];
+        cells[index] = cells[targetIndex];
+        cells[targetIndex] = temp;
+
+        return { ...tab, cells, updatedAt: Date.now() };
+      }),
+    }));
+    // Queue auto-sync
+    get().queueTabSync(tabId);
   },
 
   toggleBookmark: (tabId, cellId) => {
@@ -1226,6 +1285,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.warn("[Store] loadUserNotebookStateFromSupabase failed:", e);
     }
+  },
+
+  deleteDeepCard: (id) => {
+    set((state) => ({
+      deepHistory: state.deepHistory.filter((cell) => cell.id !== id),
+    }));
   },
 
   // ✨ [추가] 파일 목록 동기화 액션

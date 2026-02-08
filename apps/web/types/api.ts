@@ -18,6 +18,8 @@ export interface ChatMessage {
   reasoning_chain?: string[];
   // ✨ [추가] 사용자 피드백 상태
   feedback?: "like" | "dislike" | null;
+  // ✨ [추가] 사용자 의도 (유형 선택 바)
+  intent?: "auto" | "concept" | "diagram" | "quiz";
 }
 
 export interface ChatRequest {

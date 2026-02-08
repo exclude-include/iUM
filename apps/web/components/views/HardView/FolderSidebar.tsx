@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, Loader2, Pencil, FileCode, FileImage, File, Download, Star } from "lucide-react";
+import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, Loader2, Pencil, FileCode, FileImage, File, Download, Star, Paperclip, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -12,6 +12,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useGooglePicker } from "@/hooks/useGooglePicker";
 import { api } from "@/lib/api";
 import { supabase } from "@/lib/supabase/client";
+
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { HistoryTimeline } from "@/components/HistoryTimeline";
 import { BookmarksSection } from "./BookmarksSection";
 
@@ -73,54 +76,6 @@ export function FolderSidebar() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
-
-  // Resizable section heights (in pixels)
-  const [foldersHeight, setFoldersHeight] = useState(150);
-  const [filesHeight, setFilesHeight] = useState(250);
-  const [isDragging, setIsDragging] = useState<'folders' | 'files' | null>(null);
-  const dragStartY = useRef(0);
-  const dragStartHeight = useRef(0);
-
-  // Handle resize drag
-  const handleMouseDown = (section: 'folders' | 'files', e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsDragging(section);
-    dragStartY.current = e.clientY;
-    dragStartHeight.current = section === 'folders' ? foldersHeight : filesHeight;
-  };
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging) return;
-
-      const delta = e.clientY - dragStartY.current;
-      const newHeight = Math.max(80, Math.min(400, dragStartHeight.current + delta));
-
-      if (isDragging === 'folders') {
-        setFoldersHeight(newHeight);
-      } else {
-        setFilesHeight(newHeight);
-      }
-    };
-
-    const handleMouseUp = () => {
-      setIsDragging(null);
-    };
-
-    if (isDragging) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'ns-resize';
-      document.body.style.userSelect = 'none';
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [isDragging]);
 
   // ✨ Dynamic Icon Helper
   const getFileIcon = (fileName: string) => {
@@ -580,374 +535,399 @@ export function FolderSidebar() {
 
 
   return (
-    <div className="flex h-full flex-col bg-background border-r">
-      {/* Header */}
-      <div
-        data-tutorial="tutorial-sidebar-folders"
-        className="flex items-center justify-between border-b px-3 py-2"
-      >
-        <h3 className="text-xs font-semibold uppercase tracking-wide">FOLDERS</h3>
-        <div className="flex gap-1">
-          {/* View Knowledge Graph button removed */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-5 w-5"
-            onClick={() => setShowNewFolderModal(true)}
-            title="New Folder"
+    <div className="flex h-full flex-col bg-background border-r overflow-hidden">
+      <PanelGroup direction="vertical">
+        {/* Section 1: FOLDERS */}
+        <Panel id="folders" defaultSize={20} minSize={10} className="flex flex-col">
+          {/* FOLDERS Header */}
+          <div
+            data-tutorial="tutorial-sidebar-folders"
+            className="flex items-center justify-between border-b px-3 py-2 shrink-0 bg-background"
           >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Section 1: FOLDERS */}
-      <div
-        className="w-full shrink-0 overflow-y-auto"
-        style={{ height: foldersHeight }}
-      >
-        <div className="p-2 space-y-2">
-          {/* Folder List */}
-          <div className="space-y-1">
-            {knowledgeFolders.map((folder) => (
-              <div
-                key={folder.id}
-                className={cn(
-                  "group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs cursor-pointer hover:bg-accent transition-colors",
-                  activeFolderId === folder.id && "bg-accent font-medium"
-                )}
-                onClick={() => setActiveFolder(folder.id)}
+            <h3 className="text-xs font-semibold uppercase tracking-wide">FOLDERS</h3>
+            <div className="flex gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5"
+                onClick={() => setShowNewFolderModal(true)}
+                title="New Folder"
               >
-                <div
-                  className="h-2.5 w-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: folder.color }}
-                />
-                <span className="flex-1 truncate">{folder.name}</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setFolderToRename({ id: folder.id, name: folder.name });
-                    setRenameFolderInput(folder.name);
-                  }}
-                  title="Rename folder"
-                >
-                  <Pencil className="h-3 w-3 text-muted-foreground hover:text-primary" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteFolder(folder.id, folder.name);
-                  }}
-                  title="Delete folder"
-                >
-                  <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                </Button>
-              </div>
-            ))}
-            {knowledgeFolders.length === 0 && (
-              <p className="px-2 py-1.5 text-[10px] text-muted-foreground">
-                No folders yet. Click + to create one.
-              </p>
-            )}
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Drag Handle between Folders and Files */}
-      <div
-        className={cn(
-          "h-2 w-full cursor-ns-resize flex items-center justify-center hover:bg-muted/50 transition-colors group",
-          isDragging === 'folders' && "bg-primary/20"
-        )}
-        onMouseDown={(e) => handleMouseDown('folders', e)}
-      >
-        <div className="w-8 h-0.5 rounded-full bg-muted-foreground/30 group-hover:bg-muted-foreground/50 transition-colors" />
-      </div>
-
-      {/* Section 2: FILES (when folder is active) */}
-      {activeFolder && (
-        <div
-          className="w-full shrink-0 overflow-y-auto border-t"
-          style={{ height: filesHeight }}
-        >
-          <div className="p-2 space-y-2">
-            <div className="flex items-center justify-between px-2">
-              <div className="flex items-center gap-2">
-                {/* Select All Checkbox */}
-                <div
-                  className="cursor-pointer flex items-center justify-center h-4 w-4"
-                  onClick={handleSelectAll}
-                  title="Select All"
-                >
-                  {regularFiles.length > 0 && selectedDocumentIds.length === regularFiles.length ? (
-                    <CheckSquare className="h-3.5 w-3.5 text-primary" />
-                  ) : (
-                    <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
-                  )}
-                </div>
-                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
-                  {selectedDocumentIds.length > 0 ? `${selectedDocumentIds.length} Selected` : "FILES"}
-                </p>
-              </div>
-              <div className="flex items-center gap-0.5">
-                {selectedDocumentIds.length > 0 ? (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-destructive hover:text-destructive/90 hover:bg-destructive/10"
-                    onClick={() => setShowBulkDeleteDialog(true)}
-                    title="Delete Selected"
+          <ScrollArea className="flex-1">
+            <div className="p-2 space-y-2">
+              <div className="space-y-1">
+                {knowledgeFolders.map((folder) => (
+                  <div
+                    key={folder.id}
+                    className={cn(
+                      "group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs cursor-pointer hover:bg-accent transition-colors",
+                      activeFolderId === folder.id && "bg-accent font-medium"
+                    )}
+                    onClick={() => setActiveFolder(folder.id)}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                ) : (
-                  <>
+                    <div
+                      className="h-2.5 w-2.5 rounded-full shrink-0"
+                      style={{ backgroundColor: folder.color }}
+                    />
+                    <span className="flex-1 truncate">{folder.name}</span>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-5 w-5"
-                      onClick={() => fileInputRef.current?.click()}
-                      title="Upload local file"
+                      className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFolderToRename({ id: folder.id, name: folder.name });
+                        setRenameFolderInput(folder.name);
+                      }}
+                      title="Rename folder"
                     >
-                      <UploadCloud className="h-3.5 w-3.5" />
+                      <Pencil className="h-3 w-3 text-muted-foreground hover:text-primary" />
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-5 w-5"
-                      onClick={openPicker}
-                      disabled={!isPickerReady || isPickerLoading || isImporting}
-                      title="Import from Google Drive"
+                      className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteFolder(folder.id, folder.name);
+                      }}
+                      title="Delete folder"
                     >
-                      <HardDrive className="h-3.5 w-3.5" />
+                      <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
                     </Button>
-                  </>
+                  </div>
+                ))}
+                {knowledgeFolders.length === 0 && (
+                  <p className="px-2 py-1.5 text-[10px] text-muted-foreground">
+                    No folders yet. Click + to create one.
+                  </p>
                 )}
               </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
             </div>
+          </ScrollArea>
+        </Panel>
 
-            {/* Regular Files List */}
-            {regularFiles.length > 0 && (
-              <div className="space-y-1 ml-2">
-                {regularFiles.map((file, index) => {
-                  const isSelected = selectedDocumentIds.includes(file.id);
-                  return (
-                    <div
-                      key={`${file.id}-${index}`}
-                      className="group flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-muted/50 p-1 rounded relative pr-16"
-                    >
-                      <div
-                        className="shrink-0 cursor-pointer flex items-center justify-center h-4 w-4"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleDocumentSelection(file.id);
-                        }}
-                      >
-                        {isSelected ? (
-                          <CheckSquare className="h-3.5 w-3.5 text-primary" />
-                        ) : (
-                          <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        {/* ✨ Show star icon if starred, otherwise file type icon */}
-                        {file.isStarred ? (
-                          <Star className="h-3 w-3 shrink-0 text-yellow-500 fill-yellow-500" />
-                        ) : (
-                          getFileIcon(file.name)
-                        )}
-                        <span
-                          className={cn(
-                            "truncate cursor-pointer",
-                            isSelected && "text-foreground font-medium"
-                          )}
-                          title={file.name}
-                        >
-                          {file.name}
-                        </span>
-                      </div>
-                      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 hover:text-green-500"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadFile(file.id, file.name);
-                          }}
-                          title="Download"
-                        >
-                          <Download className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 hover:text-blue-500"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFileToRename({ id: file.id, name: file.name });
-                            setRenameInput(file.name);
-                          }}
-                          title="Rename"
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 hover:text-destructive"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFileToDelete({ id: file.id, name: file.name });
-                          }}
-                          title="Delete"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+        <PanelResizeHandle className="h-1.5 bg-border hover:bg-primary/20 transition-colors flex items-center justify-center group shrink-0">
+          <div className="w-8 h-0.5 rounded-full bg-muted-foreground/20 group-hover:bg-muted-foreground/40 transition-colors" />
+        </PanelResizeHandle>
 
-            {/* Saved Tabs Section */}
-            {iumFiles.length > 0 && (
-              <>
-                <Separator className="my-2" />
-                <div className="px-2">
-                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5 mb-1">
-                    <FileText className="h-3 w-3" />
-                    SAVED TABS
+        {/* Section 2: FILES */}
+        <Panel id="files" defaultSize={35} minSize={15} className="flex flex-col border-t">
+          {activeFolder ? (
+            <>
+              {/* FILES Header */}
+              <div className="flex items-center justify-between px-3 py-2 border-b shrink-0 bg-background">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="cursor-pointer flex items-center justify-center h-4 w-4"
+                    onClick={handleSelectAll}
+                    title="Select All"
+                  >
+                    {regularFiles.length > 0 && selectedDocumentIds.length === regularFiles.length ? (
+                      <CheckSquare className="h-3.5 w-3.5 text-primary" />
+                    ) : (
+                      <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
+                    )}
+                  </div>
+                  <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                    {selectedDocumentIds.length > 0 ? `${selectedDocumentIds.length} Selected` : "FILES"}
                   </p>
                 </div>
-                <div className="space-y-1 ml-2">
-                  {iumFiles.map((file, index) => (
-                    <div
-                      key={`ium-${file.id}-${index}`}
-                      className="group flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-primary/10 p-1 rounded relative pr-12 cursor-pointer"
-                      onClick={() => handleOpenIumFile(file)}
+                <div className="flex items-center gap-0.5">
+                  {selectedDocumentIds.length > 0 ? (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-destructive hover:text-destructive/90 hover:bg-destructive/10"
+                      onClick={() => setShowBulkDeleteDialog(true)}
+                      title="Delete Selected"
                     >
-                      <div className="shrink-0 flex items-center justify-center h-4 w-4">
-                        {/* ✨ Show star icon if starred, otherwise FileText */}
-                        {file.isStarred ? (
-                          <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500" />
-                        ) : (
-                          <FileText className="h-3.5 w-3.5 text-primary" />
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                        <span
-                          className="truncate text-primary hover:underline font-medium"
-                          title={file.name}
-                        >
-                          {file.name.replace('.ium', '')}
-                        </span>
-                        {/* ✨ Open Badge - shows if tab is currently open */}
-                        {notebookTabs.some(tab => tab.syncInfo?.fileId === file.id) && (
-                          <span className="ml-1 px-1 py-0.5 rounded-sm bg-green-500/10 text-green-500 text-[9px] font-bold uppercase tracking-tighter border border-green-500/20">
-                            OPEN
-                          </span>
-                        )}
-                        {/* ✨ Temp Badge */}
-                        {file.is_temp && (
-                          <span className="ml-1.5 px-1 py-0.5 rounded-sm bg-orange-500/10 text-orange-500 text-[9px] font-bold uppercase tracking-tighter border border-orange-500/20">
-                            TEMP
-                          </span>
-                        )}
-                      </div>
-                      <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={cn("h-5 w-5 hover:text-yellow-500", file.isStarred && "text-yellow-500 opacity-100")}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleFileStar(file.id, !file.isStarred);
-                          }}
-                          title={file.isStarred ? "Unstar" : "Star"}
-                        >
-                          <Star className={cn("h-3 w-3", file.isStarred && "fill-current")} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 hover:text-blue-500"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRenameInput(file.name.replace('.ium', ''));
-                            setFileToRename({ id: file.id, name: file.name });
-                          }}
-                          title="Rename"
-                        >
-                          <Pencil className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 hover:text-green-500"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDownloadFile(file.id, file.name);
-                          }}
-                          title="Download"
-                        >
-                          <Download className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-5 w-5 hover:text-destructive"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setFileToDelete({ id: file.id, name: file.name });
-                          }}
-                          title="Delete"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={() => fileInputRef.current?.click()}
+                        title="Upload local file"
+                      >
+                        <UploadCloud className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        onClick={openPicker}
+                        disabled={!isPickerReady || isPickerLoading || isImporting}
+                        title="Import from Google Drive"
+                      >
+                        <HardDrive className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  )}
                 </div>
-              </>
-            )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileUpload}
+                />
+              </div>
 
-            {regularFiles.length === 0 && iumFiles.length === 0 && (
-              <p className="text-[10px] text-muted-foreground ml-5 italic">
-                No files uploaded yet
+              <ScrollArea className="flex-1">
+                <div className="p-2">
+                  {regularFiles.length > 0 ? (
+                    <div className="space-y-1 ml-1">
+                      {regularFiles.map((file, index) => {
+                        const isSelected = selectedDocumentIds.includes(file.id);
+                        return (
+                          <div
+                            key={`${file.id}-${index}`}
+                            className="group flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-muted/50 p-1 rounded relative pr-16"
+                          >
+                            <div
+                              className="shrink-0 cursor-pointer flex items-center justify-center h-4 w-4"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleDocumentSelection(file.id);
+                              }}
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="h-3.5 w-3.5 text-primary" />
+                              ) : (
+                                <Square className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground" />
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1 font-sans">
+                              {file.isStarred ? (
+                                <Star className="h-3 w-3 shrink-0 text-yellow-500 fill-yellow-500" />
+                              ) : (
+                                getFileIcon(file.name)
+                              )}
+                              <span
+                                className={cn(
+                                  "truncate cursor-pointer",
+                                  isSelected && "text-foreground font-medium"
+                                )}
+                                title={file.name}
+                              >
+                                {file.name}
+                              </span>
+                            </div>
+                            <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5 hover:text-green-500"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadFile(file.id, file.name);
+                                }}
+                                title="Download"
+                              >
+                                <Download className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5 hover:text-blue-500"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFileToRename({ id: file.id, name: file.name });
+                                  setRenameInput(file.name);
+                                }}
+                                title="Rename"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5 hover:text-destructive"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setFileToDelete({ id: file.id, name: file.name });
+                                }}
+                                title="Delete"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground ml-3 italic py-2">
+                      No files yet
+                    </p>
+                  )}
+                </div>
+              </ScrollArea>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center flex-1 text-center p-4">
+              <Folder className="h-8 w-8 text-muted-foreground/20 mb-2" />
+              <p className="text-[11px] text-muted-foreground/60 leading-tight">
+                Select a folder to<br />manage files
               </p>
-            )}
+            </div>
+          )}
+        </Panel>
+
+        <PanelResizeHandle className="h-1.5 bg-border hover:bg-primary/20 transition-colors flex items-center justify-center group shrink-0">
+          <div className="w-8 h-0.5 rounded-full bg-muted-foreground/20 group-hover:bg-muted-foreground/40 transition-colors" />
+        </PanelResizeHandle>
+
+        {/* Section 3: SAVED TABS */}
+        <Panel id="saved-tabs" defaultSize={25} minSize={10} className="flex flex-col border-t">
+          {activeFolder ? (
+            <>
+              {/* SAVED TABS Header */}
+              <div className="px-3 py-2 border-b shrink-0 bg-background">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  <FileText className="h-3 w-3 text-primary" />
+                  SAVED TABS
+                </p>
+              </div>
+
+              <ScrollArea className="flex-1">
+                <div className="p-2">
+                  {iumFiles.length > 0 ? (
+                    <div className="space-y-1 ml-1">
+                      {iumFiles.map((file, index) => (
+                        <div
+                          key={`ium-${file.id}-${index}`}
+                          className="group flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-primary/10 p-1 rounded relative pr-12 cursor-pointer"
+                          onClick={() => handleOpenIumFile(file)}
+                        >
+                          <div className="shrink-0 flex items-center justify-center h-4 w-4">
+                            {file.isStarred ? (
+                              <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500" />
+                            ) : (
+                              <FileText className="h-3.5 w-3.5 text-primary opacity-80" />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 min-w-0 flex-1 font-sans">
+                            <span
+                              className="truncate text-primary hover:underline font-medium"
+                              title={file.name}
+                            >
+                              {file.name.replace('.ium', '')}
+                            </span>
+                            {notebookTabs.some(tab => tab.syncInfo?.fileId === file.id) && (
+                              <span className="ml-1 px-1 py-0.5 rounded-sm bg-green-500/10 text-green-500 text-[8px] font-bold uppercase border border-green-500/20">
+                                OPEN
+                              </span>
+                            )}
+                            {file.is_temp && (
+                              <span className="ml-1 px-1 py-0.5 rounded-sm bg-orange-500/10 text-orange-500 text-[8px] font-bold uppercase border border-orange-500/20">
+                                TEMP
+                              </span>
+                            )}
+                          </div>
+                          <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur-sm rounded">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className={cn("h-5 w-5 hover:text-yellow-500", file.isStarred && "text-yellow-500 opacity-100")}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleFileStar(file.id, !file.isStarred);
+                              }}
+                              title={file.isStarred ? "Unstar" : "Star"}
+                            >
+                              <Star className={cn("h-3 w-3", file.isStarred && "fill-current")} />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 hover:text-blue-500"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRenameInput(file.name.replace('.ium', ''));
+                                setFileToRename({ id: file.id, name: file.name });
+                              }}
+                              title="Rename"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 hover:text-green-500"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadFile(file.id, file.name);
+                              }}
+                              title="Download"
+                            >
+                              <Download className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 hover:text-destructive"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setFileToDelete({ id: file.id, name: file.name });
+                              }}
+                              title="Delete"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground ml-3 italic py-2">
+                      No saved tabs
+                    </p>
+                  )}
+                </div>
+              </ScrollArea>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center flex-1 text-center p-4">
+              <FileText className="h-8 w-8 text-muted-foreground/20 mb-2" />
+              <p className="text-[11px] text-muted-foreground/60 leading-tight">
+                Select a folder to<br />view tabs
+              </p>
+            </div>
+          )}
+        </Panel>
+
+        <PanelResizeHandle className="h-1.5 bg-border hover:bg-primary/20 transition-colors flex items-center justify-center group shrink-0">
+          <div className="w-8 h-0.5 rounded-full bg-muted-foreground/20 group-hover:bg-muted-foreground/40 transition-colors" />
+        </PanelResizeHandle>
+
+        {/* Section 4: BOOKMARKS */}
+        <Panel id="bookmarks" defaultSize={20} minSize={10} className="flex flex-col border-t bg-muted/5">
+          <div className="flex items-center justify-between px-3 py-2 border-b shrink-0">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+              <Bookmark className="h-3 w-3" />
+              BOOKMARKS
+            </h3>
           </div>
-        </div>
-      )}
+          <ScrollArea className="flex-1">
+            <div className="p-2 font-sans">
+              <BookmarksSection />
+            </div>
+          </ScrollArea>
+        </Panel>
+      </PanelGroup>
 
-      {/* Drag Handle before Bookmarks */}
-      <div
-        className={cn(
-          "h-2 w-full cursor-ns-resize flex items-center justify-center hover:bg-muted/50 transition-colors group",
-          isDragging === 'files' && "bg-primary/20"
-        )}
-        onMouseDown={(e) => handleMouseDown('files', e)}
-      >
-        <div className="w-8 h-0.5 rounded-full bg-muted-foreground/30 group-hover:bg-muted-foreground/50 transition-colors" />
-      </div>
-
-      {/* Upload Status */}
+      {/* FIXED FOOTER: Upload Status (Absolute overlay if needed, or outside PanelGroup) */}
       {uploadStatus.isUploading && (
-        <div className="p-3 border-t bg-muted/20">
+        <div className="p-3 border-t bg-background shrink-0 z-10">
           <div className="flex items-center gap-2 mb-1.5">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
             <span className="text-[10px] font-medium truncate max-w-[140px]">
@@ -959,19 +939,6 @@ export function FolderSidebar() {
           </div>
         </div>
       )}
-
-      {/* Section 3: BOOKMARKS */}
-      <div className="flex-1 min-h-[80px] border-t bg-muted/20 overflow-y-auto">
-        <div className="flex items-center justify-between px-3 py-2 border-b">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-            <Bookmark className="h-3 w-3" />
-            BOOKMARKS
-          </h3>
-        </div>
-        <div className="p-2">
-          <BookmarksSection />
-        </div>
-      </div>
 
       {/* ✨ New Folder Modal */}
       <Dialog open={showNewFolderModal} onOpenChange={setShowNewFolderModal}>

@@ -262,6 +262,14 @@ export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
     const toggleBookmark = useAppStore((state) => state.toggleBookmark);
     const moveCellToNewTab = useAppStore((state) => state.moveCellToNewTab);
 
+    const moveCell = useAppStore((state) => state.moveCell);
+
+    // ✨ Determine if cell can move up or down
+    const activeTab = useAppStore((state) => state.notebookTabs.find(t => t.id === tabId));
+    const cellIndex = useMemo(() => activeTab?.cells.findIndex(c => c.id === cell.id) ?? -1, [activeTab, cell.id]);
+    const canMoveUp = cellIndex > 0;
+    const canMoveDown = activeTab ? cellIndex < activeTab.cells.length - 1 : false;
+
     const handleDelete = () => {
       deleteCell(tabId, cell.id);
     };
@@ -272,6 +280,14 @@ export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
 
     const handleMoveToNewTab = () => {
       moveCellToNewTab(tabId, cell.id);
+    };
+
+    const handleMoveUp = () => {
+      moveCell(tabId, cell.id, 'up');
+    };
+
+    const handleMoveDown = () => {
+      moveCell(tabId, cell.id, 'down');
     };
 
     return (
@@ -296,6 +312,10 @@ export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
               onDelete={handleDelete}
               onBookmark={handleBookmark}
               onMoveToNewTab={handleMoveToNewTab}
+              onMoveUp={handleMoveUp}
+              onMoveDown={handleMoveDown}
+              canMoveUp={canMoveUp}
+              canMoveDown={canMoveDown}
               floating={false} // Static mode
               className="shrink-0"
             />

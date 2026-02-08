@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
 import { Moon, Sun, X, Plus, FileText, Save, Download, Pencil, Trash2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, PanelBottomClose, PanelBottomOpen, Sparkles, Star, Copy } from "lucide-react";
+import { Reorder } from "framer-motion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,9 +65,9 @@ export function MainContentArea() {
     hydrateNotebookBackup,
     saveUserNotebookStateToSupabase,
     loadUserNotebookStateFromSupabase,
+    reorderNotebookTabs, // ✨ Added for drag-and-drop
   } = useAppStore();
 
-  const { user } = useAuth();
   const { theme, setTheme } = useTheme();
   const { toast } = useToast();
   const [mounted, setMounted] = useState(false);
@@ -415,7 +416,11 @@ export function MainContentArea() {
           const isInMain = containerRef.current && containerRef.current.contains(anchorNode);
           const isInDeep = anchorNode.parentElement?.closest('.deep-mode-view');
 
-          if (isInMain || isInDeep) {
+          // ✨ [Updated] Restrict to content areas (ignore titles, badges, etc.)
+          const anchorElement = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode;
+          const isInContent = anchorElement?.closest('.cell-content, .document-content');
+
+          if ((isInMain && isInContent) || isInDeep) {
             setSelectionMenu({
               visible: true,
               position: { top: rect.top + window.scrollY, left: rect.left + rect.width / 2 + window.scrollX },
@@ -464,6 +469,11 @@ export function MainContentArea() {
 
       // 2. Restriction: NO diagrams or interactive elements
       if (target.closest('svg') || target.closest('.react-flow') || target.closest('.mermaid') || target.closest('button')) {
+        return;
+      }
+
+      // ✨ [Updated] Restriction: MUST be inside content areas (ignore cell headers, tabs, etc.)
+      if (!target.closest('.cell-content, .document-content')) {
         return;
       }
 
@@ -704,100 +714,113 @@ export function MainContentArea() {
         <div className="flex-1 overflow-x-auto scrollbar-hide">
           <div className="flex items-center gap-1 px-2 py-1.5 min-w-fit">
             {/* Tabs with Context Menu */}
-            {visibleTabs.map((tab) => (
-              <ContextMenu key={tab.id}>
-                <ContextMenuTrigger asChild>
-                  <div
-                    className={cn(
-                      "group flex items-center gap-1.5 rounded-t px-3 py-1.5 text-xs font-medium transition-colors border-b-2 border-transparent min-w-0 cursor-pointer",
-                      notebookActiveTabId === tab.id
-                        ? "bg-accent text-foreground border-primary"
-                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                    )}
-                  >
-                    <button
-                      onClick={() => setNotebookActiveTab(tab.id)}
-                      className="truncate max-w-[180px] text-left flex-1 flex items-center gap-1.5"
-                      title={`${tab.title} (${tab.cells.length} cells) - Right-click for options`}
-                    >
-                      <FileText className="h-3 w-3 flex-shrink-0" />
-                      <span className="truncate">{tab.title}</span>
-                      {/* ✨ Star indicator from synced file */}
-                      {(() => {
-                        const file = knowledgeFolders.flatMap(f => f.files).find(f => f.id === tab.syncInfo?.fileId);
-                        return file?.isStarred ? <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 flex-shrink-0" /> : null;
-                      })()}
-                      {tab.cells.length > 0 && (
-                        <span className="text-[10px] text-muted-foreground">
-                          ({tab.cells.length})
-                        </span>
+            <Reorder.Group
+              axis="x"
+              values={visibleTabs}
+              onReorder={reorderNotebookTabs}
+              className="flex items-center gap-1"
+            >
+              {visibleTabs.map((tab) => (
+                <Reorder.Item
+                  key={tab.id}
+                  value={tab}
+                  className="relative"
+                >
+                  <ContextMenu>
+                    <ContextMenuTrigger asChild>
+                      <div
+                        className={cn(
+                          "group flex items-center gap-1.5 rounded-t px-3 py-1.5 text-xs font-medium transition-colors border-b-2 border-transparent min-w-0 cursor-pointer",
+                          notebookActiveTabId === tab.id
+                            ? "bg-accent text-foreground border-primary"
+                            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                        )}
+                      >
+                        <button
+                          onClick={() => setNotebookActiveTab(tab.id)}
+                          className="truncate max-w-[180px] text-left flex-1 flex items-center gap-1.5"
+                          title={`${tab.title} (${tab.cells.length} cells) - Right-click for options`}
+                        >
+                          <FileText className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate">{tab.title}</span>
+                          {/* ✨ Star indicator from synced file */}
+                          {(() => {
+                            const file = knowledgeFolders.flatMap(f => f.files).find(f => f.id === tab.syncInfo?.fileId);
+                            return file?.isStarred ? <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 flex-shrink-0" /> : null;
+                          })()}
+                          {tab.cells.length > 0 && (
+                            <span className="text-[10px] text-muted-foreground">
+                              ({tab.cells.length})
+                            </span>
+                          )}
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteNotebookTab(tab.id);
+                          }}
+                          className={cn(
+                            "opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 hover:bg-background/50",
+                            notebookActiveTabId === tab.id && "opacity-100"
+                          )}
+                          title="Close tab"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent className="w-48">
+                      <ContextMenuItem
+                        onClick={async () => {
+                          // ✨ Duplicate tab logic
+                          const iumFile = exportTabAsIum(tab.id);
+                          if (iumFile) {
+                            // Modify title for duplicate
+                            iumFile.metadata.title = `${iumFile.metadata.title} (Copy)`;
+                            // Load as new tab
+                            const newTabId = loadTabFromIum(iumFile, activeFolderId || "folder-1");
+                            // ✨ Only auto-save if tab has cells (empty tabs save on first cell creation)
+                            if (activeFolderId && iumFile.cells && iumFile.cells.length > 0) {
+                              await saveTabToSupabase(newTabId, activeFolderId, false);
+                              toast({ title: "Tab duplicated", description: "Duplicate tab created and saved." });
+                            } else {
+                              toast({ title: "Tab duplicated", description: "Empty tab created. Save on first cell." });
+                            }
+                          }
+                        }}
+                      >
+                        <Copy className="h-4 w-4 mr-2" />
+                        Duplicate
+                      </ContextMenuItem>
+                      <ContextMenuItem onClick={() => handleDownloadTab(tab.id)}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download as .ium
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem onClick={() => openRenameDialog(tab.id)}>
+                        <Pencil className="h-4 w-4 mr-2" />
+                        Rename
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onClick={() => deleteNotebookTab(tab.id)}
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Close Tab
+                      </ContextMenuItem>
+                      {tab.syncInfo?.fileId && (
+                        <ContextMenuItem
+                          onClick={() => handleDeleteTabFromCloud(tab.id)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Delete from Cloud
+                        </ContextMenuItem>
                       )}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteNotebookTab(tab.id);
-                      }}
-                      className={cn(
-                        "opacity-0 group-hover:opacity-100 transition-opacity rounded p-0.5 hover:bg-background/50",
-                        notebookActiveTabId === tab.id && "opacity-100"
-                      )}
-                      title="Close tab"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                </ContextMenuTrigger>
-                <ContextMenuContent className="w-48">
-                  <ContextMenuItem
-                    onClick={async () => {
-                      // ✨ Duplicate tab logic
-                      const iumFile = exportTabAsIum(tab.id);
-                      if (iumFile) {
-                        // Modify title for duplicate
-                        iumFile.metadata.title = `${iumFile.metadata.title} (Copy)`;
-                        // Load as new tab
-                        const newTabId = loadTabFromIum(iumFile, activeFolderId || "folder-1");
-                        // ✨ Only auto-save if tab has cells (empty tabs save on first cell creation)
-                        if (activeFolderId && iumFile.cells && iumFile.cells.length > 0) {
-                          await saveTabToSupabase(newTabId, activeFolderId, false);
-                          toast({ title: "Tab duplicated", description: "Duplicate tab created and saved." });
-                        } else {
-                          toast({ title: "Tab duplicated", description: "Empty tab created. Save on first cell." });
-                        }
-                      }
-                    }}
-                  >
-                    <Copy className="h-4 w-4 mr-2" />
-                    Duplicate
-                  </ContextMenuItem>
-                  <ContextMenuItem onClick={() => handleDownloadTab(tab.id)}>
-                    <Download className="h-4 w-4 mr-2" />
-                    Download as .ium
-                  </ContextMenuItem>
-                  <ContextMenuSeparator />
-                  <ContextMenuItem onClick={() => openRenameDialog(tab.id)}>
-                    <Pencil className="h-4 w-4 mr-2" />
-                    Rename
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onClick={() => deleteNotebookTab(tab.id)}
-                  >
-                    <X className="h-4 w-4 mr-2" />
-                    Close Tab
-                  </ContextMenuItem>
-                  {tab.syncInfo?.fileId && (
-                    <ContextMenuItem
-                      onClick={() => handleDeleteTabFromCloud(tab.id)}
-                      className="text-destructive focus:text-destructive"
-                    >
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      Delete from Cloud
-                    </ContextMenuItem>
-                  )}
-                </ContextMenuContent>
-              </ContextMenu>
-            ))}
+                    </ContextMenuContent>
+                  </ContextMenu>
+                </Reorder.Item>
+              ))}
+            </Reorder.Group>
 
             {/* Document Tab (if active) */}
             {activeDocument && (

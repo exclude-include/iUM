@@ -26,6 +26,7 @@ export function VantaBackground() {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const VANTA = await import("vanta/dist/vanta.clouds.min.js");
         const VANTADefault = (VANTA as { default: (opts: Record<string, unknown>) => { destroy: () => void } }).default;
+        if (!vantaRef.current) return;
 
         if (!vantaRef.current) return;
 

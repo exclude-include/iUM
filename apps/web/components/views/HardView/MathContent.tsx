@@ -20,7 +20,7 @@ export function MathContent({ document }: MathContentProps) {
   // If document has sections, render them
   if (document.sections && document.sections.length > 0) {
     return (
-      <div className="space-y-4 text-xs leading-relaxed text-foreground">
+      <div className="space-y-4 text-xs leading-relaxed text-foreground document-content">
         {document.sections.map((section, index) => (
           <div key={index} className="space-y-3">
             <h3 className="text-sm font-semibold border-b pb-1">
@@ -29,7 +29,7 @@ export function MathContent({ document }: MathContentProps) {
             <p className="text-foreground">{section.content}</p>
           </div>
         ))}
-        
+
         {/* Render equations if available */}
         {document.equations && document.equations.length > 0 && (
           <div className="space-y-3 border-l-2 border-muted pl-3 mt-4">
@@ -48,7 +48,7 @@ export function MathContent({ document }: MathContentProps) {
 
   // Fallback: Render document content if no sections
   return (
-    <div className="space-y-4 text-xs leading-relaxed text-foreground">
+    <div className="space-y-4 text-xs leading-relaxed text-foreground document-content">
       {/* Section Title */}
       {document.title && (
         <h3 className="text-sm font-semibold border-b pb-1">

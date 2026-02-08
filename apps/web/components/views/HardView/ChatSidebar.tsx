@@ -25,6 +25,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
@@ -78,6 +79,7 @@ export function ChatSidebar() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [responseType, setResponseType] = useState<"auto" | "concept" | "diagram" | "quiz">("auto");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -260,6 +262,8 @@ export function ChatSidebar() {
       role: "user",
       content: content.trim(),
       timestamp: new Date().toISOString(),
+      // ✨ [추가] 사용자 의도 저장
+      intent: responseType,
       // ✨ [추가] 첨부파일 메타데이터 (UI 표시용)
       sources: attachments.map(att => ({
         title: att.name || "Attached File",
@@ -375,10 +379,21 @@ export function ChatSidebar() {
 
   // ✨ [Modified] New handleSend pushes to queue
   const handleSend = async (manualContent?: string) => {
-    const contentToSend = manualContent || input;
+    let contentToSend = manualContent || input;
     const filesToSend = [...selectedFiles];
 
     if ((!contentToSend.trim() && filesToSend.length === 0)) return;
+
+    // ✨ [추가] 답변 유형별 지침 추가
+    if (!manualContent) {
+      if (responseType === "concept") {
+        contentToSend = `[Instruction: Provide a detailed conceptual explanation] ${contentToSend}`;
+      } else if (responseType === "diagram") {
+        contentToSend = `[Instruction: Focus on providing a clear diagram. Keep text explanations concise] ${contentToSend}`;
+      } else if (responseType === "quiz") {
+        contentToSend = `[Instruction: Provide a quiz on this topic] ${contentToSend}`;
+      }
+    }
 
     if (!activeFolderId) {
       toast({
@@ -403,12 +418,18 @@ export function ChatSidebar() {
     processQueue();
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // ✨ [Fixed] Prevent double submission during IME composition (Korean)
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // ✨ [Fixed] Allow typing even when loading
+    // ✨ [Updated] Enter to send, Shift+Enter for new line
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  // ✨ [추가] 메시지 표시용 텍스트 필터링 (Instruction 제거)
+  const getDisplayContent = (content: string) => {
+    return content.replace(/\[Instruction:.*?\]\s*/g, "").trim();
   };
 
   return (
@@ -573,7 +594,7 @@ export function ChatSidebar() {
                                 }
                               }}
                             >
-                              {message.content}
+                              {getDisplayContent(message.content)}
                             </ReactMarkdown>
                             {message.reasoning_chain && (
                               <div className="mt-2 text-xs text-muted-foreground border-t pt-2 border-border/50">
@@ -593,7 +614,16 @@ export function ChatSidebar() {
                             )}
                           </div>
                         ) : (
-                          <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                          <div className="flex flex-col gap-1">
+                            {message.intent && message.intent !== "auto" && (
+                              <div className="flex justify-end mb-0.5">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-background/20 font-medium uppercase tracking-wider">
+                                  {message.intent}
+                                </span>
+                              </div>
+                            )}
+                            <div className="whitespace-pre-wrap break-words">{getDisplayContent(message.content)}</div>
+                          </div>
                         )}
 
                         {/* 첨부파일 표시 */}
@@ -713,29 +743,28 @@ export function ChatSidebar() {
               </div>
             )}
 
-            {/* Save Progress (from hover-onboarding) */}
-            {messages.filter((m) => m.role === "user").length >= 1 && !isSaved && (
-              <div className="flex justify-end mb-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-6 text-[10px] px-2"
-                  onClick={generateStudySummary}
-                  disabled={isGeneratingSummary || isSaved}
-                >
-                  {isGeneratingSummary ? (
-                    <>
-                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                      Saving...
-                    </>
-                  ) : isSaved ? (
-                    "Saved!"
-                  ) : (
-                    "Save Progress"
+            {/* Response Type Selector */}
+            <div className="flex gap-1.5 mb-2 overflow-x-auto no-scrollbar py-0.5">
+              {[
+                { id: "auto", label: "자동" },
+                { id: "concept", label: "Concept" },
+                { id: "diagram", label: "Diagram" },
+                { id: "quiz", label: "Quiz" },
+              ].map((type) => (
+                <button
+                  key={type.id}
+                  onClick={() => setResponseType(type.id as any)}
+                  className={cn(
+                    "px-3 py-1 text-[11px] rounded-full border transition-all whitespace-nowrap",
+                    responseType === type.id
+                      ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                      : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
                   )}
-                </Button>
-              </div>
-            )}
+                >
+                  {type.label}
+                </button>
+              ))}
+            </div>
 
             <div data-tutorial="tutorial-chat" className="flex gap-2">
               <input
@@ -756,18 +785,16 @@ export function ChatSidebar() {
               </Button>
 
               <div className="relative flex-1">
-                <input
-                  type="text"
+                <Textarea
                   placeholder={
                     activeFolderId
                       ? `Message ${activeFolder?.name}...`
                       : "Select a folder to chat..."
                   }
-                  className="w-full h-9 px-3 py-2 text-sm rounded-md border border-input bg-transparent shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  className="w-full min-h-[40px] max-h-[200px] px-3 py-2 text-sm rounded-md border border-input bg-transparent shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none overflow-y-auto"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyPress}
-                  // ✨ [Fixed] Allow typing even when loading
                   disabled={isUploading}
                 />
               </div>
