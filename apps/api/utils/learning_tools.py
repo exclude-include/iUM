@@ -57,6 +57,7 @@ class LearningToolkit:
                 func=self._generate_concept_cell,
                 params=["topic"]
             ),
+            "create_summary_cell": Tool(
                 name="create_summary_cell",
                 description="Summarize the uploaded document content. Use this when user asks to summarize a file or document.",
                 func=self._create_summary_cell,
