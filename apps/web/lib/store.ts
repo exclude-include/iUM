@@ -38,6 +38,27 @@ export interface QuizQuestion {
   explanation: string;
 }
 
+
+
+// Graph Data for Reactflow
+export interface GraphNode {
+  id: string;
+  label: string;
+  type?: string; // 'input', 'output', 'default'
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
+
 // Cell type for notebook cells
 export type CellType = "concept" | "math" | "code" | "summary" | "quiz";
 
@@ -50,10 +71,12 @@ export interface Cell {
   equations?: string[]; // LaTeX strings
   diagram_description?: string;
   mermaid_code?: string;
+  graph_data?: GraphData;
   quiz_data?: QuizQuestion[];
   isBookmarked: boolean;
   createdAt: number;
   updatedAt?: number;
+  status?: 'loading' | 'complete' | 'error';
 }
 
 // Sync info for tabs linked to Supabase files
@@ -90,6 +113,7 @@ export interface LearningUnitInput {
   equations?: string[]; // LaTeX strings
   diagram_description?: string;
   mermaid_code?: string;
+  graph_data?: GraphData;
   quiz_data?: QuizQuestion[];
 }
 
@@ -110,6 +134,7 @@ export interface IumFile {
     equations?: string[];
     diagram_description?: string;
     mermaid_code?: string;
+    graph_data?: GraphData;
     quiz_data?: QuizQuestion[];
     isBookmarked: boolean;
     createdAt: number;
@@ -125,6 +150,7 @@ export interface LearningUnit {
   equations?: string[]; // LaTeX strings
   diagram_description?: string;
   mermaid_code?: string;
+  graph_data?: GraphData;
   quiz_data?: QuizQuestion[];
 }
 
@@ -272,6 +298,14 @@ interface AppState {
   setRightPanelMinimized: (minimized: boolean) => void;
   setBottomPanelMinimized: (minimized: boolean) => void;
 
+  // ✨ Deep Mode State
+  sidebarMode: "chat" | "deep";
+  deepHistory: Cell[];
+  setSidebarMode: (mode: "chat" | "deep") => void;
+  addDeepCard: (unit: LearningUnitInput) => string;
+  updateDeepCard: (id: string, updates: Partial<Cell>) => void;
+  clearDeepHistory: () => void;
+
   // ✨ [추가] 서버에서 파일 목록 불러오기 액션
   fetchFiles: () => Promise<void>;
 
@@ -377,9 +411,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     const state = get();
     let tabId = state.notebookActiveTabId;
 
-    // If no active tab exists, create one first
+    console.log("[Store] appendCellToActiveTab called, activeTabId:", tabId, "tabs:", state.notebookTabs.length);
+
+    // If no active tab exists or can't find it, try to use first existing tab
     if (!tabId || !state.notebookTabs.find((t) => t.id === tabId)) {
-      tabId = get().createNotebookTab("Chat Session");
+      if (state.notebookTabs.length > 0) {
+        // Use existing first tab instead of creating new one
+        tabId = state.notebookTabs[0].id;
+        set({ notebookActiveTabId: tabId });
+        console.log("[Store] Using existing first tab:", tabId);
+      } else {
+        // Only create new tab if no tabs exist
+        tabId = get().createNotebookTab("Chat Session");
+        console.log("[Store] Created new tab:", tabId);
+      }
     }
 
     const cellId = `cell-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -396,10 +441,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       createdAt: Date.now(),
     };
 
+    console.log("[Store] Adding cell to tab:", tabId, "cell:", newCell.title);
+
     set((state) => ({
       notebookTabs: state.notebookTabs.map((tab) =>
         tab.id === tabId
-          ? { ...tab, cells: [...tab.cells, newCell], updatedAt: Date.now() }
+          ? { ...tab, cells: [newCell, ...tab.cells], updatedAt: Date.now() }
           : tab
       ),
       scrollToCellId: cellId,
@@ -915,6 +962,42 @@ export const useAppStore = create<AppState>((set, get) => ({
   setLeftPanelMinimized: (minimized) => set({ leftPanelMinimized: minimized }),
   setRightPanelMinimized: (minimized) => set({ rightPanelMinimized: minimized }),
   setBottomPanelMinimized: (minimized) => set({ bottomPanelMinimized: minimized }),
+
+  // ✨ Deep Mode Implementation
+  sidebarMode: "chat",
+  deepHistory: [],
+  setSidebarMode: (mode) => set({ sidebarMode: mode }),
+
+  addDeepCard: (unit) => {
+    const cellId = `deep-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const newCard: Cell = {
+      id: cellId,
+      type: unit.type,
+      title: unit.title,
+      content: unit.content,
+      equations: unit.equations,
+      diagram_description: unit.diagram_description,
+      mermaid_code: unit.mermaid_code,
+      quiz_data: unit.quiz_data,
+      isBookmarked: false,
+      createdAt: Date.now(),
+    };
+
+    set((state) => ({
+      deepHistory: [newCard, ...state.deepHistory]
+    }));
+    return cellId;
+  },
+
+  updateDeepCard: (id, updates) => {
+    set((state) => ({
+      deepHistory: state.deepHistory.map((cell) =>
+        cell.id === id ? { ...cell, ...updates } : cell
+      ),
+    }));
+  },
+
+  clearDeepHistory: () => set({ deepHistory: [] }),
 
   // ✨ [추가] 파일 목록 동기화 액션
   fetchFiles: async () => {

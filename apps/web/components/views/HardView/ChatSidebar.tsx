@@ -12,7 +12,6 @@ import {
   ThumbsUp,
   ThumbsDown,
   Sparkles,
-
   Search,
   PanelLeftClose,
   PanelLeftOpen,
@@ -46,6 +45,8 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import "katex/dist/katex.min.css";
 
+import { DeepModeView } from "./DeepModeView";
+
 export function ChatSidebar() {
   const {
     appendCellToActiveTab,
@@ -61,6 +62,8 @@ export function ChatSidebar() {
     setLeftPanelMinimized,
     setRightPanelMinimized,
     setBottomPanelMinimized,
+    sidebarMode, // ✨
+    setSidebarMode, // ✨
   } = useAppStore();
 
   const router = useRouter();
@@ -361,8 +364,21 @@ export function ChatSidebar() {
         setActiveSources([]);
       }
 
+      // ✨ [핵심 수정] learning_unit이 없어도 항상 탭에 콘텐츠 추가
       if (response.learning_unit) {
+        console.log("[ChatSidebar] Learning unit received:", response.learning_unit);
         appendCellToActiveTab(response.learning_unit);
+      } else if (response.message && response.message.trim().length > 20) {
+        // Fallback: learning_unit이 없으면 응답 메시지로 셀 생성
+        console.log("[ChatSidebar] No learning_unit, creating fallback cell from message");
+        const fallbackUnit = {
+          type: "concept" as const,
+          title: "AI Response",
+          content: response.message,
+          equations: [],
+          quiz_data: []
+        };
+        appendCellToActiveTab(fallbackUnit);
       }
 
       const assistantMessage: ChatMessage = {
@@ -419,9 +435,37 @@ export function ChatSidebar() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      {/* Header: Chat 탭 오른쪽 상단에 패널 최소화/복원 버튼 */}
-      <div className="flex items-center justify-between border-b px-3 py-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide">Chat</h3>
+      {/* Header: Mode Switcher & Panel Controls */}
+      <div className="flex items-center justify-between border-b px-2 py-2 shrink-0">
+        <div className="flex items-center bg-muted/50 p-1 rounded-lg">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-7 text-xs px-3 rounded-md transition-all",
+              sidebarMode === "chat"
+                ? "bg-background shadow-sm text-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setSidebarMode("chat")}
+          >
+            Chat
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-7 text-xs px-3 rounded-md transition-all",
+              sidebarMode === "deep"
+                ? "bg-background shadow-sm text-foreground font-medium"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => setSidebarMode("deep")}
+          >
+            Deep
+          </Button>
+        </div>
+
         <div className="flex items-center gap-0.5">
           <Button
             variant="ghost"
@@ -465,388 +509,336 @@ export function ChatSidebar() {
         </div>
       </div>
 
-      {/* Messages or Empty State */}
-      <ScrollArea className="flex-1">
-        {!activeFolderId ? (
-          <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center px-4">
-            <MessageCircle className="h-12 w-12 text-muted-foreground/50 mb-4" />
-            <p className="text-sm text-muted-foreground">
-              Select a folder from the sidebar to start.
-            </p>
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center px-4">
-            <MessageCircle className="h-12 w-12 text-muted-foreground/50 mb-4" />
-            <p className="text-sm text-muted-foreground">
-              Start chatting about <span className="font-medium text-foreground">{activeFolder?.name}</span>!
-            </p>
-          </div>
-        ) : (
-          <div className="p-3 space-y-4">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={cn(
-                  "flex gap-2",
-                  message.role === "assistant" ? "flex-row" : "flex-row-reverse"
-                )}
-              >
-                <Avatar className="h-7 w-7 border border-border shrink-0">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-[10px]">
-                    {message.role === "assistant" ? "i" : "U"}
-                  </AvatarFallback>
-                </Avatar>
-
-                <div className={cn("flex flex-col gap-1 max-w-[85%]", message.role === "user" && "items-end")}>
+      {sidebarMode === "deep" ? (
+        <DeepModeView />
+      ) : (
+        <>
+          {/* Content Area */}
+          <ScrollArea className="flex-1">
+            {!activeFolderId ? (
+              <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center px-4">
+                <MessageCircle className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                <p className="text-sm text-muted-foreground">
+                  Select a folder from the sidebar to start.
+                </p>
+              </div>
+            ) : messages.length === 0 ? (
+              <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center px-4">
+                <MessageCircle className="h-12 w-12 text-muted-foreground/50 mb-4" />
+                <p className="text-sm text-muted-foreground">
+                  Start chatting about <span className="font-medium text-foreground">{activeFolder?.name}</span>!
+                </p>
+              </div>
+            ) : (
+              <div className="p-3 space-y-4">
+                {messages.map((message) => (
                   <div
+                    key={message.id}
                     className={cn(
-                      "rounded border px-3 py-2 text-xs shadow-sm",
-                      message.role === "assistant"
-                        ? "bg-muted text-foreground border-border"
-                        : "bg-primary text-primary-foreground border-primary"
+                      "flex gap-2",
+                      message.role === "assistant" ? "flex-row" : "flex-row-reverse"
                     )}
                   >
-                    {message.role === "assistant" && (
-                      <div className="flex items-center gap-1.5 mb-1 opacity-70">
-                        <Sparkles className="h-3 w-3 text-primary" />
-                        <span className="text-[10px] font-medium">iUM Agent</span>
-                      </div>
-                    )}
+                    <Avatar className="h-7 w-7 border border-border shrink-0">
+                      <AvatarFallback className="bg-primary text-primary-foreground text-[10px]">
+                        {message.role === "assistant" ? "i" : "U"}
+                      </AvatarFallback>
+                    </Avatar>
 
-                    <div
-                      className={cn(
-                        "leading-relaxed prose prose-sm max-w-none",
-                        message.role === "user"
-                          ? "prose-invert text-primary-foreground"
-                          : "text-foreground"
-                      )}
-                    >
-                      {message.role === "assistant" ? (
-                        <ReactMarkdown
-                          remarkPlugins={[remarkMath, remarkGfm]}
-                          rehypePlugins={[rehypeKatex]}
-                          components={{
-                            code: (props: any) => {
-                              const { inline, className, children, ...rest } = props;
-                              return !inline ? (
-                                <code
-                                  className={cn(
-                                    "block rounded bg-muted/50 border p-2 text-xs overflow-x-auto my-1",
-                                    className
-                                  )}
-                                  {...rest}
-                                >
-                                  {children}
-                                </code>
-                              ) : (
-                                <code
-                                  className={cn(
-                                    "rounded bg-muted/50 px-1 py-0.5 text-xs border",
-                                    className
-                                  )}
-                                  {...rest}
-                                >
-                                  {children}
-                                </code>
-                              );
-                            },
-                            p: ({ children }: { children?: React.ReactNode }) => (
-                              <p className="mb-1 last:mb-0">{children}</p>
-                            ),
-                            ul: ({ children }: { children?: React.ReactNode }) => (
-                              <ul className="list-disc list-inside mb-1 space-y-0.5 pl-1">
-                                {children}
-                              </ul>
-                            ),
-                            ol: ({ children }: { children?: React.ReactNode }) => (
-                              <ol className="list-decimal list-inside mb-1 space-y-0.5 pl-1">
-                                {children}
-                              </ol>
-                            ),
-                          }}
-                        >
-                          {message.content}
-                        </ReactMarkdown>
-                      ) : (
-                        <p>{message.content}</p>
-                      )}
-                    </div>
-
-                    {message.sources && message.sources.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-border/50">
-                        <p className="text-[10px] text-muted-foreground mb-1 flex items-center gap-1">
-                          <Search className="h-3 w-3" />
-                          Sources used:
-                        </p>
-                        <div className="space-y-0.5 pl-1">
-                          {message.sources.map((source, idx) => (
-                            <p
-                              key={idx}
-                              className="text-[10px] text-muted-foreground truncate opacity-80"
-                              title={source.title}
+                    <div className={cn("flex flex-col gap-1 max-w-[85%]", message.role === "user" && "items-end")}>
+                      <div
+                        className={cn(
+                          "rounded-lg px-3 py-2 text-sm shadow-sm",
+                          message.role === "assistant"
+                            ? "bg-muted text-foreground border border-border"
+                            : "bg-primary text-primary-foreground"
+                        )}
+                      >
+                        {message.role === "assistant" ? (
+                          <div className="prose prose-sm dark:prose-invert max-w-none break-words">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkMath, remarkGfm]}
+                              rehypePlugins={[rehypeKatex]}
+                              components={{
+                                code: ({ inline, className, children, ...rest }: any) => {
+                                  const match = /language-(\w+)/.exec(className || "");
+                                  return !inline && match ? (
+                                    <div className="relative">
+                                      <div className="absolute right-2 top-2">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                          onClick={() => handleCopy(message.id, String(children))}
+                                        >
+                                          {copiedMessageId === message.id ? (
+                                            <Check className="h-3 w-3" />
+                                          ) : (
+                                            <Copy className="h-3 w-3" />
+                                          )}
+                                        </Button>
+                                      </div>
+                                      <pre className={cn("bg-muted/50 p-3 rounded-md overflow-x-auto", className)}>
+                                        <code {...rest} className={className}>
+                                          {children}
+                                        </code>
+                                      </pre>
+                                    </div>
+                                  ) : (
+                                    <code {...rest} className={cn("bg-muted/30 px-1 py-0.5 rounded text-xs font-mono", className)}>
+                                      {children}
+                                    </code>
+                                  );
+                                }
+                              }}
                             >
-                              • {source.title}
-                            </p>
-                          ))}
+                              {message.content}
+                            </ReactMarkdown>
+                            {message.reasoning_chain && (
+                              <div className="mt-2 text-xs text-muted-foreground border-t pt-2 border-border/50">
+                                <details>
+                                  <summary className="cursor-pointer hover:text-foreground transition-colors font-medium">
+                                    View Reasoning
+                                  </summary>
+                                  <div className="mt-1 pl-2 border-l-2 border-primary/20">
+                                    {message.reasoning_chain.map((step, i) => (
+                                      <div key={i} className="mb-1 last:mb-0">
+                                        {step}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </details>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="whitespace-pre-wrap break-words">{message.content}</div>
+                        )}
+
+                        {/* 첨부파일 표시 */}
+                        {message.sources && message.sources.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {message.sources.map((source, i) => (
+                              <div key={i} className="flex items-center gap-1 bg-background/20 px-2 py-1 rounded text-xs">
+                                <Paperclip className="h-3 w-3" />
+                                <span className="truncate max-w-[150px]">{source.title}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Feedback & Actions */}
+                      {message.role === "assistant" && (
+                        <div className="flex items-center gap-1 px-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => handleCopy(message.id, message.content)}
+                          >
+                            {copiedMessageId === message.id ? (
+                              <Check className="h-3 w-3 text-green-500" />
+                            ) : (
+                              <Copy className="h-3 w-3 text-muted-foreground" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => handleFeedback(message.id, "like")}
+                          >
+                            <ThumbsUp
+                              className={cn(
+                                "h-3 w-3",
+                                message.feedback === "like"
+                                  ? "text-primary fill-primary"
+                                  : "text-muted-foreground"
+                              )}
+                            />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => handleFeedback(message.id, "dislike")}
+                          >
+                            <ThumbsDown
+                              className={cn(
+                                "h-3 w-3",
+                                message.feedback === "dislike"
+                                  ? "text-destructive fill-destructive"
+                                  : "text-muted-foreground"
+                              )}
+                            />
+                          </Button>
                         </div>
-                      </div>
-                    )}
-                  </div>
-
-
-
-                  {/* ✨ [수정] 복사 및 피드백 버튼 (Assistant 메시지인 경우에만 표시) */}
-                  {message.role === "assistant" && (
-                    <div className="flex flex-col gap-1 self-start mt-1">
-                      <div className="flex items-center gap-1 px-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 rounded-full hover:bg-muted transition-colors"
-                          onClick={() => handleCopy(message.id, message.content)}
-                          title="Copy message"
-                        >
-                          {copiedMessageId === message.id ? (
-                            <Check className="h-3 w-3 text-green-500" />
-                          ) : (
-                            <Copy className="h-3 w-3 text-muted-foreground" />
-                          )}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={cn(
-                            "h-6 w-6 rounded-full hover:bg-muted transition-colors",
-                            message.feedback === "like" && "text-primary bg-primary/10"
-                          )}
-                          onClick={() => handleFeedback(message.id, "like")}
-                        >
-                          <ThumbsUp className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={cn(
-                            "h-6 w-6 rounded-full hover:bg-muted transition-colors",
-                            message.feedback === "dislike" && "text-destructive bg-destructive/10"
-                          )}
-                          onClick={() => handleFeedback(message.id, "dislike")}
-                        >
-                          <ThumbsDown className="h-3 w-3" />
-                        </Button>
-                      </div>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </div>
+                ))}
+
+                {loadingStatus && (
+                  <div className="flex gap-2">
+                    <Avatar className="h-7 w-7 border border-border shrink-0">
+                      <AvatarFallback className="bg-primary text-primary-foreground text-[10px]">i</AvatarFallback>
+                    </Avatar>
+                    <div className="bg-muted text-foreground border border-border rounded-lg px-3 py-2 text-sm shadow-sm flex items-center gap-2">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span className="text-xs">{loadingStatus || "Thinking..."}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div ref={messagesEndRef} />
               </div>
-            ))}
+            )}
+          </ScrollArea>
 
-            {/* ✨ [수정] 스마트 로딩 인디케이터 (진짜 상태 표시) */}
-            {loadingStatus && (
-              <div className="flex gap-2">
-                <Avatar className="h-7 w-7 border border-border shrink-0">
-                  <AvatarFallback className="bg-primary text-primary-foreground text-[10px]">
-                    i
-                  </AvatarFallback>
-                </Avatar>
-                <div className="rounded border bg-muted/50 px-3 py-2 text-xs w-full max-w-[200px]">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-                    </span>
-                    <span className="font-medium text-[10px] text-primary">Processing...</span>
+          {/* Input Area */}
+          <div className="p-3 border-t bg-background shrink-0">
+            {/* Selected Files Preview */}
+            {selectedFiles.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-2">
+                {selectedFiles.map((file, index) => (
+                  <div key={index} className="flex items-center gap-1 bg-muted px-2 py-1 rounded text-xs border">
+                    <span className="truncate max-w-[100px]">{file.name}</span>
+                    <button onClick={() => handleRemoveFile(index)} className="hover:text-destructive">
+                      <X className="h-3 w-3" />
+                    </button>
                   </div>
-
-                  {/* 실시간 상태 메시지 표시 */}
-                  <div className="flex items-center gap-2 text-muted-foreground animate-pulse">
-                    <span>{loadingStatus}</span>
-                  </div>
-                </div>
+                ))}
               </div>
             )}
 
-            {/* Scroll anchor */}
-            <div ref={messagesEndRef} />
-          </div>
-        )
-        }
-      </ScrollArea >
-
-      <Separator />
-
-      {/* Input Area */}
-      <div className="p-2 border-t space-y-1.5">
-        {messages.filter((m) => m.role === "user").length >= 1 && !isSaved && (
-          <div className="flex justify-end">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 text-[10px] px-2"
-              onClick={generateStudySummary}
-              disabled={isGeneratingSummary || isSaved}
-            >
-              {isGeneratingSummary ? (
-                <>
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                  Saving...
-                </>
-              ) : isSaved ? (
-                "Saved!"
-              ) : (
-                "Save Progress"
-              )}
-            </Button>
-          </div>
-        )}
-
-
-        {/* ✨ [추가] 파일 미리보기 */}
-        {selectedFiles.length > 0 && (
-          <div className="flex flex-wrap gap-2 px-1 pb-1">
-            {selectedFiles.map((file, index) => (
-              <div
-                key={index}
-                className="flex items-center gap-1 bg-muted rounded-md px-2 py-1 text-[10px] border border-border"
-              >
-                <span className="truncate max-w-[100px]">{file.name}</span>
-                <span className="text-muted-foreground/70">({(file.size / 1024).toFixed(0)}KB)</span>
-                <button
-                  onClick={() => handleRemoveFile(index)}
-                  className="hover:bg-background rounded-full p-0.5"
-                >
-                  <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-center gap-1.5">
-          <input
-            type="text"
-            placeholder="Ask anything..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            disabled={!!loadingStatus} // 로딩 중 입력 비활성화
-            className="flex-1 rounded border bg-background px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-ring border-border disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-
-          {/* ✨ [추가] 파일 입력 (Hidden) */}
-          <input
-            type="file"
-            multiple
-            ref={fileInputRef}
-            className="hidden"
-            onChange={handleFileSelect}
-            // 이미지 등 허용 형식 제한 가능
-            accept="image/*,.pdf,.txt,.md,.py,.js,.ts"
-          />
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={!!loadingStatus || isUploading}
-            title="Attach files"
-          >
-            <Paperclip className="h-3.5 w-3.5" />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={handleSend}
-            disabled={!!loadingStatus || !input.trim()}
-          >
-            <Send className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Profile Section (Bottom Left) */}
-      <div className="border-t p-2">
-        {user ? (
-          <Popover>
-            <PopoverTrigger asChild>
+            <div className="flex gap-2">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileSelect}
+                className="hidden"
+                multiple
+              />
               <Button
-                variant="ghost"
-                className="w-full justify-start gap-2 h-auto p-2 hover:bg-accent"
+                variant="outline"
+                size="icon"
+                className="shrink-0 h-9 w-9"
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach files"
               >
-                <Avatar className="h-8 w-8">
-                  {user.user_metadata?.avatar_url ? (
-                    <AvatarImage
-                      src={user.user_metadata.avatar_url}
-                      alt={user.email || "User"}
-                    />
-                  ) : null}
-                  <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                    {getInitials(user.email || "U")}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-xs text-muted-foreground truncate flex-1 text-left">
-                  {user.email}
-                </span>
+                <Paperclip className="h-4 w-4" />
               </Button>
-            </PopoverTrigger>
-            <PopoverContent side="right" className="w-64 p-3 z-[100]">
-              <div className="space-y-2">
-                <div className="flex items-center gap-3 pb-2 border-b">
-                  <Avatar className="h-10 w-10">
-                    {user.user_metadata?.avatar_url ? (
-                      <AvatarImage
-                        src={user.user_metadata.avatar_url}
-                        alt={user.email || "User"}
-                      />
-                    ) : null}
-                    <AvatarFallback className="bg-primary text-primary-foreground">
-                      {getInitials(user.email || "U")}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{user.email}</p>
-                    <p className="text-xs text-muted-foreground">Signed in</p>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start"
-                  onClick={() => {
-                    // Placeholder for settings - can be updated later
-                    toast({
-                      title: "Settings",
-                      description: "Settings page coming soon.",
-                    });
-                  }}
-                >
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
-                  onClick={handleSignOut}
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign Out
-                </Button>
+
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder={
+                    activeFolderId
+                      ? `Msg ${activeFolder?.name}...`
+                      : "Select a folder to chat..."
+                  }
+                  className="w-full h-9 px-3 py-2 text-sm rounded-md border border-input bg-transparent shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyPress}
+                  disabled={!!loadingStatus || isUploading}
+                />
               </div>
-            </PopoverContent>
-          </Popover>
-        ) : (
-          <Button
-            variant="ghost"
-            className="w-full justify-start gap-2 h-auto p-2 hover:bg-accent"
-            onClick={() => router.push("/login")}
-          >
-            <User className="h-8 w-8 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Log In</span>
-          </Button>
-        )}
-      </div>
-    </div >
+              <Button
+                onClick={handleSend}
+                disabled={(!input.trim() && selectedFiles.length === 0) || !!loadingStatus || isUploading}
+                size="icon"
+                className="shrink-0 h-9 w-9"
+              >
+                {loadingStatus ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-2 text-center flex items-center justify-center gap-1">
+              <Sparkles className="h-3 w-3 text-yellow-500" />
+              AI can make mistakes. Check important info.
+            </p>
+
+            {/* User Profile Section */}
+            <div className="mt-2 pt-2 border-t flex items-center justify-between">
+              {user ? (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="ghost" className="w-full justify-start gap-2 h-auto p-1 hover:bg-muted">
+                      <div className="flex items-center gap-2 w-full overflow-hidden">
+                        <Avatar className="h-6 w-6">
+                          {user.user_metadata?.avatar_url ? (
+                            <AvatarImage src={user.user_metadata.avatar_url} alt={user.email || "User"} />
+                          ) : null}
+                          <AvatarFallback className="bg-primary text-primary-foreground text-[10px]">
+                            {getInitials(user.email || "U")}
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-xs truncate flex-1 text-left">{user.email}</span>
+                      </div>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56" align="end" side="top">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 mb-2 pb-2 border-b px-1">
+                        <Avatar className="h-8 w-8">
+                          {user.user_metadata?.avatar_url ? (
+                            <AvatarImage
+                              src={user.user_metadata.avatar_url}
+                              alt={user.email || "User"}
+                            />
+                          ) : null}
+                          <AvatarFallback className="bg-primary text-primary-foreground">
+                            {getInitials(user.email || "U")}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{user.email}</p>
+                          <p className="text-xs text-muted-foreground">Signed in</p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start"
+                        onClick={() => {
+                          toast({
+                            title: "Settings",
+                            description: "Settings page coming soon.",
+                          });
+                        }}
+                      >
+                        <Settings className="mr-2 h-4 w-4" />
+                        Settings
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={handleSignOut}
+                      >
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Sign Out
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start gap-2 h-auto p-2 hover:bg-accent"
+                  onClick={() => router.push("/login")}
+                >
+                  <User className="h-8 w-8 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Log In</span>
+                </Button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

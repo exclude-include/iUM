@@ -8,6 +8,8 @@ from langchain_community.vectorstores import SupabaseVectorStore
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from utils.supabase_client import get_supabase_client
 
 # Initialize Google Gemini Embeddings
@@ -70,37 +72,87 @@ def add_documents_to_vector_store(
     return document_ids
 
 
+
+class CustomSupabaseRetriever(BaseRetriever):
+    client: Any
+    embeddings: Any
+    query_name: str = "match_documents"
+    k: int = 4
+    filter: Optional[Dict[str, Any]] = None
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> List[Document]:
+        print(f"DEBUG: CustomSupabaseRetriever called with query='{query[:20]}...'")
+        try:
+            # 1. Embed query
+            # embeddings object is defined globally in this file
+            query_embedding = embeddings.embed_query(query)
+            
+            # 2. Prepare RPC params
+            params = {
+                "query_embedding": query_embedding,
+                "match_threshold": 0.5, # Adjust as needed (0.0 - 1.0)
+                "match_count": self.k,
+                "filter": self.filter or {}
+            }
+            
+            # 3. Call RPC directly
+            # This bypasses the langchain SupabaseVectorStore implementation which causes the params error
+            response = self.client.rpc(self.query_name, params).execute()
+            
+            # Handle response structure
+            data = response.data if hasattr(response, 'data') else response
+            
+            documents = []
+            for item in data:
+                content = item.get("content", "")
+                metadata = item.get("metadata", {}) or {}
+                
+                # Ensure useful fields are in metadata
+                if "id" in item: metadata["id"] = item["id"]
+                if "document_id" in item: metadata["document_id"] = item["document_id"]
+                
+                documents.append(Document(page_content=content, metadata=metadata))
+                
+            return documents
+            
+        except Exception as e:
+            print(f"⚠️ Custom Retriever Error: {e}")
+            # Try fallback without filter if it failed? No, just return empty
+            return []
+
+    async def _aget_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> List[Document]:
+        # Async implementation for better performance
+        # Note: embeddings.embed_query is usually sync, but we can verify
+        return self._get_relevant_documents(query, run_manager=run_manager)
+
+
 def get_retriever(
     collection_name: str = "documents",
     persist_directory: str = None,
     k: int = 4,
     folder_id: Optional[str] = None,
-    document_ids: Optional[List[str]] = None  # ✨ [필수] NotebookLM 기능용 인자
+    document_ids: Optional[List[str]] = None
 ):
     """
-    Get a retriever from the vector store with filtering.
+    Get a custom retriever that bypasses the LangChain SupabaseVectorStore issue.
     """
-    vector_store = get_vector_store()
+    supabase = get_supabase_client()
     
-    # ✨ Supabase Filter Logic (JSONB @> operator)
-    # 현재 기본 함수는 exact match만 지원합니다.
+    # Supabase Filter Logic
     filter_dict = {}
-    
     if folder_id:
         filter_dict["folder_id"] = folder_id
-
-    # NOTE: 기본 match_documents 함수는 array contains($in)를 지원하지 않으므로
-    # 단일 document_id 필터링만 우선 지원하거나, 커스텀 쿼리가 필요함.
-    # 현재는 첫 번째 ID로 필터링 (임시)
+        
     if document_ids and len(document_ids) > 0:
         filter_dict["document_id"] = document_ids[0]
     
-    search_kwargs = {"k": k}
-    if filter_dict:
-        search_kwargs["filter"] = filter_dict
-    
-    retriever = vector_store.as_retriever(
-        search_type="similarity",
-        search_kwargs=search_kwargs
+    return CustomSupabaseRetriever(
+        client=supabase,
+        embeddings=embeddings,
+        k=k,
+        filter=filter_dict
     )
-    return retriever

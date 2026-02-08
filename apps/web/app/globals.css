@@ -94,13 +94,68 @@
   }
 }
 
-/* KaTeX Math Rendering */
+/* KaTeX Math Rendering - Inline vs Block */
 .katex {
   font-size: 1.1em;
 }
 
-.katex-display {
-  margin: 1em 0;
+/* Inline math - stays inline with text */
+span.katex {
+  display: inline !important;
+  vertical-align: middle;
+}
+
+/* Inside paragraphs and list items - always inline */
+p .katex,
+p .katex-display,
+li .katex,
+li .katex-display,
+td .katex,
+td .katex-display {
+  display: inline !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  text-align: left !important;
+}
+
+p .katex-display > .katex,
+li .katex-display > .katex {
+  display: inline !important;
+}
+
+/* Only standalone block math ($$...$$) gets card styling */
+.prose > .katex-display,
+.cell-content > .katex-display {
+  display: block !important;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: hsl(var(--muted) / 0.3);
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--border) / 0.5);
+}
+
+/* Content overflow prevention */
+.cell-content,
+.prose {
+  max-width: 100%;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+/* Mermaid diagram node text */
+.mermaid-container foreignObject {
+  overflow: visible !important;
+}
+
+.mermaid-container .nodeLabel {
+  white-space: normal !important;
+  word-wrap: break-word !important;
+  overflow: visible !important;
 }
 
 /* Markdown Prose Styles for Chat */
