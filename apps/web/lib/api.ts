@@ -468,3 +468,32 @@ export const api = {
   users: usersApi,
   health: checkHealth,
 };
+
+/**
+ * Feed Pagination API Functions
+ */
+export async function fetchFeed(params: {
+  page: number;
+  pageSize?: number;
+  lastReelId?: string;
+  userId?: string;
+}): Promise<{ reels: any[]; hasMore: boolean }> {
+  const queryParams = new URLSearchParams();
+  queryParams.append("page", params.page.toString());
+  if (params.pageSize) queryParams.append("page_size", params.pageSize.toString());
+  if (params.lastReelId) queryParams.append("last_reel_id", params.lastReelId);
+  if (params.userId) queryParams.append("user_id", params.userId);
+
+  return fetchApi<{ reels: any[]; hasMore: boolean }>(
+    `/api/reels/feed?${queryParams.toString()}`
+  );
+}
+
+export async function fetchReelContext(reelId: string): Promise<{
+  reel: any;
+  nextReels: any[];
+}> {
+  return fetchApi<{ reel: any; nextReels: any[] }>(
+    `/api/reels/reel/${reelId}`
+  );
+}

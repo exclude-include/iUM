@@ -1,14 +1,15 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useSocialStore } from "./useSocialStore";
 import { Play, Heart, Sparkles } from "lucide-react";
 
 export function ExploreView() {
-  const { reels, setCurrentView, setCurrentReelById } = useSocialStore();
+  const router = useRouter();
+  const { reels } = useSocialStore();
 
   const handleReelClick = (reelId: string) => {
-    setCurrentReelById(reelId);
-    setCurrentView("feed");
+    router.push(`/soft/reels/${reelId}`);
   };
 
   return (

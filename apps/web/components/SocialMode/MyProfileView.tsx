@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 export function MyProfileView() {
   const { user } = useAuth();
   const router = useRouter();
-  const { getMyReels, likedReels, bookmarkedReels, setCurrentView, setCurrentReelById, reels } = useSocialStore();
+  const { getMyReels, likedReels, bookmarkedReels, reels } = useSocialStore();
   const [activeTab, setActiveTab] = useState("posts");
   
   const myReels = getMyReels(user?.id);
@@ -37,8 +37,7 @@ export function MyProfileView() {
   };
 
   const handleReelClick = (reelId: string) => {
-    setCurrentReelById(reelId);
-    setCurrentView("feed");
+    router.push(`/soft/reels/${reelId}`);
   };
 
   const renderReelGrid = (reels: typeof myReels) => {
