@@ -72,38 +72,47 @@ export function SocialSidebar() {
   };
 
   return (
-    <div className="group flex h-full w-14 hover:w-64 flex-col border-r bg-background transition-all duration-300 ease-in-out">
+    <div className="group flex h-full w-16 hover:w-64 flex-col border-r bg-background transition-all duration-300 ease-in-out overflow-hidden">
       {/* Navigation */}
-      <div className="border-b p-2 group-hover:p-4 transition-all duration-300">
-        <nav className="space-y-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = item.view ? currentView === item.view : false;
-            return (
-              <button
-                key={item.label}
-                onClick={item.action}
+      <nav className="flex-1 space-y-1 p-2">
+        {navItems.map((item) => {
+          const Icon = item.icon;
+          const isActive = currentView === item.view;
+          return (
+            <button
+              key={item.view}
+              onClick={() => setCurrentView(item.view)}
+              className={cn(
+                "relative w-full flex items-center gap-3 rounded-lg p-3 transition-all duration-200",
+                "hover:bg-accent",
+                isActive && "bg-accent"
+              )}
+            >
+              {/* Icon - stays in fixed position */}
+              <Icon 
                 className={cn(
-                  "flex w-full items-center justify-center group-hover:justify-start gap-3 rounded-lg p-2.5 text-sm font-medium transition-all duration-300",
-                  "hover:bg-accent hover:text-accent-foreground",
-                  isActive 
-                    ? "text-primary" 
-                    : "text-muted-foreground"
+                  "h-5 w-5 flex-shrink-0 transition-colors duration-200",
+                  isActive ? "text-primary" : "text-muted-foreground"
+                )} 
+              />
+              {/* Label - slides in from right */}
+              <span 
+                className={cn(
+                  "whitespace-nowrap text-sm font-medium transition-all duration-300",
+                  "opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0",
+                  isActive ? "text-primary" : "text-foreground"
                 )}
               >
-                <Icon className="h-5 w-5 flex-shrink-0" />
-                <span className="opacity-0 w-0 group-hover:w-auto group-hover:opacity-100 transition-all duration-300 whitespace-nowrap overflow-hidden">
-                  {item.label}
-                </span>
-              </button>
-            );
-          })}
-        </nav>
-      </div>
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
 
       {/* Folder Filters - Hidden when collapsed */}
-      <div className="flex-1 overflow-hidden group-hover:overflow-y-auto p-0 group-hover:p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-        <div className="space-y-4">
+      <div className="flex-1 overflow-hidden group-hover:overflow-y-auto border-t">
+        <div className="p-0 group-hover:p-4 opacity-0 group-hover:opacity-100 transition-all duration-300 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold whitespace-nowrap">
               Filters
