@@ -103,20 +103,35 @@ export function ReelPlayer({ initialReelId }: ReelPlayerProps = {}) {
   const [videoDuration, setVideoDuration] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [authorAvatarFallback, setAuthorAvatarFallback] = useState<string | null>(null);
+  const [authorName, setAuthorName] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const quizTriggeredRef = useRef(false);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // author_avatar가 없을 때 API로 업로더 프로필 사진 조회 (설정에서 지정한 사진 반영)
   useEffect(() => {
-    if (!currentReel?.authorUserId || currentReel.authorAvatar) {
+    if (!currentReel?.authorUserId) {
       setAuthorAvatarFallback(null);
+      setAuthorName(null);
       return;
     }
+
     let cancelled = false;
+    
+    // Reset state first to avoid showing previous reel's data
+    setAuthorAvatarFallback(currentReel.authorAvatar || null);
+    setAuthorName(null);
+
     import("@/lib/api").then(({ api }) => {
       api.users.getUserMetadata(currentReel.authorUserId!).then((meta) => {
-        if (!cancelled && meta?.avatar_url) setAuthorAvatarFallback(meta.avatar_url);
+        if (!cancelled) {
+          if (meta?.avatar_url && !currentReel.authorAvatar) {
+            setAuthorAvatarFallback(meta.avatar_url);
+          }
+          if (meta?.name) {
+            setAuthorName(meta.name);
+          }
+        }
       }).catch(() => {});
     });
     return () => { cancelled = true; };
@@ -540,14 +555,14 @@ export function ReelPlayer({ initialReelId }: ReelPlayerProps = {}) {
             <Avatar className="h-8 w-8 border-2 border-white/30">
               <AvatarImage
                 src={currentReel.authorAvatar || authorAvatarFallback || undefined}
-                alt={currentReel.author}
+                alt={authorName || currentReel.author}
               />
               <AvatarFallback className="bg-white/20 text-xs font-bold">
-                {currentReel.author.charAt(0).toUpperCase()}
+                {(authorName || currentReel.author).charAt(0).toUpperCase()}
               </AvatarFallback>
             </Avatar>
-            <div>
-              <p className="text-sm font-semibold">@{currentReel.author}</p>
+            <div className="flex flex-col text-white drop-shadow-md">
+              <p className="text-sm font-semibold">@{authorName || currentReel.author}</p>
               <p className="text-xs text-white/80">{currentReel.folderName}</p>
             </div>
           </div>

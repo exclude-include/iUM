@@ -1,10 +1,10 @@
 "use client";
 
+import { useRef, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Plus, ExternalLink, Sparkles } from "lucide-react";
+import { Plus, ExternalLink, Sparkles, GripVertical } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -14,29 +14,48 @@ import { cn } from "@/lib/utils";
 import { Mermaid } from "@/components/Mermaid";
 
 export function DeepModeView() {
-    const { deepHistory, appendCellToActiveTab, createNotebookTab } = useAppStore();
+    const { deepHistory, scrollToDeepCardId, clearScrollToDeepCardTarget, appendCellToActiveTab, createNotebookTab } = useAppStore();
+    const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+    useEffect(() => {
+        if (!scrollToDeepCardId) return;
+        const el = cardRefs.current[scrollToDeepCardId];
+        if (el) {
+            el.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+        clearScrollToDeepCardTarget();
+    }, [scrollToDeepCardId, clearScrollToDeepCardTarget]);
+
+    const toUnit = (item: any) => ({
+        title: item.title,
+        type: item.type,
+        content: item.content,
+        equations: item.equations,
+        diagram_description: item.diagram_description,
+        mermaid_code: item.mermaid_code,
+        graph_data: item.graph_data,
+        quiz_data: item.quiz_data,
+        fromDeep: true,
+    });
 
     const handleAddToTab = (item: any) => {
-        appendCellToActiveTab(item);
+        appendCellToActiveTab(toUnit(item));
     };
 
     const handleNewTab = (item: any) => {
-        // 1. Create new tab
-        const tabId = createNotebookTab(item.title || "Deep Dive");
-        // 2. Add cell to it (store automatically handles active tab switch usually, but appendCellToActiveTab relies on notebookActiveTabId)
-        // createNotebookTab sets the new tab as active, so this should work.
+        createNotebookTab(item.title || "Deep Dive");
         setTimeout(() => {
-            appendCellToActiveTab(item);
+            appendCellToActiveTab(toUnit(item));
         }, 100);
     };
 
     return (
-        <div className="flex flex-col h-full bg-background deep-mode-view">
-            <div className="p-3 border-b text-xs text-muted-foreground bg-muted/20">
+        <div className="flex flex-col h-full min-h-0 bg-background deep-mode-view overflow-hidden">
+            <div className="p-3 border-b text-xs text-muted-foreground bg-muted/20 shrink-0">
                 <p>Select text in the main tab and right-click to "Deep Dive".</p>
             </div>
 
-            <ScrollArea className="flex-1 p-3">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3">
                 {deepHistory.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-64 text-center text-muted-foreground p-4">
                         <Sparkles className="w-12 h-12 mb-3 opacity-20" />
@@ -48,8 +67,23 @@ export function DeepModeView() {
                 ) : (
                     <div className="space-y-4">
                         {deepHistory.map((item) => (
-                            <Card key={item.id} className="overflow-hidden border-primary/20 shadow-sm">
+                            <div
+                                key={item.id}
+                                ref={(el) => { cardRefs.current[item.id] = el; }}
+                                draggable
+                                onDragStart={(e) => {
+                                    e.dataTransfer.setData("application/ium-deep-card", item.id);
+                                    e.dataTransfer.effectAllowed = "copy";
+                                    e.currentTarget.classList.add("opacity-70");
+                                }}
+                                onDragEnd={(e) => {
+                                    e.currentTarget.classList.remove("opacity-70");
+                                }}
+                                className="cursor-grab active:cursor-grabbing transition-opacity"
+                            >
+                                <Card className="overflow-hidden border-primary/20 shadow-sm">
                                 <div className="bg-primary/5 p-2 px-3 flex items-center justify-between border-b border-primary/10">
+                                    <GripVertical className="h-3.5 w-3.5 text-primary/50 flex-shrink-0 mr-1" />
                                     <h3 className="font-semibold text-xs truncate flex-1 text-primary">
                                         {item.title}
                                     </h3>
@@ -107,11 +141,12 @@ export function DeepModeView() {
                                         {item.content}
                                     </ReactMarkdown>
                                 </div>
-                            </Card>
+                                </Card>
+                            </div>
                         ))}
                     </div>
                 )}
-            </ScrollArea>
+            </div>
         </div>
     );
 }

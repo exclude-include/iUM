@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/context-menu";
 import { MathContent } from "./MathContent";
 import { CellRenderer } from "./CellRenderer";
+import { SingleCellErrorBoundary } from "./SingleCellErrorBoundary";
 import { DeepModeCursor } from "./DeepModeCursor";
 import { TextSelectionMenu } from "./TextSelectionMenu";
 import { cn } from "@/lib/utils";
@@ -132,23 +133,32 @@ export function MainContentArea() {
     return () => clearInterval(backupInterval);
   }, [notebookTabs, notebookActiveTabId]);
 
-  // Handle scroll-to-cell with delay for render completion
+  // Handle scroll-to-cell after layout settles to avoid Radix "intersectRect" errors when adding cells
   useEffect(() => {
-    if (scrollToCellId) {
-      // Wait for render to complete before scrolling
-      const timeoutId = setTimeout(() => {
-        const cellElement = cellRefs.current.get(scrollToCellId);
-        if (cellElement) {
-          cellElement.scrollIntoView({
-            behavior: "smooth",
-            block: "start",
-          });
-        }
-        clearScrollTarget();
-      }, 100);
+    if (!scrollToCellId) return;
 
-      return () => clearTimeout(timeoutId);
-    }
+    const id = scrollToCellId;
+    const timeoutId = setTimeout(() => {
+      // Run after paint so Radix/Floating UI have finished any position updates
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          try {
+            const cellElement = cellRefs.current.get(id);
+            if (cellElement) {
+              cellElement.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            }
+          } catch (_) {
+            // Ignore layout/position errors so the new cell still appears
+          }
+          clearScrollTarget();
+        });
+      });
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
   }, [scrollToCellId, notebookActiveTabId, clearScrollTarget]);
 
   // Callback ref setter for cells
@@ -441,10 +451,10 @@ export function MainContentArea() {
           if (progress >= 100) {
             if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
 
-            // Trigger Deep Dive
+            // Trigger Deep Dive (pass target so we can set source block for badge)
             const hoverText = target.innerText?.slice(0, 1000) || "";
             if (hoverText) {
-              handleDeepDive(hoverText);
+              handleDeepDive(hoverText, target as HTMLElement);
               setHoverCursor({ visible: false, position: null, progress: 0 });
             }
           }
@@ -478,7 +488,7 @@ export function MainContentArea() {
     }
   };
 
-  const handleDeepDive = async (textOverride?: string) => {
+  const handleDeepDive = async (textOverride?: string, sourceElement?: HTMLElement | null) => {
     const text = textOverride || selectionMenu.text || window.getSelection()?.toString().trim();
 
     if (!text) {
@@ -488,12 +498,20 @@ export function MainContentArea() {
       return;
     }
 
+    // Resolve source block for badge: use passed element or current selection's anchor
+    let blockForBadge = sourceElement;
+    if (!blockForBadge) {
+      const sel = window.getSelection();
+      const anchor = sel?.anchorNode;
+      const node = anchor?.nodeType === Node.ELEMENT_NODE ? (anchor as HTMLElement) : anchor?.parentElement;
+      blockForBadge = node?.closest?.("[data-cell-id][data-tab-id][data-block-index]") as HTMLElement | null ?? undefined;
+    }
+
     // Switch to Deep Mode and open sidebar
     setSidebarMode("deep");
     setRightPanelMinimized(false);
 
-    // Optimistic UI: Add loading card immediately
-    // Note: addDeepCard returns the new cellId
+    // Optimistic UI: Add loading card immediately (badge appears as soon as we set source)
     const tempCardId = addDeepCard({
       title: "Analyzing...",
       type: "concept",
@@ -503,6 +521,20 @@ export function MainContentArea() {
       diagram_description: "",
       mermaid_code: "",
     });
+
+    // Link deep card to source block in main tab (for badge) — do this immediately so badge shows right away
+    if (blockForBadge) {
+      const sourceTabId = blockForBadge.getAttribute("data-tab-id");
+      const sourceCellId = blockForBadge.getAttribute("data-cell-id");
+      const sourceBlockIndex = blockForBadge.getAttribute("data-block-index");
+      if (sourceTabId && sourceCellId && sourceBlockIndex !== null) {
+        updateDeepCard(tempCardId, {
+          sourceTabId,
+          sourceCellId,
+          sourceBlockIndex: parseInt(sourceBlockIndex, 10),
+        });
+      }
+    }
 
     // Mark as loading
     updateDeepCard(tempCardId, {
@@ -855,12 +887,18 @@ export function MainContentArea() {
                   activeTab.cells.length > 0 ? (
                     <div className="space-y-4 w-full max-w-full">
                       {activeTab.cells.map((cell) => (
-                        <CellRenderer
+                        <SingleCellErrorBoundary
                           key={cell.id}
                           cell={cell}
                           tabId={activeTab.id}
-                          ref={(el) => setCellRef(cell.id, el)}
-                        />
+                          setCellRef={setCellRef}
+                        >
+                          <CellRenderer
+                            cell={cell}
+                            tabId={activeTab.id}
+                            ref={(el) => setCellRef(cell.id, el)}
+                          />
+                        </SingleCellErrorBoundary>
                       ))}
                     </div>
                   ) : (
