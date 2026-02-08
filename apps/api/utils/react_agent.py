@@ -449,21 +449,42 @@ async def query_with_react_agent(
     """
     initial_document_context = ""
     if document_ids or attachments:
+        loop = asyncio.get_event_loop()
         try:
             from utils.vector_store import get_retriever
+            # 1) Try with document_ids filter so we only get chunks from selected files
             retriever = get_retriever(
                 collection_name="user_knowledge",
-                k=12,
+                k=16,
                 folder_id=folder_id,
                 document_ids=document_ids or None,
             )
-            loop = asyncio.get_event_loop()
             docs = await loop.run_in_executor(
                 None, lambda: retriever.invoke(question)
             )
+            # 2) If filter returned nothing, fallback: search without doc filter and filter in Python
+            #    (handles metadata key/format mismatch between ingest and Supabase)
+            if document_ids and (not docs or all(
+                d.metadata.get("document_id") not in document_ids
+                for d in docs
+            )):
+                retriever_fallback = get_retriever(
+                    collection_name="user_knowledge",
+                    k=24,
+                    folder_id=folder_id,
+                    document_ids=None,
+                )
+                raw_docs = await loop.run_in_executor(
+                    None, lambda: retriever_fallback.invoke(question)
+                )
+                docs = [
+                    d for d in raw_docs
+                    if d.metadata.get("document_id") in document_ids
+                    or d.metadata.get("source") in document_ids
+                ][:16]
             if docs:
                 parts = []
-                for i, doc in enumerate(docs):
+                for doc in docs:
                     source = doc.metadata.get("source", "Document")
                     parts.append(f"[{source}]\n{doc.page_content}")
                 initial_document_context = "\n\n---\n\n".join(parts)[:8000]

@@ -184,27 +184,42 @@ Write your response in markdown format."""
     # ========== Tool Implementations ==========
     
     async def _search_knowledge(self, query: str) -> str:
-        """Search relevant content in documents (using existing RAG retriever)"""
+        """Search relevant content in documents (only in selected/attached when document_ids set)."""
         try:
             from utils.vector_store import get_retriever
-            
+
             retriever = get_retriever(
-                collection_name="user_knowledge", 
-                k=3, 
+                collection_name="user_knowledge",
+                k=8,
                 folder_id=self.folder_id,
-                document_ids=self.document_ids
+                document_ids=self.document_ids,
             )
             docs = retriever.invoke(query)
-            
+            # Fallback: if we have document_ids but filter returned nothing, search without filter and filter in Python
+            if self.document_ids and (not docs or all(
+                d.metadata.get("document_id") not in self.document_ids
+                for d in docs
+            )):
+                retriever_fb = get_retriever(
+                    collection_name="user_knowledge",
+                    k=20,
+                    folder_id=self.folder_id,
+                    document_ids=None,
+                )
+                raw = retriever_fb.invoke(query)
+                docs = [
+                    d for d in raw
+                    if d.metadata.get("document_id") in self.document_ids
+                    or d.metadata.get("source") in self.document_ids
+                ][:8]
+
             if not docs:
-                return "No relevant documents found."
-            
+                return "No relevant documents found in the selected/attached files."
             results = []
             for i, doc in enumerate(docs):
                 source = doc.metadata.get("source", "Unknown")
-                content = doc.page_content[:300]
+                content = doc.page_content[:400]
                 results.append(f"[{i+1}] ({source}): {content}...")
-            
             return "\n\n".join(results)
         except Exception as e:
             return f"Search failed: {str(e)}"

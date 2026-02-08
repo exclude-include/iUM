@@ -231,12 +231,14 @@ async def ingest_document(
             documents = [doc for doc in documents if doc.page_content and doc.page_content.strip()]
             
             if documents:
-                # 5. 메타데이터 주입
+                # 5. 메타데이터 주입 (document_id·folder_id는 문자열로 통일해 벡터 DB 필터 일치 보장)
+                file_id_str = str(new_file_id)
+                folder_id_str = str(folder_id) if folder_id else "root"
                 for doc in documents:
                     doc.metadata["source"] = file.filename
-                    doc.metadata["folder_id"] = folder_id
+                    doc.metadata["folder_id"] = folder_id_str
                     doc.metadata["type"] = "pdf" if file.filename.endswith(".pdf") else "text"
-                    doc.metadata["document_id"] = new_file_id 
+                    doc.metadata["document_id"] = file_id_str
 
                 # 6. 벡터 스토어(Supabase pgvector)에 저장
                 print(f"DTO [4/5] Adding to Vector Store (Supabase)...")
@@ -245,6 +247,23 @@ async def ingest_document(
                     collection_name=collection_name
                 )
                 print(f"DTO [4/5] Vector Store add complete")
+
+                # 7. 저장 직후 검증: document_id로 검색 가능한지 확인
+                try:
+                    from utils.vector_store import get_retriever
+                    retriever = get_retriever(
+                        collection_name=collection_name,
+                        k=1,
+                        folder_id=folder_id or None,
+                        document_ids=[file_id_str],
+                    )
+                    verify_docs = retriever.invoke(" ")
+                    if not verify_docs:
+                        print(f"DTO [WARN] Vector verify: no chunks found for document_id={file_id_str}. Filter may not match stored metadata.")
+                    else:
+                        print(f"DTO [4/5] Vector verify OK: {len(verify_docs)} chunk(s) accessible for document_id={file_id_str}")
+                except Exception as verify_err:
+                    print(f"DTO [WARN] Vector verify failed: {verify_err}")
         
         print("DTO [5/5] All steps complete. Returning response.")
         return JSONResponse(
@@ -252,7 +271,7 @@ async def ingest_document(
             content={
                 "message": "File processed and saved successfully",
                 "filename": file.filename,
-                "document_ids": [new_file_id],
+                "document_ids": [str(new_file_id)],
                 "chunks_created": len(documents) if documents else 0,
                 "collection": collection_name,
                 "storage_path": storage_path
@@ -274,18 +293,13 @@ async def ingest_document(
 @router.get("/status")
 async def get_ingestion_status(collection_name: str = "user_knowledge"):
     """
-    Get status of the vector store collection.
+    Get status of the vector store collection (Supabase: no count, returns active if reachable).
     """
     try:
         from utils.vector_store import get_vector_store
-        
-        vector_store = get_vector_store(collection_name=collection_name)
-        # Chroma collection count
-        count = vector_store._collection.count()
-        
+        get_vector_store(collection_name=collection_name)
         return {
             "collection_name": collection_name,
-            "document_count": count,
             "status": "active"
         }
     except Exception as e:
@@ -294,4 +308,36 @@ async def get_ingestion_status(collection_name: str = "user_knowledge"):
             "document_count": 0,
             "status": "error",
             "error": str(e)
+        }
+
+
+@router.get("/verify")
+async def verify_file_in_vector_db(file_id: str, collection_name: str = "user_knowledge"):
+    """
+    Verify that an uploaded file's chunks are stored and reachable in the vector DB.
+    Returns chunks_found and ok=True if at least one chunk is accessible for the given document_id.
+    """
+    try:
+        from utils.vector_store import get_retriever
+        file_id_str = str(file_id)
+        retriever = get_retriever(
+            collection_name=collection_name,
+            k=10,
+            document_ids=[file_id_str],
+        )
+        docs = retriever.invoke(" ")
+        count = len(docs)
+        return {
+            "ok": count > 0,
+            "file_id": file_id_str,
+            "chunks_found": count,
+            "message": f"{count} chunk(s) accessible" if count > 0 else "No chunks found for this document_id. Check that the file was embedded and metadata.document_id matches.",
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "file_id": str(file_id),
+            "chunks_found": 0,
+            "error": str(e),
+            "message": "Verification failed.",
         }
