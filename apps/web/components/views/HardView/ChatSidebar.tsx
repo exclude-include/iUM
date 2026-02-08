@@ -338,7 +338,6 @@ export function ChatSidebar() {
       // ✨ [핵심 수정] learning_unit이 없어도 항상 탭에 콘텐츠 추가
       if (response.learning_unit) {
         console.log("[ChatSidebar] Learning unit received:", response.learning_unit);
-<<<<<<< HEAD
 
         // ✨ [추가] "diagram" 요청 시 다이아그램이 없으면 기본 다이아그램 추가
         const unit = response.learning_unit;
@@ -363,11 +362,8 @@ export function ChatSidebar() {
         }
 
         appendCellToActiveTab(unit);
-=======
-        appendCellToActiveTab(response.learning_unit);
         // ✨ Activity tracking - track cell creation
-        trackCellCreated(response.learning_unit.type || "concept", response.learning_unit.title);
->>>>>>> f5eac11 (feat: integrate activity tracking into ChatSidebar - trackCellCreated on learning unit creation - trackChatMessage on successful chat exchange)
+        trackCellCreated(unit.type || "concept", unit.title);
       }
 
       // ✨ [Removed] Fallback cell creation to prevent "AI Response" cells with generic text
