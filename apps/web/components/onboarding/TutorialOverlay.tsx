@@ -10,8 +10,9 @@ import {
   type TutorialStep,
 } from "./tutorialSteps";
 
-const SPOTLIGHT_PADDING = 8;
-const OVERLAY_COLOR = "rgba(0, 0, 0, 0.55)";
+const SPOTLIGHT_PADDING = 12;
+const SPOTLIGHT_RADIUS = 16;
+const OVERLAY_COLOR = "rgba(0, 0, 0, 0.52)";
 
 interface TutorialOverlayProps {
   userId: string | undefined;
@@ -21,7 +22,6 @@ interface TutorialOverlayProps {
 export function TutorialOverlay({ userId, onComplete }: TutorialOverlayProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
-  const [isMeasuring, setIsMeasuring] = useState(true);
 
   const steps = TUTORIAL_STEPS;
   const currentStep = steps[stepIndex];
@@ -36,7 +36,6 @@ export function TutorialOverlay({ userId, onComplete }: TutorialOverlayProps) {
     } else {
       setTargetRect(null);
     }
-    setIsMeasuring(false);
   }, [currentStep?.id]);
 
   useEffect(() => {
@@ -52,9 +51,8 @@ export function TutorialOverlay({ userId, onComplete }: TutorialOverlayProps) {
     };
   }, [measureTarget]);
 
-  // Small delay so DOM is ready for first step
   useEffect(() => {
-    const t = setTimeout(measureTarget, 150);
+    const t = setTimeout(measureTarget, 180);
     return () => clearTimeout(t);
   }, [stepIndex, measureTarget]);
 
@@ -63,13 +61,11 @@ export function TutorialOverlay({ userId, onComplete }: TutorialOverlayProps) {
       setTutorialCompleted(userId);
       onComplete();
     } else {
-      setIsMeasuring(true);
       setStepIndex((i) => i + 1);
     }
   };
 
   const handleBack = () => {
-    setIsMeasuring(true);
     setStepIndex((i) => Math.max(0, i - 1));
   };
 
@@ -80,16 +76,13 @@ export function TutorialOverlay({ userId, onComplete }: TutorialOverlayProps) {
 
   if (!currentStep) return null;
 
-  // Dimmed regions around spotlight (top, left, right, bottom) so we don't rely on clip-path holes
   const padding = SPOTLIGHT_PADDING;
   const hole = targetRect
     ? {
-        left: targetRect.left - padding,
-        top: targetRect.top - padding,
-        right: targetRect.right + padding,
-        bottom: targetRect.bottom + padding,
-        width: targetRect.width + padding * 2,
-        height: targetRect.height + padding * 2,
+        x: targetRect.left - padding,
+        y: targetRect.top - padding,
+        w: targetRect.width + padding * 2,
+        h: targetRect.height + padding * 2,
       }
     : null;
 
@@ -98,64 +91,62 @@ export function TutorialOverlay({ userId, onComplete }: TutorialOverlayProps) {
       className="fixed inset-0 z-[200] pointer-events-auto"
       aria-modal="true"
       role="dialog"
-      aria-label="사용법 안내"
+      aria-label="Tutorial"
     >
-      {/* Dimmed overlay: four strips around the spotlight hole */}
+      {/* Dimmed overlay with rounded spotlight hole via SVG mask */}
       <div className="absolute inset-0 pointer-events-none">
-        {hole ? (
-          <>
-            <div
-              className="absolute left-0 right-0 top-0"
-              style={{ height: hole.top, background: OVERLAY_COLOR }}
+        {hole && typeof document !== "undefined" ? (
+          <svg
+            className="absolute inset-0 h-full w-full"
+            width="100%"
+            height="100%"
+            style={{ overflow: "hidden" }}
+          >
+            <defs>
+              <mask id="tutorial-spotlight-mask">
+                <rect width="100%" height="100%" fill="white" />
+                <rect
+                  x={hole.x}
+                  y={hole.y}
+                  width={hole.w}
+                  height={hole.h}
+                  rx={SPOTLIGHT_RADIUS}
+                  ry={SPOTLIGHT_RADIUS}
+                  fill="black"
+                />
+              </mask>
+            </defs>
+            <rect
+              width="100%"
+              height="100%"
+              fill={OVERLAY_COLOR}
+              mask="url(#tutorial-spotlight-mask)"
             />
-            <div
-              className="absolute left-0 top-0"
-              style={{
-                top: hole.top,
-                width: hole.left,
-                height: hole.height,
-                background: OVERLAY_COLOR,
-              }}
-            />
-            <div
-              className="absolute right-0 top-0"
-              style={{
-                top: hole.top,
-                left: hole.right,
-                right: 0,
-                height: hole.height,
-                background: OVERLAY_COLOR,
-              }}
-            />
-            <div
-              className="absolute left-0 right-0 bottom-0"
-              style={{ top: hole.bottom, height: `calc(100vh - ${hole.bottom}px)`, background: OVERLAY_COLOR }}
-            />
-          </>
+          </svg>
         ) : (
           <div className="absolute inset-0" style={{ background: OVERLAY_COLOR }} />
         )}
       </div>
 
-      {/* Highlight ring around target */}
+      {/* Rounded highlight ring */}
       {targetRect && (
         <motion.div
           key={currentStep.id}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-          className="absolute pointer-events-none rounded-lg border-2 border-primary ring-2 ring-primary/30"
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.98 }}
+          transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
+          className="absolute pointer-events-none rounded-2xl border-2 border-sky-400/90 shadow-[0_0_0_2px_rgba(56,189,248,0.2)]"
           style={{
             left: targetRect.left - SPOTLIGHT_PADDING,
             top: targetRect.top - SPOTLIGHT_PADDING,
             width: targetRect.width + SPOTLIGHT_PADDING * 2,
             height: targetRect.height + SPOTLIGHT_PADDING * 2,
+            borderRadius: SPOTLIGHT_RADIUS,
           }}
         />
       )}
 
-      {/* Tooltip card - positioned near spotlight */}
       <TooltipCard
         step={currentStep}
         targetRect={targetRect}
@@ -197,8 +188,8 @@ function TooltipCard({
   let left = typeof window !== "undefined" ? window.innerWidth / 2 - cardWidth / 2 : 0;
   let top = typeof window !== "undefined" ? window.innerHeight - 180 : 0;
 
-  if (targetRect) {
-    const gap = 16;
+  if (targetRect && typeof window !== "undefined") {
+    const gap = 20;
     switch (placement) {
       case "right":
         left = targetRect.right + gap;
@@ -216,7 +207,6 @@ function TooltipCard({
         left = targetRect.left + targetRect.width / 2 - cardWidth / 2;
         top = targetRect.bottom + gap;
     }
-    // Clamp to viewport
     left = Math.max(16, Math.min(left, window.innerWidth - cardWidth - 16));
     top = Math.max(16, Math.min(top, window.innerHeight - 200));
   }
@@ -225,46 +215,52 @@ function TooltipCard({
     <AnimatePresence mode="wait">
       <motion.div
         key={step.id}
-        initial={{ opacity: 0, y: 8 }}
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -4 }}
-        transition={{ duration: 0.2 }}
-        className="absolute z-10 rounded-xl border bg-card p-4 shadow-xl"
+        exit={{ opacity: 0, y: -8 }}
+        transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
+        className="absolute z-10 rounded-2xl border border-sky-200/80 bg-white p-4 shadow-xl"
         style={{
           left,
           top,
           width: cardWidth,
+          boxShadow: "0 20px 40px -12px rgba(0,0,0,0.15), 0 0 0 1px rgba(14,165,233,0.08)",
         }}
       >
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-xs font-medium text-muted-foreground">
-            {stepLabel}
-          </span>
+          <span className="text-xs font-medium text-slate-500">{stepLabel}</span>
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 -mr-1"
+            className="h-7 w-7 -mr-1 text-slate-500 hover:text-slate-700"
             onClick={onSkip}
-            aria-label="건너뛰기"
+            aria-label="Skip"
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
-        <h3 className="mb-1.5 text-sm font-semibold">{step.title}</h3>
-        <p className="mb-4 text-xs text-muted-foreground leading-relaxed">
-          {step.body}
-        </p>
+        <h3 className="mb-1.5 text-sm font-semibold text-slate-800">{step.title}</h3>
+        <p className="mb-4 text-xs leading-relaxed text-slate-600">{step.body}</p>
         <div className="flex items-center justify-between gap-2">
           <div>
             {!isFirst && (
-              <Button variant="ghost" size="sm" onClick={onBack}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onBack}
+                className="text-slate-600 hover:text-slate-800"
+              >
                 <ChevronLeft className="h-4 w-4 mr-0.5" />
-                이전
+                Back
               </Button>
             )}
           </div>
-          <Button size="sm" onClick={onNext}>
-            {isLast ? "시작하기" : "다음"}
+          <Button
+            size="sm"
+            onClick={onNext}
+            className="rounded-xl bg-sky-500 hover:bg-sky-600 text-white"
+          >
+            {isLast ? "Get started" : "Next"}
             {!isLast && <ChevronRight className="h-4 w-4 ml-0.5" />}
           </Button>
         </div>
