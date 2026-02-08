@@ -213,13 +213,13 @@ async def query_rag_chain(
             print(f"Failed to load history: {e}")
             history_context = ""
     
-    # 1. 문서 검색 시도
+    # 1. 문서 검색 시도 (선택/첨부 파일이 있으면 더 많은 청크 검색)
     relevant_docs = []
+    search_k = k * 3 if document_ids else k
     try:
-        # ✨ get_retriever에 document_ids 전달
         retriever = get_retriever(
-            collection_name=collection_name, 
-            k=k, # 선택된 파일이 있으면 검색 범위를 좀 더 넓혀도 됨 (예: k*2)
+            collection_name=collection_name,
+            k=search_k,
             folder_id=folder_id,
             document_ids=document_ids
         )

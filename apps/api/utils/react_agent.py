@@ -35,12 +35,13 @@ Final Answer: [Final response to the user]
 
 ## Rules
 1. For complex questions, use multiple tools sequentially.
-2. **CRITICAL**: If the user asks for an explanation, proof, concept definition, or detailed information, **YOU MUST USE `generate_concept_cell`**. Do NOT write the explanation in the Final Answer.
-3. For quiz requests, use the create_quiz_cell tool.
-4. For topics requiring prior knowledge, run check_prerequisites first.
-5. For file/document summarization, use the create_summary_cell tool.
-6. Always start each step with Thought.
-7. Your Final Answer should be a short confirmation like "I have generated the content in the workspace." followed by the actual content generation via tools.
+2. **CRITICAL**: If the user has selected or attached documents, context from those documents may be provided below. You MUST base your answer on that context. Use `search_knowledge` if you need more retrieval.
+3. **CRITICAL**: If the user asks for an explanation, proof, concept definition, or detailed information, **YOU MUST USE `generate_concept_cell`**. Do NOT write the explanation in the Final Answer.
+4. For quiz requests, use the create_quiz_cell tool.
+5. For topics requiring prior knowledge, run check_prerequisites first.
+6. For file/document summarization, use the create_summary_cell tool.
+7. Always start each step with Thought.
+8. Your Final Answer should be a short confirmation like "I have generated the content in the workspace." followed by the actual content generation via tools.
 
 ## Example
 User: "Explain calculus and also create a quiz"
@@ -80,6 +81,7 @@ class ReactLearningAgent:
         session_id: Optional[str] = None,
         document_ids: Optional[List[str]] = None,
         attachments: Optional[List[Dict[str, Any]]] = None,
+        initial_document_context: Optional[str] = None,
         max_iterations: int = 5
     ):
         self.llm = ChatGoogleGenerativeAI(
@@ -93,18 +95,27 @@ class ReactLearningAgent:
             document_ids=document_ids,
             attachments=attachments
         )
+        self.initial_document_context = (initial_document_context or "").strip()
         self.max_iterations = max_iterations
         self.scratchpad = ""
     
     def _build_prompt(self, question: str) -> str:
-        """Combine system prompt + user question + scratchpad"""
+        """Combine system prompt + user question + scratchpad; inject document context when present."""
         tools_description = self.toolkit.get_tools_prompt()
         system_prompt = REACT_SYSTEM_PROMPT.format(tools=tools_description)
+        
+        user_block = f"User Question: {question}"
+        if self.initial_document_context:
+            user_block = (
+                "## Context from the user's selected/attached documents (use this for your answer)\n"
+                f"{self.initial_document_context}\n\n"
+                f"{user_block}"
+            )
         
         prompt = f"""{system_prompt}
 
 ## Current Session
-User Question: {question}
+{user_block}
 
 {self.scratchpad}"""
         return prompt
@@ -252,9 +263,12 @@ User Question: {question}
                 "message": friendly_msg
             }
             
-            # 5. Execute tool
+            # 5. Execute tool (map vector_search -> search_knowledge for compatibility)
+            tool_name = "search_knowledge" if action_name == "vector_search" else action_name
+            if action_name == "vector_search" and "query" not in action_input and "topic" in action_input:
+                action_input = {"query": action_input.get("topic", "")}
             try:
-                observation = await self.toolkit.execute(action_name, **action_input)
+                observation = await self.toolkit.execute(tool_name, **action_input)
             except Exception as e:
                 observation = f"[Error] Tool execution failed: {str(e)}"
             
@@ -430,24 +444,39 @@ async def query_with_react_agent(
     attachments: Optional[List[Dict[str, Any]]] = None
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
-    Process question with ReAct agent (convenience function)
-    
-    Args:
-        question: User question
-        folder_id: Folder ID (document filtering)
-        session_id: Session ID (history integration)
-        document_ids: Specific document ID list
-        attachments: Attached files content
-    
-    Yields:
-        Streaming events
+    Process question with ReAct agent. When document_ids or attachments are provided,
+    pre-fetches context from those documents so the agent uses them in the response.
     """
+    initial_document_context = ""
+    if document_ids or attachments:
+        try:
+            from utils.vector_store import get_retriever
+            retriever = get_retriever(
+                collection_name="user_knowledge",
+                k=12,
+                folder_id=folder_id,
+                document_ids=document_ids or None,
+            )
+            loop = asyncio.get_event_loop()
+            docs = await loop.run_in_executor(
+                None, lambda: retriever.invoke(question)
+            )
+            if docs:
+                parts = []
+                for i, doc in enumerate(docs):
+                    source = doc.metadata.get("source", "Document")
+                    parts.append(f"[{source}]\n{doc.page_content}")
+                initial_document_context = "\n\n---\n\n".join(parts)[:8000]
+        except Exception as e:
+            print(f"Pre-fetch document context failed: {e}")
+
     agent = ReactLearningAgent(
         folder_id=folder_id,
         session_id=session_id,
         document_ids=document_ids,
-        attachments=attachments
+        attachments=attachments,
+        initial_document_context=initial_document_context or None,
     )
-    
+
     async for event in agent.run(question):
         yield event
