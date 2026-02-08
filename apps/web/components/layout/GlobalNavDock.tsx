@@ -41,6 +41,7 @@ export function GlobalNavDock() {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                data-tutorial="tutorial-nav-workspace"
                 variant="ghost"
                 size="icon"
                 onClick={() => setViewMode("hard")}
@@ -61,6 +62,7 @@ export function GlobalNavDock() {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                data-tutorial="tutorial-nav-reels"
                 variant="ghost"
                 size="icon"
                 onClick={() => setViewMode("soft")}
@@ -105,7 +107,7 @@ export function GlobalNavDock() {
           {/* Profile Menu */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <div>
+              <div data-tutorial="tutorial-nav-profile">
                 <ProfileMenu onUploadClick={() => setIsUploadDialogOpen(true)} />
               </div>
             </TooltipTrigger>
@@ -118,6 +120,7 @@ export function GlobalNavDock() {
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                data-tutorial="tutorial-nav-settings"
                 variant="ghost"
                 size="icon"
                 className="h-9 w-9 rounded-lg hover:bg-accent"

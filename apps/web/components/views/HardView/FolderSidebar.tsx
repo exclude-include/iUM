@@ -532,7 +532,10 @@ export function FolderSidebar() {
   return (
     <div className="flex h-full flex-col bg-background border-r">
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-3 py-2">
+      <div
+        data-tutorial="tutorial-sidebar-folders"
+        className="flex items-center justify-between border-b px-3 py-2"
+      >
         <h3 className="text-xs font-semibold uppercase tracking-wide">FOLDERS</h3>
         <div className="flex gap-1">
           <Button

@@ -691,7 +691,7 @@ export function ChatSidebar() {
           </div>
         )}
 
-        <div className="flex items-center gap-1.5">
+        <div data-tutorial="tutorial-chat" className="flex items-center gap-1.5">
           <input
             type="text"
             placeholder="Ask anything..."
