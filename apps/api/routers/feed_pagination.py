@@ -77,6 +77,17 @@ async def get_feed(
         )
         
     except Exception as e:
+        # Check if it's a 416 Range Not Satisfiable error from Supabase/PostgREST
+        # This happens when requesting a page beyond the total number of items
+        error_str = str(e)
+        if "416" in error_str or "Range Not Satisfiable" in error_str:
+            return FeedResponse(
+                reels=[],
+                hasMore=False,
+                page=page,
+                pageSize=page_size
+            )
+            
         raise HTTPException(
             status_code=500,
             detail=f"Failed to fetch feed: {str(e)}"

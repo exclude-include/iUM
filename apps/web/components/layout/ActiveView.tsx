@@ -44,30 +44,25 @@ const hardViewVariants = {
 const softViewVariants = {
   initial: {
     opacity: 0,
-    x: 150,
-    scale: 0.98,
-    // filter: "blur(4px)",
+    x: 100, // Reduced distance
+    // scale: 0.98, // Removed scale to reduce composite layer recalculations
   },
   animate: {
     opacity: 1,
     x: 0,
     scale: 1,
-    // filter: "blur(0px)",
     transition: {
-      duration: 0.3, // Faster
-      ease: [0.25, 0.46, 0.45, 0.94],
-      opacity: { duration: 0.25 },
+      duration: 0.3,
+      ease: "easeOut", // Simpler easing
     },
   },
   exit: {
     opacity: 0,
-    x: 150,
-    scale: 0.98,
-    // filter: "blur(4px)",
+    // x: 100, // Don't move on exit, just fade out to avoid heavy composition during HardView mount
+    scale: 1, // Keep scale 1
     transition: {
-      duration: 0.2, // Faster exit
-      ease: [0.55, 0.06, 0.68, 0.19],
-      opacity: { duration: 0.15 },
+      duration: 0.2,
+      ease: "easeIn",
     },
   },
 };
@@ -78,8 +73,8 @@ export function ActiveView({ children }: ActiveViewProps) {
   const viewMode = isSoftMode ? "soft" : "hard";
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
-      <AnimatePresence mode="wait" initial={false}>
+    <div className="relative h-full w-full overflow-hidden bg-background"> {/* Add bg-background to prevent transparent holes */}
+      <AnimatePresence mode="popLayout" initial={false}> {/* popLayout helps with positioning */}
         <motion.div
           key={viewMode}
           variants={isSoftMode ? softViewVariants : hardViewVariants}
@@ -87,7 +82,7 @@ export function ActiveView({ children }: ActiveViewProps) {
           animate="animate"
           exit="exit"
           className="absolute inset-0 h-full w-full"
-          style={{ willChange: "transform, opacity, filter" }}
+          // Removed will-change to let browser decide, sometimes it consumes too much memory for full page layers
         >
           {children}
         </motion.div>
