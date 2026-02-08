@@ -226,24 +226,38 @@ Write your response in markdown format."""
         prompt = f"""Explain '{topic}' in a way that is easy for learners to understand.
 
 Rules:
-1. **Free Format**: Structure your explanation naturally. Use headings, lists, bold text, and math equations ($...$) as needed.
-2. **Math Expressions**: YOU MUST Include relevant formulas using LaTeX syntax format (e.g., $E=mc^2$). **IMPORTANT**: When writing LaTeX inside the JSON string, you MUST escape backslashes (use `\\` instead of `\`). For example, write `$\\frac{{a}}{{b}}$` instead of `$\\frac{{a}}{{b}}$`.
-3. **Diagrams**: Include a node-based diagram (`graph_data`) **ONLY IF** the topic describes a complex cycle, sequential process, or physical structure (e.g., 'Calvin Cycle', 'System Architecture'). For abstract concepts, theorems, or history (e.g., 'Fermat's Last Theorem'), **DO NOT** generate a diagram unless the user explicitly requested it.
+1. **Free Format**: Structure your explanation naturally. Use headings, lists, bold text, etc. Write in a clear, educational style.
+2. **Math Expressions**: Include LaTeX formulas ($...$) ONLY if the topic is inherently mathematical or scientific (e.g., physics, calculus, chemistry equations). For history, humanities, social sciences, or non-quantitative topics, do NOT include any math formulas. **IMPORTANT**: When writing LaTeX inside the JSON string, escape backslashes (use `\\\\` instead of `\\`).
+3. **Diagrams**: Include `graph_data` ONLY when ALL of these conditions are met:
+   - The topic explicitly involves a clear sequential process, cycle, or hierarchical structure (e.g., 'Calvin Cycle', 'Software Architecture', 'Food Chain')
+   - You can define at least 3 meaningful, specific nodes with clear relationships
+   - Generic placeholder labels like "Key Component", "Detail 1", "Detail 2" are FORBIDDEN
+   
+   For these topics, do NOT generate any diagram (set graph_data to null):
+   - History and historical events (e.g., Korean history, World War II)
+   - Abstract concepts, theories, philosophies
+   - Biographies or people
+   - Literary works or art
+   - Definitions or explanations of terms
 
 Response Format (JSON):
-Please respond with a valid raw JSON object (do NOT wrap in markdown code blocks like ```json ... ```) containing:
+Respond with a valid raw JSON object (do NOT wrap in markdown code blocks like ```json ... ```) containing:
 - "text_content": The main explanation (markdown).
-- "graph_data": (Optional) A JSON object for the diagram with "nodes" and "edges".
-  - Nodes: {{ "id": "1", "label": "Text", "type": "default" }}
-  - Edges: {{ "source": "1", "target": "2", "label": "Optional label" }}
-  
-Example:
+- "graph_data": null (if no diagram needed) OR a JSON object with "nodes" and "edges" where each node has a SPECIFIC, MEANINGFUL label.
+
+Example for a topic that DOES need a diagram (water cycle):
 {{
-  "text_content": "# Topic\\n\\nExplanation...",
+  "text_content": "# The Water Cycle\\n\\nThe water cycle describes the continuous movement of water...",
   "graph_data": {{
-     "nodes": [{{ "id": "A", "label": "Start" }}, {{ "id": "B", "label": "End" }}],
-     "edges": [{{ "source": "A", "target": "B" }}]
+     "nodes": [{{"id": "1", "label": "Evaporation"}}, {{"id": "2", "label": "Condensation"}}, {{"id": "3", "label": "Precipitation"}}, {{"id": "4", "label": "Collection"}}],
+     "edges": [{{"source": "1", "target": "2"}}, {{"source": "2", "target": "3"}}, {{"source": "3", "target": "4"}}, {{"source": "4", "target": "1"}}]
   }}
+}}
+
+Example for a topic that does NOT need a diagram (Korean history):
+{{
+  "text_content": "# 한국사의 전반적인 흐름\\n\\n한국의 역사는 고조선부터 시작하여...",
+  "graph_data": null
 }}
 """
 
