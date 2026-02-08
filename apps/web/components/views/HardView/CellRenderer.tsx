@@ -74,7 +74,7 @@ function CellContent({ cell }: { cell: Cell }) {
       </h2>
 
       {/* Markdown Content */}
-      <div className="prose prose-sm max-w-none dark:prose-invert">
+      <div className="prose prose-sm max-w-none dark:prose-invert break-words min-w-0">
         <ReactMarkdown
           remarkPlugins={[remarkMath, remarkGfm]}
           rehypePlugins={[rehypeKatex]}

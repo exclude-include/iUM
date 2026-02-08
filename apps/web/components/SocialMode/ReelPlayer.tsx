@@ -179,14 +179,29 @@ export function ReelPlayer() {
 
   // Auto-play video when reel changes
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.load();
-      videoRef.current.play().catch((err) => {
-        console.error("Auto-play failed:", err);
+    const video = videoRef.current;
+    if (!video) return;
+
+    // Cancel any pending play operation
+    video.pause();
+
+    const handleCanPlay = () => {
+      video.play().catch((err) => {
+        // Ignore AbortError - it's expected when changing videos quickly
+        if (err.name !== 'AbortError') {
+          console.error("Auto-play failed:", err);
+        }
         setIsPlaying(false);
       });
       setIsPlaying(true);
-    }
+    };
+
+    video.addEventListener('canplay', handleCanPlay, { once: true });
+    video.load();
+
+    return () => {
+      video.removeEventListener('canplay', handleCanPlay);
+    };
   }, [currentReel]);
 
   // Keyboard navigation
@@ -299,7 +314,11 @@ export function ReelPlayer() {
       if (isPlaying) {
         videoRef.current.pause();
       } else {
-        videoRef.current.play();
+        videoRef.current.play().catch((err) => {
+          if (err.name !== 'AbortError') {
+            console.error("Play failed:", err);
+          }
+        });
       }
       setIsPlaying(!isPlaying);
     } else {

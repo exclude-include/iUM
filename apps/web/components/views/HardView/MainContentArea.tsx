@@ -100,7 +100,7 @@ export function MainContentArea() {
   }, []);
 
   const handleCreateNewTab = () => {
-    createNotebookTab(); // Auto-generates unique name like "Notebook 1", "Notebook 2", etc.
+    createNotebookTab(); // Auto-generates unique name like "Tab 1", "Tab 2", etc.
   };
 
   // Save tab as .ium file to Supabase
@@ -119,7 +119,7 @@ export function MainContentArea() {
       const result = await saveTabToSupabase(tabId, activeFolderId);
       if (result.success) {
         toast({
-          title: "Notebook saved",
+          title: "Tab saved",
           description: "Your notebook has been saved as .ium file.",
         });
       } else {
@@ -193,7 +193,7 @@ export function MainContentArea() {
       deleteNotebookTab(tabId);
       toast({
         title: "Tab closed",
-        description: "This notebook was not saved to the cloud.",
+        description: "This tab was not saved to the cloud.",
       });
       return;
     }
@@ -247,7 +247,7 @@ export function MainContentArea() {
       <div className="flex items-center justify-between border-b bg-background">
         <div className="flex-1 overflow-x-auto scrollbar-hide">
           <div className="flex items-center gap-1 px-2 py-1.5 min-w-fit">
-            {/* Notebook Tabs with Context Menu */}
+            {/* Tabs with Context Menu */}
             {notebookTabs.map((tab) => (
               <ContextMenu key={tab.id}>
                 <ContextMenuTrigger asChild>
@@ -349,7 +349,7 @@ export function MainContentArea() {
               size="icon"
               className="h-7 w-7 flex-shrink-0"
               onClick={handleCreateNewTab}
-              title="Create new notebook"
+              title="Create new tab"
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -378,7 +378,7 @@ export function MainContentArea() {
       {/* --- Main Content Area --- */}
       <ScrollArea className="flex-1">
         <div className="p-4">
-          {/* Active Notebook Tab Content */}
+          {/* Active Tab Content */}
           {activeTab && notebookActiveTabId ? (
             activeTab.cells.length > 0 ? (
               <div className="space-y-4">
@@ -416,7 +416,7 @@ function EmptyTabState({ tabTitle }: { tabTitle: string }) {
       <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
       <h3 className="text-lg font-medium text-foreground mb-2">{tabTitle}</h3>
       <p className="text-sm text-muted-foreground max-w-sm">
-        This notebook is empty. Start a conversation with the AI tutor to add learning content here.
+        This tab is empty. Start a conversation with the AI tutor to add learning content here.
       </p>
     </div>
   );
@@ -427,13 +427,13 @@ function NoTabSelectedState({ onCreateTab }: { onCreateTab: () => void }) {
   return (
     <div className="flex h-full min-h-[400px] flex-col items-center justify-center text-center px-4">
       <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
-      <h3 className="text-lg font-medium text-foreground mb-2">No Notebook Selected</h3>
+      <h3 className="text-lg font-medium text-foreground mb-2">No Tab Selected</h3>
       <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-        Select a notebook tab or create a new one to start learning.
+        Select a tab or create a new one to start learning.
       </p>
       <Button onClick={onCreateTab} variant="outline" size="sm">
         <Plus className="h-4 w-4 mr-2" />
-        Create New Notebook
+        Create New Tab
       </Button>
     </div>
   );

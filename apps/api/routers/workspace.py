@@ -309,6 +309,67 @@ async def get_file_content(file_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to fetch file content: {str(e)}")
 
 
+@router.get("/file/{file_id}/download")
+async def download_file(file_id: str):
+    """
+    Download a file from Supabase Storage as a binary stream.
+    Returns the file with Content-Disposition header for browser download.
+    """
+    from fastapi.responses import StreamingResponse
+    import io
+    
+    supabase = get_supabase_client()
+
+    try:
+        # Get file metadata from DB
+        file_response = supabase.table("files").select("*").eq("id", file_id).execute()
+
+        if not file_response.data or len(file_response.data) == 0:
+            raise HTTPException(status_code=404, detail=f"File not found: {file_id}")
+
+        file_data = file_response.data[0]
+        storage_path = file_data.get("storage_path")
+        file_name = file_data.get("name", "download")
+
+        if not storage_path:
+            raise HTTPException(status_code=404, detail="File storage path not found")
+
+        # Download file bytes from Supabase Storage
+        file_bytes = supabase.storage.from_("documents").download(storage_path)
+
+        # Determine content type based on extension
+        ext = file_name.split('.')[-1].lower() if '.' in file_name else ''
+        content_types = {
+            'pdf': 'application/pdf',
+            'txt': 'text/plain',
+            'md': 'text/markdown',
+            'json': 'application/json',
+            'ium': 'application/json',
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'gif': 'image/gif',
+            'webp': 'image/webp',
+        }
+        content_type = content_types.get(ext, 'application/octet-stream')
+
+        # Return as streaming response with download header
+        return StreamingResponse(
+            io.BytesIO(file_bytes),
+            media_type=content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{file_name}"',
+                "Content-Length": str(len(file_bytes))
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error downloading file: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
+
+
 
 @router.put("/{workspace_id}/files/{file_id}")
 async def update_file(
