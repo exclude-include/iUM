@@ -526,12 +526,20 @@ export async function fetchFeed(params: {
   pageSize?: number;
   lastReelId?: string;
   userId?: string;
+  activeFolderIds?: string[];  // NEW: Active folder IDs for filtering
+  similarityThreshold?: number; // NEW: Similarity threshold (default 0.7)
 }): Promise<{ reels: any[]; hasMore: boolean }> {
   const queryParams = new URLSearchParams();
   queryParams.append("page", params.page.toString());
   if (params.pageSize) queryParams.append("page_size", params.pageSize.toString());
   if (params.lastReelId) queryParams.append("last_reel_id", params.lastReelId);
   if (params.userId) queryParams.append("user_id", params.userId);
+  if (params.activeFolderIds && params.activeFolderIds.length > 0) {
+    queryParams.append("active_folder_ids", params.activeFolderIds.join(","));
+  }
+  if (params.similarityThreshold !== undefined) {
+    queryParams.append("similarity_threshold", params.similarityThreshold.toString());
+  }
 
   return fetchApi<{ reels: any[]; hasMore: boolean }>(
     `/api/reels/feed?${queryParams.toString()}`
