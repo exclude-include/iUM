@@ -79,7 +79,7 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
               type="button"
               onClick={handleOpenDeep}
               title="View Deep explanation"
-              className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-0 group-hover/block:opacity-100"
+              className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-90 group-hover/block:opacity-100"
               aria-label="View Deep explanation"
             >
               <Sparkles className="h-3.5 w-3.5" />
@@ -118,7 +118,7 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
                 type="button"
                 onClick={handleOpenDeep}
                 title="View Deep explanation"
-                className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-0 group-hover/block:opacity-100"
+                className="absolute -top-0.5 right-0 z-10 p-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors opacity-90 group-hover/block:opacity-100"
                 aria-label="View Deep explanation"
               >
                 <Sparkles className="h-3.5 w-3.5" />

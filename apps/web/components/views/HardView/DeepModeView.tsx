@@ -5,7 +5,7 @@ import { useAppStore } from "@/lib/store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Plus, ExternalLink, Sparkles } from "lucide-react";
+import { Plus, ExternalLink, Sparkles, GripVertical } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -56,7 +56,7 @@ export function DeepModeView() {
                 <p>Select text in the main tab and right-click to "Deep Dive".</p>
             </div>
 
-            <ScrollArea className="flex-1 p-3">
+            <ScrollArea className="flex-1 min-h-0 p-3">
                 {deepHistory.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-64 text-center text-muted-foreground p-4">
                         <Sparkles className="w-12 h-12 mb-3 opacity-20" />
@@ -71,9 +71,20 @@ export function DeepModeView() {
                             <div
                                 key={item.id}
                                 ref={(el) => { cardRefs.current[item.id] = el; }}
+                                draggable
+                                onDragStart={(e) => {
+                                    e.dataTransfer.setData("application/ium-deep-card", item.id);
+                                    e.dataTransfer.effectAllowed = "copy";
+                                    e.currentTarget.classList.add("opacity-70");
+                                }}
+                                onDragEnd={(e) => {
+                                    e.currentTarget.classList.remove("opacity-70");
+                                }}
+                                className="cursor-grab active:cursor-grabbing transition-opacity"
                             >
                                 <Card className="overflow-hidden border-primary/20 shadow-sm">
                                 <div className="bg-primary/5 p-2 px-3 flex items-center justify-between border-b border-primary/10">
+                                    <GripVertical className="h-3.5 w-3.5 text-primary/50 flex-shrink-0 mr-1" />
                                     <h3 className="font-semibold text-xs truncate flex-1 text-primary">
                                         {item.title}
                                     </h3>

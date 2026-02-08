@@ -21,7 +21,7 @@ export function CellToolbar({
   onMoveToNewTab,
 }: CellToolbarProps) {
   return (
-    <div className="absolute -top-3 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+    <div className="absolute -top-3 right-2 z-10 opacity-90 group-hover:opacity-100 transition-opacity duration-200">
       <div className="flex items-center gap-1 bg-background border rounded-md shadow-sm px-1.5 py-0.5">
         {/* Type Badge */}
         <span className="text-[10px] text-muted-foreground px-2 uppercase font-medium">

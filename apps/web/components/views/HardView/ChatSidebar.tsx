@@ -487,8 +487,8 @@ export function ChatSidebar() {
         <DeepModeView />
       ) : (
         <>
-          {/* Content Area */}
-          <ScrollArea className="flex-1">
+          {/* Content Area - min-h-0 so flex child can shrink and scroll to bottom */}
+          <ScrollArea className="flex-1 min-h-0">
             {!activeFolderId ? (
               <div className="flex h-full min-h-[300px] flex-col items-center justify-center text-center px-4">
                 <MessageCircle className="h-12 w-12 text-muted-foreground/50 mb-4" />
