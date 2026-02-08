@@ -24,19 +24,22 @@ def get_user_id_from_token(authorization: str) -> str:
     if jwt_secret:
         try:
             import jwt
-            # Supabase can use HS256 (legacy) or RS256/ES256 (signing keys); allow all so "alg value is not allowed" is avoided
+            # Only HS256 here: symmetric secret. RS256/ES256 need PEM and cause "Unable to load PEM file"
             payload = jwt.decode(
                 token,
                 jwt_secret,
                 audience="authenticated",
-                algorithms=["HS256", "RS256", "ES256"],
+                algorithms=["HS256"],
                 options={"verify_exp": True},
             )
             user_id = payload.get("sub")
             if user_id:
                 return user_id
+        except jwt.InvalidAlgorithmError:
+            # Token uses RS256/ES256 -> fall back to Auth API (no PEM error)
+            pass
         except Exception as e:
-            # Local verify failed (wrong alg, RS256 with symmetric key, etc.) -> fall back to Auth API
+            # Local verify failed -> fall back to Auth API
             print(f"JWT decode error: {e}, falling back to auth.get_user")
 
     # Fallback: use Supabase auth.get_user (works with service role; supports any Supabase JWT alg)
@@ -81,17 +84,17 @@ def get_supabase_client() -> Client:
 
 def get_supabase_client_with_user_jwt(jwt_token: str) -> Client:
     """
-    Create a Supabase client that sends the user's JWT in requests.
-    Use this for folder/files operations so RLS sees auth.uid() and allows the row.
-    (Fixes "new row violates row-level security policy" when backend uses anon key.)
+    Create a Supabase client that sends the user's JWT so RLS sees auth.uid().
+    Must use anon key: with service_role key PostgREST may ignore JWT and RLS blocks insert.
     """
     supabase_url = os.getenv("SUPABASE_URL")
     anon_key = os.getenv("SUPABASE_ANON_KEY")
-    key = anon_key or os.getenv("SUPABASE_SERVICE_KEY")
-    if not supabase_url or not key:
-        raise ValueError("Missing SUPABASE_URL or SUPABASE_ANON_KEY/SUPABASE_SERVICE_KEY")
-    client = create_client(supabase_url, key)
-    # Set user JWT on postgrest so RLS sees auth.uid()
+    if not supabase_url or not anon_key:
+        raise ValueError(
+            "For folder/files APIs with RLS, set SUPABASE_ANON_KEY (Dashboard > API > anon public). "
+            "SUPABASE_SERVICE_KEY alone causes RLS violation because auth.uid() is not set."
+        )
+    client = create_client(supabase_url, anon_key)
     if hasattr(client, "postgrest") and hasattr(client.postgrest, "session"):
         client.postgrest.session.headers["Authorization"] = f"Bearer {jwt_token}"
     return client
