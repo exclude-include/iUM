@@ -377,6 +377,8 @@ export function ChatSidebar() {
         timestamp: new Date().toISOString(),
         sources: response.sources,
         reasoning_chain: response.reasoning_chain,
+        // ✨ Self-Reflection 평가 메트릭 추가
+        evaluation_metrics: response.evaluation_metrics,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -676,6 +678,29 @@ export function ChatSidebar() {
                                     ))}
                                   </div>
                                 </details>
+                              </div>
+                            )}
+                            {/* ✨ Self-Reflection 신뢰도 배지 */}
+                            {message.evaluation_metrics && (
+                              <div className="mt-2 flex items-center gap-2 text-xs border-t pt-2 border-border/50">
+                                <div
+                                  className={cn(
+                                    "flex items-center gap-1 px-2 py-0.5 rounded-full font-medium",
+                                    message.evaluation_metrics.confidence_score >= 80
+                                      ? "bg-green-500/20 text-green-600 dark:text-green-400"
+                                      : message.evaluation_metrics.confidence_score >= 60
+                                        ? "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
+                                        : "bg-red-500/20 text-red-600 dark:text-red-400"
+                                  )}
+                                >
+                                  <Sparkles className="h-3 w-3" />
+                                  <span>Confidence: {message.evaluation_metrics.confidence_score}%</span>
+                                </div>
+                                {message.evaluation_metrics.refined && (
+                                  <span className="text-muted-foreground">
+                                    (Improved)
+                                  </span>
+                                )}
                               </div>
                             )}
                           </div>

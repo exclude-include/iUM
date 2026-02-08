@@ -19,7 +19,15 @@ export interface ChatMessage {
   // ✨ [추가] 사용자 피드백 상태
   feedback?: "like" | "dislike" | null;
   // ✨ [추가] 사용자 의도 (유형 선택 바)
-  intent?: "auto" | "concept" | "diagram" | "quiz" | "flashcard";
+  intent?: "auto" | "concept" | "diagram" | "quiz" | "flashcard" | "report" | "table" | "file-preview" | "notes";
+  // ✨ [추가] Self-Reflection 평가 메트릭
+  evaluation_metrics?: {
+    confidence_score: number;
+    relevance: number;
+    accuracy: number;
+    iterations_used: number;
+    refined: boolean;
+  };
 }
 
 export interface ChatRequest {
@@ -102,6 +110,14 @@ export interface ChatResponse {
   reasoning_chain?: string[];
   confidence_score?: number;
   learning_unit?: LearningUnitResponse;
+  // ✨ Self-Reflection 평가 메트릭
+  evaluation_metrics?: {
+    confidence_score: number; // 0-100
+    relevance: number; // 0-100
+    accuracy: number; // 0-100
+    iterations_used: number;
+    refined: boolean;
+  };
 }
 
 // Document Ingestion Types

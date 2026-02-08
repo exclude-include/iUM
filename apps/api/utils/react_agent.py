@@ -10,6 +10,7 @@ from typing import Optional, Dict, Any, List, AsyncGenerator
 from langchain_google_genai import ChatGoogleGenerativeAI
 from utils.learning_tools import LearningToolkit, get_learning_toolkit
 from utils.opik_config import track
+from utils.self_reflection import get_self_reflection
 
 
 REACT_SYSTEM_PROMPT = """You are the iUM learning agent.
@@ -98,6 +99,8 @@ class ReactLearningAgent:
         self.initial_document_context = (initial_document_context or "").strip()
         self.max_iterations = max_iterations
         self.scratchpad = ""
+        self.reflection = get_self_reflection(self.llm)
+        self.evaluation_metrics = {}
 
     def _build_prompt(self, question: str) -> str:
         """Combine system prompt + user question + scratchpad; inject document context when present."""
@@ -239,6 +242,19 @@ class ReactLearningAgent:
             # 2. Check for Final Answer
             final_answer = self._parse_final_answer(response_text)
             if final_answer:
+                # ✨ Self-Reflection: Evaluate and improve response quality
+                yield {
+                    "status": "progress",
+                    "step": "self_reflection",
+                    "message": "Evaluating response quality... 🔍"
+                }
+                
+                final_answer, self.evaluation_metrics = await self.reflection.evaluate_and_improve(
+                    response=final_answer,
+                    query=question,
+                    context=self.initial_document_context
+                )
+                
                 # Generate appropriate chat message based on actions taken
                 chat_msg = self._generate_chat_message()
                 
@@ -253,7 +269,8 @@ class ReactLearningAgent:
                         "conversation_id": "react-session",
                         "sources": [],
                         "reasoning_chain": self._get_reasoning_chain(),
-                        "learning_unit": learning_unit  # Structured for cell
+                        "learning_unit": learning_unit,  # Structured for cell
+                        "evaluation_metrics": self.evaluation_metrics  # ✨ Quality metrics
                     }
                 }
                 return
