@@ -13,6 +13,12 @@ from utils.learning_tools import LearningToolkit, get_learning_toolkit
 from utils.opik_config import track
 from utils.self_reflection import get_self_reflection
 
+# ✨ [추가] 전역 세마포어: LLM 호출 동시성 제한 (한 번에 1개만 실행)
+_llm_semaphore = asyncio.Semaphore(1)
+
+# ✨ [추가] 요청 간 최소 지연 시간 (초)
+_MIN_REQUEST_DELAY = 0.5
+
 
 REACT_SYSTEM_PROMPT = """You are the iUM learning agent.
 You think step-by-step about the user's learning questions and use tools to provide the best possible answers.
@@ -321,7 +327,10 @@ class ReactLearningAgent:
             prompt = self._build_prompt(question)
             
             try:
-                response = await self.llm.ainvoke(prompt)
+                # ✨ [추가] 세마포어로 동시 LLM 호출 제한
+                async with _llm_semaphore:
+                    await asyncio.sleep(_MIN_REQUEST_DELAY)  # 요청 간 최소 지연
+                    response = await self.llm.ainvoke(prompt)
                 response_text = response.content
             except Exception as e:
                 yield {
@@ -341,11 +350,14 @@ class ReactLearningAgent:
                         "message": "Evaluating response quality... 🔍"
                     }
                     
-                    final_answer, self.evaluation_metrics = await self.reflection.evaluate_and_improve(
-                        response=final_answer,
-                        query=question,
-                        context=self.initial_document_context
-                    )
+                    # ✨ [추가] self_reflection도 세마포어 적용
+                    async with _llm_semaphore:
+                        await asyncio.sleep(_MIN_REQUEST_DELAY)
+                        final_answer, self.evaluation_metrics = await self.reflection.evaluate_and_improve(
+                            response=final_answer,
+                            query=question,
+                            context=self.initial_document_context
+                        )
                 else:
                     # Skip evaluation - use response as-is
                     self.evaluation_metrics = {"skipped": True}

@@ -482,7 +482,9 @@ export function FolderSidebar() {
       const response = await fetch(`${apiUrl}/api/workspace/file/${file.id}/content`);
 
       if (!response.ok) {
-        throw new Error("Failed to fetch file");
+        const errorText = await response.text();
+        console.error(`[FolderSidebar] Failed to fetch file content: ${response.status}`, errorText);
+        throw new Error(`Failed to fetch file: ${response.status} - ${errorText}`);
       }
 
       const iumData: IumFile = await response.json();

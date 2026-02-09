@@ -5,6 +5,17 @@ os.environ["TRANSFORMERS_VERBOSITY"] = "error"  # Suppress warnings
 from dotenv import load_dotenv
 load_dotenv()
 
+# ✨ [추가] Google Genai SDK 로그 레벨 조정 (INFO 메시지 숨김)
+import logging
+# AFC (Automatic Function Calling) 관련 로그 완전 숨김
+logging.getLogger("google_genai").setLevel(logging.WARNING)
+logging.getLogger("google_genai.models").setLevel(logging.WARNING)
+logging.getLogger("google_genai._operations").setLevel(logging.WARNING)
+logging.getLogger("google.generativeai").setLevel(logging.WARNING)
+logging.getLogger("google.genai").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager

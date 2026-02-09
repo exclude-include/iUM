@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Flame, Sparkles, Bell, Settings, Film } from "lucide-react";
+import { Flame, Sparkles, Settings, Film } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -29,9 +29,13 @@ export function GlobalNavDock() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-10 w-10 rounded-lg font-semibold text-lg"
+                  className="h-10 w-10 rounded-lg p-1"
                 >
-                  iUM
+                  <img
+                    src="/logo.png"
+                    alt="iUM"
+                    className="h-8 w-8 object-contain"
+                  />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="right">
@@ -81,23 +85,6 @@ export function GlobalNavDock() {
             </TooltipTrigger>
             <TooltipContent side="right">
               <p>Soft-Fun View (Reels)</p>
-            </TooltipContent>
-          </Tooltip>
-
-          {/* Notification */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-lg hover:bg-accent relative"
-              >
-                <Bell className="h-5 w-5" />
-                {/* Notification badge could go here */}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              <p>Notifications</p>
             </TooltipContent>
           </Tooltip>
         </div>

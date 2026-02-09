@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "next-themes";
-import { Moon, Sun, X, Plus, FileText, Save, Download, Pencil, Trash2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, PanelBottomClose, PanelBottomOpen, Sparkles, Star, Copy } from "lucide-react";
+import { Moon, Sun, X, Plus, FileText, Save, Download, Pencil, Trash2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Sparkles, Star, Copy } from "lucide-react";
 import { Reorder } from "framer-motion";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -51,10 +51,8 @@ export function MainContentArea() {
     activeFolderId,
     rightPanelMinimized,
     leftPanelMinimized,
-    bottomPanelMinimized,
     setLeftPanelMinimized,
     setRightPanelMinimized,
-    setBottomPanelMinimized,
     addDeepCard,
     updateDeepCard,
     setSidebarMode,
@@ -681,8 +679,10 @@ export function MainContentArea() {
     });
 
     try {
-      // ✨ [Updated] Context Retrieval
+      // ✨ [Updated] Context Retrieval - Get full cell content for better context
       // Try to find the specific cell the selection belongs to
+      let cellFullContent = "";
+      let cellTitle = "";
       let context = "";
       const selection = window.getSelection();
       if (selection && selection.anchorNode) {
@@ -691,7 +691,11 @@ export function MainContentArea() {
           const cellId = cellElement.getAttribute('data-cell-id');
           const sourceCell = activeTab?.cells.find(c => c.id === cellId);
           if (sourceCell) {
-            context = `Context from cell "${sourceCell.title || 'Untitled'}":\n${sourceCell.content}`;
+            cellTitle = sourceCell.title || 'Untitled';
+            cellFullContent = sourceCell.content || '';
+            
+            // ✨ [Fix] Build structured context with full cell content and selected text
+            context = `[CELL_TITLE]: ${cellTitle}\n[CELL_FULL_CONTENT]:\n${cellFullContent}\n[SELECTED_TEXT]: ${text.trim()}`;
           }
         }
       }
@@ -704,12 +708,32 @@ export function MainContentArea() {
       const response = await api.chat.generateDeepExplanation(text, context, activeFolderId || undefined);
 
       if (response.learning_unit) {
+        // ✨ Successfully got a learning_unit from the agent
         updateDeepCard(tempCardId, { ...response.learning_unit, status: 'complete' });
-      } else {
-        // Fallback: Check if message is actually a JSON string (from tool output)
-        let content = response.message;
+      } else if (response.message || response.chat_message) {
+        // ✨ Got a message response - try to parse or use directly
+        let content = response.chat_message || response.message || "";
         let graph_data = undefined;
         let diagram_description = "";
+
+        // Check if content looks like an error message
+        const isErrorMessage = content.includes("문제가 발생") || 
+                               content.includes("다시 시도") ||
+                               content.includes("error") ||
+                               content.includes("failed");
+        
+        if (isErrorMessage) {
+          // Try to generate a simple explanation using the text directly
+          updateDeepCard(tempCardId, {
+            type: "concept",
+            title: `Deep Dive: ${text.slice(0, 40)}...`,
+            content: `## ${text}\n\n*설명을 생성하는 중 문제가 발생했습니다. 다시 시도해주세요.*\n\n선택한 텍스트: "${text}"`,
+            equations: [],
+            quiz_data: [],
+            status: 'error'
+          });
+          return;
+        }
 
         try {
           let jsonStr = content.trim();
@@ -738,23 +762,17 @@ export function MainContentArea() {
               console.warn("JSON parse failed, attempting regex extraction:", parseError);
 
               // 3. Fallback: Regex Extraction (Robust against bad escaping)
-              // Extract text_content
-              // Look for "text_content": " ... ", "graph_data"
-              // This is tricky due to nested quotes, but we try a greedy approach up to the known next key
               const textMatch = candidate.match(/"text_content"\s*:\s*"([\s\S]*?)",\s*"graph_data"/);
               if (textMatch && textMatch[1]) {
-                // Manual unescape of basic JSON escapes
                 content = textMatch[1]
                   .replace(/\\n/g, '\n')
                   .replace(/\\"/g, '"')
                   .replace(/\\\\/g, '\\');
               }
 
-              // Extract graph_data (assuming it's at the end)
               const graphMatch = candidate.match(/"graph_data"\s*:\s*(\{[\s\S]*\})\s*}/);
               if (graphMatch && graphMatch[1]) {
                 try {
-                  // Attempt to parse just the graph object (it might be cleaner)
                   graph_data = JSON.parse(graphMatch[1]);
                   diagram_description = "Generated diagram based on the explanation.";
                 } catch (e) {
@@ -769,13 +787,23 @@ export function MainContentArea() {
 
         updateDeepCard(tempCardId, {
           type: "concept",
-          title: "Explanation",
-          content: content,
+          title: `Deep Dive: ${text.slice(0, 40)}${text.length > 40 ? '...' : ''}`,
+          content: content || `## ${text}\n\n설명을 생성할 수 없습니다. 다시 시도해주세요.`,
           equations: [],
           quiz_data: [],
           diagram_description: diagram_description,
           graph_data: graph_data,
           status: 'complete'
+        });
+      } else {
+        // ✨ No valid response at all
+        updateDeepCard(tempCardId, {
+          type: "concept",
+          title: `Deep Dive: ${text.slice(0, 40)}...`,
+          content: `## ${text}\n\n응답을 받지 못했습니다. 다시 시도해주세요.`,
+          equations: [],
+          quiz_data: [],
+          status: 'error'
         });
       }
     } catch (error) {
@@ -978,15 +1006,6 @@ export function MainContentArea() {
               title="채팅 패널 펼치기"
             >
               <PanelRightOpen className="h-4 w-4 text-muted-foreground hover:text-primary" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setBottomPanelMinimized(!bottomPanelMinimized)}
-              title={bottomPanelMinimized ? "하단 패널 펼치기" : "하단 패널 최소화"}
-            >
-              {bottomPanelMinimized ? <PanelBottomOpen className="h-4 w-4 text-muted-foreground hover:text-primary" /> : <PanelBottomClose className="h-4 w-4 text-muted-foreground hover:text-primary" />}
             </Button>
           </div>
         )}

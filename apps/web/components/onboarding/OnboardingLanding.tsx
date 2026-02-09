@@ -64,14 +64,13 @@ export function OnboardingLanding() {
           {/* Logo / Brand */}
           <motion.div
             variants={fadeUp}
-            className="mb-8 flex h-16 w-16 items-center justify-center rounded-2xl shadow-lg"
-            style={{
-              background: "linear-gradient(135deg, #93c5fd 0%, #60a5fa 50%, #3b82f6 100%)",
-              color: "#fff",
-              boxShadow: "0 10px 40px -10px rgba(59, 130, 246, 0.4)",
-            }}
+            className="mb-8 flex h-24 w-24 items-center justify-center"
           >
-            <span className="text-2xl font-bold tracking-tight">iUM</span>
+            <img
+              src="/logo.png"
+              alt="iUM Logo"
+              className="h-24 w-24 object-contain drop-shadow-lg"
+            />
           </motion.div>
 
           <motion.h1
