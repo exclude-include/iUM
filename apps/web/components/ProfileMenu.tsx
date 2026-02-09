@@ -56,8 +56,7 @@ export function ProfileMenu({ onUploadClick }: ProfileMenuProps) {
       });
 
       setIsOpen(false);
-      router.push("/");
-      router.refresh();
+      window.location.href = "/";
     } catch (error: any) {
       toast({
         title: "Error",
