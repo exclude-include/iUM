@@ -104,6 +104,8 @@ export function QuizOverlay({ quiz, onCorrectAnswer, onClose }: QuizOverlayProps
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
         className="w-full max-w-[350px] mx-4 max-h-[85vh] flex flex-col rounded-2xl bg-gradient-to-b from-gray-900/95 to-gray-800/95 shadow-2xl border border-white/10 overflow-hidden"
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
       >
         {/* Scrollable area so long quiz + hint don't get cut off (reel scroll = trackpad; inner drag scrollbar for quiz) */}
         <div className="quiz-overlay-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-6">

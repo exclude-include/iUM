@@ -55,7 +55,7 @@ async def get_feed(
         FeedResponse: Paginated list of reels
     """
     try:
-        from utils.similarity_service import calculate_folder_centroid, cosine_similarity
+        from utils.similarity_service import calculate_folder_centroid
         import random
         
         supabase = get_supabase_client()
@@ -65,80 +65,92 @@ async def get_feed(
         if active_folder_ids:
             folder_id_list = [fid.strip() for fid in active_folder_ids.split(",") if fid.strip()]
         
-        # Get all reels (we'll filter in Python for simplicity)
-        # In production, you might want to use SQL functions for better performance
-        all_reels_result = supabase.table("reels").select("*").execute()
+        # Determine target counts for this page
+        # Target: 70% relevant (similarity > threshold), 30% random
+        target_relevant = int(page_size * 0.7)
+        target_random = page_size - target_relevant
         
-        if not all_reels_result.data:
-            return FeedResponse(
-                reels=[],
-                hasMore=False,
-                page=page,
-                pageSize=page_size
-            )
+        relevant_reels = []
         
-        candidate_reels = []
-        
-        # Case 1: No folders active - only non-quiz reels
-        if not folder_id_list:
-            candidate_reels = [
-                reel for reel in all_reels_result.data
-                if reel.get("quiz") is None
-            ]
-        
-        # Case 2: Folders active - filter quiz reels by similarity
-        else:
-            # Calculate folder centroid
+        # 1. Fetch Relevant Reels (if folders active)
+        if folder_id_list:
             centroid = calculate_folder_centroid(folder_id_list)
             
-            if centroid is None:
-                # No documents in folders, treat as no folders
-                candidate_reels = [
-                    reel for reel in all_reels_result.data
-                    if reel.get("quiz") is None
-                ]
-            else:
-                for reel in all_reels_result.data:
-                    # Explicit folder match (Priority)
-                    if reel.get("folder_id") and str(reel.get("folder_id")) in folder_id_list:
-                        candidate_reels.append(reel)
-                        continue
-
-                    # Non-quiz reels: always include
-                    if reel.get("quiz") is None:
-                        candidate_reels.append(reel)
+            if centroid:
+                # Use RPC for efficient similarity search
+                try:
+                    rpc_params = {
+                        "query_embedding": centroid,
+                        "match_count": page_size * 2, # Fetch more to have pool for randomization/pagination
+                        "similarity_threshold": similarity_threshold
+                    }
                     
-                    # Quiz reels: check similarity
-                    elif reel.get("quiz_embedding") is not None:
-                        quiz_emb = reel["quiz_embedding"]
-                        
-                        if isinstance(quiz_emb, str):
-                            import json
-                            try:
-                                quiz_emb = json.loads(quiz_emb)
-                            except:
-                                continue
+                    # Call Supabase RPC
+                    response = supabase.rpc("match_reels_by_embedding", rpc_params).execute()
+                    
+                    if response.data:
+                        # Convert to Reel objects
+                        # Note: RPC returns columns that match Reel model but we need to map/validate
+                        flattened_reels = []
+                        for r_data in response.data:
+                            # Map RPC result specific fields if needed
+                            # similiarity is returned by RPC, we can keep it
+                            r_obj = Reel(**r_data)
+                            flattened_reels.append(r_obj)
+                            
+                        relevant_reels = flattened_reels
+                except Exception as rpc_error:
+                    print(f"RPC Error: {rpc_error}")
+                    # Fallback or just receive empty relevant
+                    pass
+        
+        # 2. Fetch Random/Discovery Reels
+        # logic: fetch reels that are NOT in relevant_reels (to avoid dupes)
+        # For simplicity and performance, we'll just fetch recent reels and filter in memory for now
+        # Ideal: use an RPC for "random reels excluding IDs" but let's stick to simple query
+        
+        needed_random = page_size # Get enough to fill the page
+        
+        # Fetch non-quiz reels or just random reels
+        # We prefer reels WITHOUT quiz for "discovery" or just any reel
+        # Let's fetch a mix of non-quiz reels to ensure variety
+        random_response = supabase.table("reels").select("*").is_("quiz", "null").order("created_at", desc=True).limit(20).execute()
+        random_reels = [Reel(**r) for r in random_response.data] if random_response.data else []
+        
+        # 3. Compose the Page
+        final_feed = []
+        
+        # Add up to target_relevant from relevant pool
+        # To support pagination of relevant reels, we would need a more complex cursor
+        # For now, we shuffle the relevant pool and pick
+        random.shuffle(relevant_reels)
+        
+        # We might have already seen some if we are on page > 0, but stateless random feed is acceptable for "Reels"
+        # usually. However, standard pagination expects stability.
+        # Given the "randomly selected with probability" requirement, strict pagination is hard.
+        # We will just return a fresh slice.
+        
+        final_feed.extend(relevant_reels[:target_relevant])
+        
+        # Fill the rest with random reels
+        remaining_slots = page_size - len(final_feed)
+        random.shuffle(random_reels)
+        final_feed.extend(random_reels[:remaining_slots])
+        
+        # If we still have space (e.g. no random reels found), try filling with more relevant
+        if len(final_feed) < page_size and len(relevant_reels) > target_relevant:
+            extra_needed = page_size - len(final_feed)
+            final_feed.extend(relevant_reels[target_relevant:target_relevant+extra_needed])
 
-                        similarity = cosine_similarity(centroid, quiz_emb)
-                        
-                        if similarity >= similarity_threshold:
-                            reel["similarity"] = similarity  # Inject score for debugging
-                            candidate_reels.append(reel)
+        # Shuffle the final page so user doesn't see "all relevant then all random"
+        random.shuffle(final_feed)
         
-        # Randomize order
-        random.shuffle(candidate_reels)
-        
-        # Apply pagination
-        offset = page * page_size
-        total_count = len(candidate_reels)
-        has_more = (offset + page_size) < total_count
-        
-        # Get page of reels
-        reels_data = candidate_reels[offset:offset + page_size]
-        reels = [Reel(**reel_data) for reel_data in reels_data]
+        # Pagination flags
+        # In a random feed, "hasMore" is usually always true until empty
+        has_more = True 
         
         return FeedResponse(
-            reels=reels,
+            reels=final_feed,
             hasMore=has_more,
             page=page,
             pageSize=page_size

@@ -32,6 +32,7 @@ interface FeedState {
   getCurrentReel: () => ReelItem | null;
   setActiveFolderIds: (ids: string[]) => void;
   setShowAllFolders: (show: boolean) => void;
+  refresh: () => Promise<void>;
   
   // Global Playback Lock
   activePlayerId: string | null;
@@ -82,17 +83,20 @@ export const useFeedStore = create<FeedState>((set, get) => ({
   showAllFolders: true,
 
   loadInitialFeed: async () => {
-    const { isLoading, pageSize, activeFolderIds, showAllFolders } = get();
+    // Force refresh if already loading? No, safeguard against double loading.
+    const { isLoading, pageSize } = get();
     if (isLoading) return;
 
     set({ isLoading: true });
 
     try {
-      // Get active folder IDs from global store
-      const { activeFolderId } = await import("@/lib/store").then(m => ({ activeFolderId: m.useAppStore.getState().activeFolderId }));
+      // Get active folder IDs directly from useSocialStore (UI state source of truth)
+      const { useSocialStore } = await import("./useSocialStore");
+      const { activeFolderIds, showAllFolders } = useSocialStore.getState();
       
-      // Build folder IDs array: use activeFolderId from AppStore if available
-      const folderIds = activeFolderId ? [activeFolderId] : [];
+      // If "All" is selected, send empty list (backend treats empty as all/random)
+      // If specific folders selected, send their IDs
+      const folderIds = showAllFolders ? [] : activeFolderIds;
       
       const data = await fetchFeed({
         page: 0,
@@ -125,11 +129,11 @@ export const useFeedStore = create<FeedState>((set, get) => ({
     set({ isLoading: true });
 
     try {
-      // Get active folder IDs from global store
-      const { activeFolderId } = await import("@/lib/store").then(m => ({ activeFolderId: m.useAppStore.getState().activeFolderId }));
+      // Get active folder IDs from useSocialStore
+      const { useSocialStore } = await import("./useSocialStore");
+      const { activeFolderIds, showAllFolders } = useSocialStore.getState();
       
-      // Build folder IDs array
-      const folderIds = activeFolderId ? [activeFolderId] : [];
+      const folderIds = showAllFolders ? [] : activeFolderIds;
       
       const data = await fetchFeed({
         page: currentPage + 1,
@@ -159,6 +163,20 @@ export const useFeedStore = create<FeedState>((set, get) => ({
       console.error("Failed to load next page:", error);
       set({ isLoading: false });
     }
+  },
+
+  refresh: async () => {
+      // Reset state and reload
+      set({
+          feedBuffer: [],
+          currentBufferIndex: 0,
+          currentPage: 0,
+          hasMore: true,
+          isLoading: false,
+          lastReelId: null,
+          viewHistory: [],
+      });
+      await get().loadInitialFeed();
   },
 
   navigateToReel: async (reelId: string) => {
