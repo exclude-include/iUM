@@ -51,7 +51,10 @@ def get_user_id_from_token(authorization: str) -> str:
             raise HTTPException(status_code=401, detail="Invalid token")
         return user_response.user.id
     except Exception as e:
-        print(f"Token verification error: {e}")
+        # Only log unexpected errors, not common session expiry (reduce log noise)
+        error_str = str(e)
+        if "session" not in error_str.lower() and "expired" not in error_str.lower():
+            print(f"Token verification error: {e}")
         from fastapi import HTTPException
         raise HTTPException(status_code=401, detail="Unauthorized")
 
