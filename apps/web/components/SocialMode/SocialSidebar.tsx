@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/lib/store";
 import { useSocialStore, initializeSocialReels } from "./useSocialStore";
+import { useFeedStore } from "./useFeedStore";
 
 export function SocialSidebar() {
   const router = useRouter();
@@ -59,12 +60,19 @@ export function SocialSidebar() {
     },
   ];
 
-  const handleAllToggle = (checked: boolean) => {
+  const handleAllToggle = async (checked: boolean) => {
     setShowAllFolders(checked);
+    // Refresh feed to apply filter (Show All or Specific Folders)
+    // We need a small delay or ensure state is updated before refreshing?
+    // setShowAllFolders updates Zustand state synchronously.
+    // However, useFeedStore.refresh reads from useSocialStore.getState(), which should be up to date.
+    await useFeedStore.getState().refresh();
   };
 
-  const handleFolderToggle = (folderId: string) => {
+  const handleFolderToggle = async (folderId: string) => {
     toggleFolder(folderId);
+    // Refresh feed to apply filter
+    await useFeedStore.getState().refresh();
   };
 
   return (
@@ -117,7 +125,7 @@ export function SocialSidebar() {
               variant="ghost"
               size="icon"
               className="h-8 w-8 flex-shrink-0"
-              onClick={refreshFeed}
+              onClick={() => useFeedStore.getState().refresh()}
               title="Refresh Feed"
             >
               <RefreshCw className="h-4 w-4" />

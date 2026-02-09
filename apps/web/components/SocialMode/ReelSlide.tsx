@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useState, useCallback } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Heart,
@@ -14,6 +14,61 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { QuizOverlay } from "./QuizOverlay";
 import { useFeedStore } from "./useFeedStore";
+
+/** Dark color palette for reel backgrounds - diverse dark tones */
+const DARK_REEL_PALETTE = [
+  "#1A1B2E", // Deep navy blue
+  "#2D1B3D", // Dark purple
+  "#1B2D2D", // Dark teal
+  "#2D2A1B", // Dark olive
+  "#3D1B2D", // Dark burgundy
+  "#1B3D2D", // Dark forest green
+  "#2D1B2D", // Dark plum
+  "#1B2D3D", // Dark steel blue
+  "#3D2D1B", // Dark brown
+  "#2D3D1B", // Dark moss green
+  "#1B2D3D", // Dark cyan-blue
+  "#3D1B1B", // Dark maroon
+  "#2D1B1B", // Dark chocolate
+  "#1B1B3D", // Dark midnight blue
+  "#3D2D2D", // Dark charcoal
+  "#1B3D3D", // Dark turquoise
+  "#2D2D1B", // Dark khaki
+  "#3D1B3D", // Dark magenta
+  "#1B3D1B", // Dark emerald
+  "#2D3D2D", // Dark sage
+];
+
+/**
+ * Get a consistent dark color for a reel based on its ID.
+ * If reel.color exists and is already dark, use it; otherwise pick from dark palette.
+ */
+function getReelBackgroundColor(reelId: string, existingColor?: string): string {
+  if (existingColor) {
+    // Check if color is already dark (low lightness)
+    let hex = existingColor.replace("#", "");
+    // Handle 3-digit hex (#FFF -> #FFFFFF)
+    if (hex.length === 3) {
+      hex = hex.split("").map(c => c + c).join("");
+    }
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      // Calculate lightness (0-1) using relative luminance formula
+      const max = Math.max(r, g, b) / 255;
+      const min = Math.min(r, g, b) / 255;
+      const lightness = (max + min) / 2;
+      // If lightness < 0.4 (dark), use existing color; otherwise use dark palette
+      if (lightness < 0.4) {
+        return existingColor;
+      }
+    }
+  }
+  // Use reel ID to deterministically pick a dark color (same reel = same color)
+  const hash = reelId.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return DARK_REEL_PALETTE[hash % DARK_REEL_PALETTE.length];
+}
 // import type { Reel } from "@/types"; // Removed invalid import, using local ReelType
 
 // Temporary interface until we verify exact path of Reel type. 
@@ -189,16 +244,16 @@ export function ReelSlide({
           <div
             className="h-full w-full flex items-center justify-center"
             style={{
-              backgroundColor: reel.color || "#FFE5E5", // Use pastel color from backend
+              backgroundColor: getReelBackgroundColor(reel.id, reel.color),
             }}
           >
             {/* Centered title for video-less reels */}
             <div className="text-center px-8 max-w-2xl">
-              <h2 className="text-5xl font-bold text-gray-800 mb-4 drop-shadow-sm">
+              <h2 className="text-5xl font-bold text-white mb-4 drop-shadow-lg">
                 {reel.title}
               </h2>
               {reel.description && (
-                <p className="text-lg text-gray-700 opacity-80">
+                <p className="text-lg text-white/90 opacity-90">
                   {reel.description}
                 </p>
               )}

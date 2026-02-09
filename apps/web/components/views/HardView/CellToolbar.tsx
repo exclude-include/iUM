@@ -1,6 +1,6 @@
 "use client";
 
-import { Bookmark, BookmarkCheck, ChevronDown, ChevronUp, ExternalLink, Trash2 } from "lucide-react";
+import { Bookmark, BookmarkCheck, ChevronDown, ChevronUp, ExternalLink, Trash2, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import type { CellType } from "@/lib/store";
@@ -12,6 +12,7 @@ interface CellToolbarProps {
   onDelete: () => void;
   onBookmark: () => void;
   onMoveToNewTab: () => void;
+  onCreateReel?: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   canMoveUp?: boolean;
@@ -26,6 +27,7 @@ export function CellToolbar({
   onDelete,
   onBookmark,
   onMoveToNewTab,
+  onCreateReel,
   onMoveUp,
   onMoveDown,
   canMoveUp = true,
@@ -103,6 +105,18 @@ export function CellToolbar({
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </Button>
+
+        {onCreateReel && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={onCreateReel}
+            title="Create reel from this cell (Soft mode)"
+          >
+            <Film className="h-3.5 w-3.5" />
+          </Button>
+        )}
 
         <Button
           variant="ghost"

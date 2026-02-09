@@ -1,6 +1,6 @@
 "use client";
 
-import React, { forwardRef, useRef, useMemo } from "react";
+import React, { forwardRef, useRef, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { QuizView } from "@/components/QuizView";
 import { FlowChart } from "@/components/FlowChart";
@@ -8,6 +8,10 @@ import { FlashcardView } from "@/components/FlashcardView"; // ✨
 import { CellToolbar } from "./CellToolbar";
 import { cn } from "@/lib/utils";
 import { useAppStore, type Cell } from "@/lib/store";
+import { supabase } from "@/lib/supabase/client";
+import { api } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { useSocialStore } from "@/components/SocialMode/useSocialStore";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -30,6 +34,75 @@ const MARKDOWN_COMPONENTS_BASE = {
     );
   },
 };
+
+/** Recursively get plain text from React children (for partial highlight matching) */
+function getTextFromChildren(node: React.ReactNode): string {
+  if (node == null) return "";
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(getTextFromChildren).join("");
+  if (React.isValidElement(node) && node.props?.children != null) return getTextFromChildren(node.props.children);
+  return "";
+}
+
+/**
+ * Wrap only the selected substring in React children. Uses character offset so
+ * only the dragged part is highlighted, not the whole paragraph.
+ * renderHighlight(portion: string) is called for each text segment that is part of the selection.
+ */
+function wrapSelectedTextInChildren(
+  children: React.ReactNode,
+  sel: string,
+  renderHighlight: (portion: string) => React.ReactNode
+): React.ReactNode {
+  const full = getTextFromChildren(children);
+  const start = full.indexOf(sel);
+  if (start === -1) return children;
+
+  let offset = 0;
+  function walk(node: React.ReactNode): React.ReactNode {
+    if (node == null) return null;
+    if (typeof node === "string") {
+      const end = offset + node.length;
+      if (end <= start) {
+        offset = end;
+        return node;
+      }
+      if (offset >= start + sel.length) {
+        return node;
+      }
+      const localStart = Math.max(0, start - offset);
+      const localEnd = Math.min(node.length, start + sel.length - offset);
+      const portion = node.slice(localStart, localEnd);
+      offset = end;
+      if (portion.length === 0) return node;
+      return (
+        <>
+          {localStart > 0 ? node.slice(0, localStart) : null}
+          {renderHighlight(portion)}
+          {localEnd < node.length ? node.slice(localEnd) : null}
+        </>
+      );
+    }
+    if (typeof node === "number") {
+      const s = String(node);
+      offset += s.length;
+      return node;
+    }
+    if (Array.isArray(node)) {
+      return node.map((child) => walk(child));
+    }
+    if (React.isValidElement(node) && node.props?.children != null) {
+      const inner = node.props.children;
+      const newChildren = walk(inner);
+      if (newChildren === inner) return node;
+      return React.cloneElement(node, { children: newChildren });
+    }
+    return node;
+  }
+
+  return walk(children);
+}
 
 function CellMarkdownContent({ content, cellId, tabId }: { content: string; cellId: string; tabId: string }) {
   const blockIndexRef = useRef(0);
@@ -56,20 +129,15 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
         }
       };
       const sel = deepCard?.sourceSelectedText?.trim();
-      const childArray = React.Children.toArray(children);
-      const singleText = childArray.length === 1 && typeof childArray[0] === "string" ? (childArray[0] as string) : null;
-      const text = typeof singleText === "string" ? singleText : null;
-      const canPartialHighlight = sel && text && text.includes(sel);
+      const fullText = getTextFromChildren(children);
+      const canPartialHighlight = sel && fullText.includes(sel);
 
       let content: React.ReactNode;
-      if (deepCard && canPartialHighlight && text) {
-        const idx = text.indexOf(sel!);
-        const before = text.slice(0, idx);
-        const match = sel!;
-        const after = text.slice(idx + match.length);
-        content = (
-          <Tag className={className} {...props}>
-            {before}
+      if (deepCard && canPartialHighlight && sel) {
+        const wrappedChildren = wrapSelectedTextInChildren(
+          children,
+          sel,
+          (portion) => (
             <span
               role="button"
               tabIndex={0}
@@ -84,11 +152,11 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
               title="View Deep explanation"
               aria-label="View Deep explanation"
             >
-              {match}
+              {portion}
             </span>
-            {after}
-          </Tag>
+          )
         );
+        content = <Tag className={className} {...props}>{wrappedChildren}</Tag>;
       } else if (deepCard) {
         content = (
           <div
@@ -141,17 +209,15 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
         };
         const children = props.children;
         const sel = deepCard?.sourceSelectedText?.trim();
-        const childArray = React.Children.toArray(children);
-        const singleText = childArray.length === 1 && typeof childArray[0] === "string" ? (childArray[0] as string) : null;
-        const text = typeof singleText === "string" ? singleText : null;
-        const canPartialHighlight = sel && text && text.includes(sel);
+        const fullText = getTextFromChildren(children);
+        const canPartialHighlight = sel && fullText.includes(sel);
         const blockquoteClass = "my-6 pl-4 border-l-4 border-primary/50 italic text-muted-foreground";
         let content: React.ReactNode;
-        if (deepCard && canPartialHighlight && text) {
-          const idx = text.indexOf(sel!);
-          content = (
-            <blockquote className={blockquoteClass} {...props}>
-              {text.slice(0, idx)}
+        if (deepCard && canPartialHighlight && sel) {
+          const wrappedChildren = wrapSelectedTextInChildren(
+            children,
+            sel,
+            (portion) => (
               <span
                 role="button"
                 tabIndex={0}
@@ -166,11 +232,11 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
                 title="View Deep explanation"
                 aria-label="View Deep explanation"
               >
-                {sel}
+                {portion}
               </span>
-              {text.slice(idx + sel!.length)}
-            </blockquote>
+            )
           );
+          content = <blockquote className={blockquoteClass} {...props}>{wrappedChildren}</blockquote>;
         } else if (deepCard) {
           content = (
             <div
@@ -246,6 +312,9 @@ interface CellRendererProps {
 
 export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
   ({ cell, tabId }, ref) => {
+    const { toast } = useToast();
+    const [isCreatingReel, setIsCreatingReel] = useState(false);
+
     // ✨ [Performance] Use selectors to avoid re-rendering on every store update
     const deleteCell = useAppStore((state) => state.deleteCell);
     const toggleBookmark = useAppStore((state) => state.toggleBookmark);
@@ -279,6 +348,45 @@ export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
       moveCell(tabId, cell.id, 'down');
     };
 
+    const handleCreateReel = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: "Sign in required", description: "Sign in to create a reel from this cell.", variant: "destructive" });
+        return;
+      }
+      const cellContent = cell.content?.trim() || cell.title || "Untitled";
+      if (!cellContent) {
+        toast({ title: "No content", description: "This cell has no content to create a reel from.", variant: "destructive" });
+        return;
+      }
+      setIsCreatingReel(true);
+      try {
+        const payload: { user_id: string; cell_content: string; cell_title?: string; quiz_data?: any[] } = {
+          user_id: user.id,
+          cell_content: cellContent,
+          cell_title: cell.title || undefined,
+        };
+        if (cell.quiz_data && cell.quiz_data.length > 0) {
+          payload.quiz_data = cell.quiz_data.map((q) => ({
+            question_text: q.question_text,
+            options: q.options.map((o) => ({ id: o.id, text: o.text, is_correct: o.is_correct })),
+            explanation: q.explanation,
+          }));
+        }
+        const res = await api.reels.createFromCell(payload);
+        if (res?.success) {
+          await useSocialStore.getState().loadReelsFromSupabase();
+          toast({ title: "Reel created", description: "Reel added to Soft mode. Check the Reels tab." });
+        } else {
+          toast({ title: "Failed to create reel", description: (res as any)?.message || "Please try again.", variant: "destructive" });
+        }
+      } catch (e) {
+        toast({ title: "Failed to create reel", description: e instanceof Error ? e.message : "Please try again.", variant: "destructive" });
+      } finally {
+        setIsCreatingReel(false);
+      }
+    };
+
     return (
       <div ref={ref} data-cell-id={cell.id} className="group relative w-full max-w-full min-w-0">
         {/* ✨ New Static Header Layout */}
@@ -301,6 +409,7 @@ export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
               onDelete={handleDelete}
               onBookmark={handleBookmark}
               onMoveToNewTab={handleMoveToNewTab}
+              onCreateReel={isCreatingReel ? undefined : handleCreateReel}
               onMoveUp={handleMoveUp}
               onMoveDown={handleMoveDown}
               canMoveUp={canMoveUp}

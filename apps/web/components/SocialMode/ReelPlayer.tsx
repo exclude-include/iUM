@@ -64,6 +64,7 @@ export function ReelPlayer({ initialReelId }: ReelPlayerProps = {}) {
     currentBufferIndex,
     activePlayerId,
     setActivePlayerId,
+    isLoading,
   } = feedStore;
 
   // Generate a unique ID for this player instance
@@ -340,6 +341,10 @@ export function ReelPlayer({ initialReelId }: ReelPlayerProps = {}) {
   // Wheel/touchpad scroll
   const handleWheel = useCallback(
     (e: WheelEvent) => {
+      // If quiz is active, disable global reel navigation via wheel
+      // This allows the quiz overlay to handle its own scrolling
+      if (showQuiz) return;
+
       const canGoNext = currentBufferIndex < feedBuffer.length - 1;
       const canGoPrev = currentBufferIndex > 0;
       if (!canGoNext && !canGoPrev) return;
@@ -364,7 +369,7 @@ export function ReelPlayer({ initialReelId }: ReelPlayerProps = {}) {
         wheelAccumRef.current = 0;
       }
     },
-    [handleNextReel, handlePrevReel, currentBufferIndex, feedBuffer.length]
+    [handleNextReel, handlePrevReel, currentBufferIndex, feedBuffer.length, showQuiz]
   );
 
   useEffect(() => {
@@ -377,6 +382,17 @@ export function ReelPlayer({ initialReelId }: ReelPlayerProps = {}) {
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
   }, [handleWheel]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-muted/30">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Loading reels...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!currentReel) {
     return (

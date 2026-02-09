@@ -59,3 +59,46 @@ def choose_random_pastel() -> str:
         str: Hex color code
     """
     return random.choice(get_pastel_palette())
+
+
+def get_dark_palette() -> list[str]:
+    """
+    Get a predefined list of darker colors for auto-generated reels.
+    Diverse dark tones that work well for study content.
+    
+    Returns:
+        list[str]: List of hex color codes
+    """
+    return [
+        "#1A1B2E",  # Deep navy blue
+        "#2D1B3D",  # Dark purple
+        "#1B2D2D",  # Dark teal
+        "#2D2A1B",  # Dark olive
+        "#3D1B2D",  # Dark burgundy
+        "#1B3D2D",  # Dark forest green
+        "#2D1B2D",  # Dark plum
+        "#1B2D3D",  # Dark steel blue
+        "#3D2D1B",  # Dark brown
+        "#2D3D1B",  # Dark moss green
+        "#1B2D3D",  # Dark cyan-blue
+        "#3D1B1B",  # Dark maroon
+        "#2D1B1B",  # Dark chocolate
+        "#1B1B3D",  # Dark midnight blue
+        "#3D2D2D",  # Dark charcoal
+        "#1B3D3D",  # Dark turquoise
+        "#2D2D1B",  # Dark khaki
+        "#3D1B3D",  # Dark magenta
+        "#1B3D1B",  # Dark emerald
+        "#2D3D2D",  # Dark sage
+    ]
+
+
+def choose_random_dark() -> str:
+    """
+    Choose a random darker color from the dark palette.
+    Used for auto-generated reels from notebook cells.
+    
+    Returns:
+        str: Hex color code
+    """
+    return random.choice(get_dark_palette())

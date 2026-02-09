@@ -432,6 +432,33 @@ export const reelsApi = {
       }),
     });
   },
+
+  /**
+   * Create a reel from a notebook cell: auto-generate hashtags and quiz from cell content.
+   * No video; reel appears in Soft mode feed.
+   */
+  async createFromCell(options: {
+    user_id: string;
+    cell_content: string;
+    cell_title?: string;
+    quiz_data?: Array<{
+      id?: string;
+      question_text?: string;
+      question?: string;
+      options?: Array<{ id?: string; key?: string; text: string; is_correct?: boolean }>;
+      explanation?: string;
+    }>;
+  }): Promise<{ success: boolean; message?: string; reel?: any }> {
+    return fetchApi("/api/reels/generate-from-cell", {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: options.user_id,
+        cell_content: options.cell_content,
+        cell_title: options.cell_title,
+        quiz_data: options.quiz_data,
+      }),
+    });
+  },
 };
 
 /**

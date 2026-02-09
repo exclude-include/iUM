@@ -1,11 +1,47 @@
 "use client";
 
 import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { CheckCircle2, XCircle, ArrowRight, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { QuizQuestion } from "@/lib/store";
+
+/** Normalize LaTeX in quiz text: remove spaces around $, fix Greek typed without backslash (e.g. "($ eta$)" -> "($\\eta$)") */
+function normalizeQuizMath(text: string): string {
+  if (!text || typeof text !== "string") return text;
+  let s = text
+    .replace(/\$\s+/g, "$")
+    .replace(/\s+\$/g, "$")
+    .replace(/\\\$/g, "$");
+  // Fix $ eta $ or ($ eta$) -> $\eta$ (common Greek names without backslash from LLM)
+  const greekNames = "eta|beta|alpha|gamma|delta|theta|sigma|omega|mu|nu|pi|rho|tau|phi|chi|psi|epsilon|zeta|xi|lambda";
+  s = s.replace(new RegExp(`\\$\\s*(${greekNames})\\s*\\$`, "g"), (_, name: string) => `$\\${name}$`);
+  return s;
+}
+
+/** Renders text with LaTeX support ($...$ and $$...$$) */
+function QuizMathText({ text, className }: { text: string; className?: string }) {
+  const normalized = normalizeQuizMath(text);
+  return (
+    <span className={cn("quiz-math-inline", className)}>
+      <ReactMarkdown
+        remarkPlugins={[remarkMath]}
+        rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
+        components={{
+          p: ({ children }) => <span>{children}</span>,
+          span: ({ children }) => <span>{children}</span>,
+        }}
+      >
+        {normalized}
+      </ReactMarkdown>
+    </span>
+  );
+}
 
 interface QuizViewProps {
   questions: QuizQuestion[];
@@ -104,7 +140,7 @@ export function QuizView({ questions }: QuizViewProps) {
                   <div className="space-y-2">
                     <div className="flex items-start gap-2">
                       <span className="font-semibold text-sm">Q{idx + 1}:</span>
-                      <p className="text-sm flex-1">{question.question_text}</p>
+                      <p className="text-sm flex-1"><QuizMathText text={question.question_text} /></p>
                       {userAnswer?.isCorrect ? (
                         <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
                       ) : (
@@ -127,7 +163,7 @@ export function QuizView({ questions }: QuizViewProps) {
                               isUserChoice && isCorrect && "font-semibold"
                             )}
                           >
-                            {option.id}. {option.text}
+                            {option.id}. <QuizMathText text={option.text} />
                             {isCorrect && " ✓"}
                             {isUserChoice && !isCorrect && " ✗"}
                           </div>
@@ -137,7 +173,7 @@ export function QuizView({ questions }: QuizViewProps) {
 
                     <div className="ml-6 mt-2 p-2 bg-muted rounded text-xs">
                       <span className="font-medium">Explanation: </span>
-                      {question.explanation}
+                      <QuizMathText text={question.explanation || ""} />
                     </div>
                   </div>
                 </Card>
@@ -177,7 +213,7 @@ export function QuizView({ questions }: QuizViewProps) {
       {/* Question */}
       <div className="mb-6">
         <h2 className="text-xl font-semibold mb-4 text-foreground">
-          {currentQuestion.question_text}
+          <QuizMathText text={currentQuestion.question_text} />
         </h2>
 
         {/* Options */}
@@ -215,7 +251,7 @@ export function QuizView({ questions }: QuizViewProps) {
                   >
                     {option.id}
                   </div>
-                  <span className="flex-1 text-sm">{option.text}</span>
+                  <span className="flex-1 text-sm"><QuizMathText text={option.text} /></span>
                   {showCorrect && <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />}
                   {showIncorrect && <XCircle className="h-5 w-5 text-red-600 shrink-0" />}
                 </div>
@@ -230,7 +266,7 @@ export function QuizView({ questions }: QuizViewProps) {
         <Card className="p-4 mb-6 bg-muted border-border">
           <div className="space-y-2">
             <p className="text-sm font-semibold text-foreground">Explanation:</p>
-            <p className="text-sm text-muted-foreground">{currentQuestion.explanation}</p>
+            <p className="text-sm text-muted-foreground"><QuizMathText text={currentQuestion.explanation || ""} /></p>
           </div>
         </Card>
       )}
