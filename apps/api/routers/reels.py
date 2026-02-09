@@ -572,12 +572,18 @@ async def generate_reel_from_cell(request: GenerateFromCellRequest):
     then create a video-less reel and add it to the reels feed (Soft mode).
     """
     try:
-        from utils.video_generator import choose_random_pastel
+        from utils.video_generator import choose_random_dark
 
         supabase = get_supabase_client()
         # Reel title kept short for feed display (e.g. 50 chars)
         title = (request.cell_title or "From notebook").strip()[:50]
-        description = (request.cell_content or "").strip()[:500]
+        # Description: summarize to ~150 chars (shorter for reel feed)
+        cell_content_trimmed = (request.cell_content or "").strip()
+        if len(cell_content_trimmed) > 150:
+            # Take first 150 chars and add ellipsis, or find last sentence boundary
+            description = cell_content_trimmed[:147].rsplit(".", 1)[0] + "..." if "." in cell_content_trimmed[:147] else cell_content_trimmed[:147] + "..."
+        else:
+            description = cell_content_trimmed
 
         # 1. Quiz: use existing cell quiz if provided, else generate from content (one LLM call for tags + quiz)
         tags, quiz = await _generate_tags_and_quiz_from_content(request.cell_content, request.cell_title)
@@ -595,7 +601,8 @@ async def generate_reel_from_cell(request: GenerateFromCellRequest):
             quiz = quiz.model_copy(update={"timestamp_seconds": 3.0})
 
         # 3. Create reel (same logic as create-with-quiz, no video)
-        color = choose_random_pastel()
+        # Use darker colors for auto-generated reels (better for study content)
+        color = choose_random_dark()
         insert_data = {
             "user_id": request.user_id,
             "title": title,
