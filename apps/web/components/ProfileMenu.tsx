@@ -110,7 +110,7 @@ export function ProfileMenu({ onUploadClick }: ProfileMenuProps) {
           )}
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-96">
+      <SheetContent side="left" className="w-96 flex flex-col h-full"> 
         <SheetHeader>
           <SheetTitle>
             {user ? "Profile" : "Sign in to iUM"}
@@ -122,7 +122,7 @@ export function ProfileMenu({ onUploadClick }: ProfileMenuProps) {
           </SheetDescription>
         </SheetHeader>
 
-        <div className="mt-6 space-y-4">
+        <div className="mt-6 space-y-4 flex-1 overflow-y-auto pr-2">
           {user ? (
             <>
               {/* User Info */}
