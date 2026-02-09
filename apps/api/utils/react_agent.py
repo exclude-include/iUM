@@ -203,6 +203,8 @@ class ReactLearningAgent:
             return "Summarizing the content... 📋"
         elif action_name == "vector_search":
             return f"Searching knowledge base for '{query}'... 🔎" if query else "Searching knowledge base... 🔎"
+        elif action_name == "get_learning_history":
+            return "Reviewing your learning history... 🕒"
         else:
             return f"Working on it ({action_name})... 🔧"
 
@@ -256,7 +258,7 @@ class ReactLearningAgent:
                 )
                 
                 # Generate appropriate chat message based on actions taken
-                chat_msg = self._generate_chat_message()
+                chat_msg = self._generate_chat_message(final_text=final_answer)
                 
                 # Build learning_unit from accumulated content
                 learning_unit = self._build_learning_unit()
@@ -378,7 +380,7 @@ class ReactLearningAgent:
             self.scratchpad += f"Observation: {observation[:500]}...\n" if len(observation) > 500 else f"Observation: {observation}\n"
         
         # Max iterations reached
-        chat_msg = self._generate_chat_message() or "I've prepared some learning materials for you. Check the workspace!"
+        chat_msg = self._generate_chat_message(final_text="I've analyzed your request but couldn't generate a specific learning unit. Please try rephrasing.")
         learning_unit = self._build_learning_unit()
         
         yield {
@@ -407,9 +409,12 @@ class ReactLearningAgent:
         
         return chain
     
-    def _generate_chat_message(self) -> str:
+    def _generate_chat_message(self, final_text: Optional[str] = None) -> str:
         """Generate short status message for chat sidebar"""
         if not self.accumulated_learning_units:
+            # ✨ [Fix] If no units but we have a final text answer, show that!
+            if final_text:
+                return final_text
             return "답변하기 어렵거나 에러가 발생한 것 같습니다!"
         
         # Count what was created
