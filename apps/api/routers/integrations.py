@@ -10,7 +10,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import secrets
 
@@ -154,7 +154,7 @@ async def google_callback(
             "refresh_token": credentials.refresh_token,
             "token_expiry": credentials.expiry.isoformat() if credentials.expiry else None,
             "scopes": SCOPES,
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
         
         # Upsert into google_integrations table
@@ -217,14 +217,14 @@ def get_credentials_for_user(user_id: str) -> Credentials:
         # Check if token is expired and refresh if needed
         if integration.get("token_expiry"):
             expiry = datetime.fromisoformat(integration["token_expiry"])
-            if expiry <= datetime.utcnow():
+            if expiry <= datetime.now(timezone.utc):
                 credentials.refresh(Request())
                 
                 # Update tokens in database
                 supabase.table("google_integrations").update({
                     "access_token": credentials.token,
                     "token_expiry": credentials.expiry.isoformat() if credentials.expiry else None,
-                    "updated_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                 }).eq("user_id", user_id).execute()
         
         return credentials
@@ -296,7 +296,7 @@ async def sync_drive_files(
                 "web_view_link": file.get('webViewLink'),
                 "created_time": file.get('createdTime'),
                 "modified_time": file.get('modifiedTime'),
-                "synced_at": datetime.utcnow().isoformat(),
+                "synced_at": datetime.now(timezone.utc).isoformat(),
                 "is_processed": False,
             }
             

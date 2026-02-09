@@ -649,16 +649,19 @@ Please respond in the following format:
         response = await self.llm.ainvoke(prompt)
         return response.content
     
-    async def _web_search(self, query: str) -> str:
+    async def _web_search(self, query: str = "") -> str:
         """
         Search the internet using DuckDuckGo for up-to-date information.
         Implements multiple fallback methods for reliability.
         """
         import asyncio
         
-        # Method 1: Try duckduckgo-search library (most reliable)
+        if not query or not query.strip():
+            return "Please provide a search query."
+        
+        # Method 1: Try ddgs library (most reliable)
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
             
             results = []
             loop = asyncio.get_event_loop()

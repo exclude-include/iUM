@@ -5,7 +5,7 @@ Provides endpoints for dataset management and running evaluations.
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
-import datetime
+from datetime import datetime, timezone
 
 from utils.opik_evaluation import (
     get_dataset_manager,
@@ -356,7 +356,7 @@ async def run_evaluation(request: EvaluationRun, background_tasks: BackgroundTas
     experiment_config.update({
         "model": "gemini-2.5-flash",
         "folder_id": request.folder_id,
-        "timestamp": datetime.datetime.now().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     
     if request.use_heavy_metrics:
@@ -370,7 +370,7 @@ async def run_evaluation(request: EvaluationRun, background_tasks: BackgroundTas
         "status": "pending",
         "dataset_name": request.dataset_name,
         "experiment_name": request.experiment_name or f"eval_{job_id}",
-        "started_at": datetime.datetime.now().isoformat(),
+        "started_at": datetime.now(timezone.utc).isoformat(),
     }
     
     background_tasks.add_task(

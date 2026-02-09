@@ -531,7 +531,7 @@ async def import_reel_from_drive(request: DriveImportRequest):
             "tags": request.tags or [],
             "views": 0,
             "likes": 0,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         
         result = supabase.table("reels").insert(reel_data).execute()

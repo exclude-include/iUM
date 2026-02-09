@@ -80,7 +80,7 @@ export function MainContentArea() {
   const [renameInput, setRenameInput] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTabId, setDeleteTabId] = useState<string | null>(null);
-  
+
   // ✨ File drop state
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -101,14 +101,9 @@ export function MainContentArea() {
     setMounted(true);
   }, []);
 
-  // ✨ [Restored] Auto-create tab if folder exists but no tabs (User Request)
-  useEffect(() => {
-    // Check if we have an active folder but NO visible tabs
-    if (activeFolderId && visibleTabs.length === 0) {
-      console.log("[MainContentArea] Folder exists but no tabs, creating default tab");
-      createNotebookTab("Tab 1");
-    }
-  }, [activeFolderId, visibleTabs.length, createNotebookTab]);
+  // ✨ [Removed] Auto-create tab feature disabled
+  // Users should manually create tabs using the + button
+  // This prevents unwanted "Tab 1" creation when restoring tabs from DB
 
   // ✨ Auto-save to Supabase (Cloud) every 10 seconds for robustness
   useEffect(() => {
@@ -126,18 +121,20 @@ export function MainContentArea() {
     return () => clearInterval(autoSaveInterval);
   }, [notebookTabs]);
 
-  // LocalStorage + Supabase backup: tabs, activeTabId, deepHistory (persist on refresh and across devices)
+  // LocalStorage + Supabase backup: tabs, activeTabId, deepHistory, activeFolderId (persist on refresh and across devices)
   useEffect(() => {
     const backupInterval = setInterval(() => {
       try {
         const state = useAppStore.getState();
         const hasTabs = state.notebookTabs.length > 0;
         const hasDeep = state.deepHistory.length > 0;
-        if (hasTabs || hasDeep) {
+        if (hasTabs || hasDeep || state.activeFolderId) {
           localStorage.setItem("ium_notebooks_autosave", JSON.stringify({
             tabs: state.notebookTabs,
             activeTabId: state.notebookActiveTabId,
             deepHistory: state.deepHistory,
+            activeFolderId: state.activeFolderId, // ✨ [Added]
+            folderActiveTabs: state.folderActiveTabs, // ✨ [Added]
             savedAt: Date.now(),
           }));
           if (user) state.saveUserNotebookStateToSupabase();
@@ -147,9 +144,10 @@ export function MainContentArea() {
       }
     }, 30000);
     return () => clearInterval(backupInterval);
-  }, [notebookTabs, notebookActiveTabId, deepHistory, user]);
+  }, [notebookTabs, notebookActiveTabId, deepHistory, user, activeFolderId]);
 
-  // Restore tabs + deepHistory: from Supabase when logged in, else from localStorage
+  // Restore deepHistory + activeFolderId: from Supabase when logged in, else from localStorage
+  // ✨ [Fix] Tabs are restored via restoreOpenTabs() which respects is_open flag
   useEffect(() => {
     if (!mounted) return;
     let cancelled = false;
@@ -162,14 +160,30 @@ export function MainContentArea() {
       try {
         const raw = localStorage.getItem("ium_notebooks_autosave");
         if (!raw) return;
-        const data = JSON.parse(raw) as { tabs?: unknown; activeTabId?: string | null; deepHistory?: unknown; savedAt?: number };
+        const data = JSON.parse(raw) as {
+          tabs?: unknown;
+          activeTabId?: string | null;
+          deepHistory?: unknown;
+          activeFolderId?: string | null;
+          folderActiveTabs?: Record<string, string | null>;
+          savedAt?: number
+        };
         if (!data || typeof data !== "object") return;
-        const payload: { tabs?: NotebookTab[]; activeTabId?: string | null; deepHistory?: Cell[] } = {};
-        if (Array.isArray(data.tabs) && data.tabs.length > 0) payload.tabs = data.tabs as NotebookTab[];
-        if (data.activeTabId !== undefined) payload.activeTabId = data.activeTabId ?? null;
+
+        // ✨ [Fix] Only restore deepHistory, NOT tabs
+        // Tabs are restored via restoreOpenTabs() which checks is_open flag in DB
+        const payload: { deepHistory?: Cell[] } = {};
         if (Array.isArray(data.deepHistory)) payload.deepHistory = data.deepHistory as Cell[];
-        if (payload.tabs || payload.deepHistory || payload.activeTabId !== undefined) {
+        if (payload.deepHistory) {
           hydrateNotebookBackup(payload);
+        }
+
+        // ✨ [Added] Restore activeFolderId and folderActiveTabs
+        if (data.activeFolderId) {
+          useAppStore.setState({ activeFolderId: data.activeFolderId });
+        }
+        if (data.folderActiveTabs && typeof data.folderActiveTabs === 'object') {
+          useAppStore.setState({ folderActiveTabs: data.folderActiveTabs });
         }
       } catch (_) {
         // ignore
@@ -234,7 +248,7 @@ export function MainContentArea() {
       // Documents
       'pdf': 'application/pdf', 'doc': 'application/msword',
       'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'xls': 'application/vnd.ms-excel', 
+      'xls': 'application/vnd.ms-excel',
       'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'ppt': 'application/vnd.ms-powerpoint',
       'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -266,14 +280,14 @@ export function MainContentArea() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    
+
     const data = e.dataTransfer.getData('application/x-ium-file');
     if (!data) return;
-    
+
     try {
       const fileData = JSON.parse(data);
       const mimeType = getMimeType(fileData.name);
-      
+
       appendCellToActiveTab({
         type: 'file-preview',
         title: fileData.name,
@@ -285,7 +299,7 @@ export function MainContentArea() {
           fileId: fileData.id,
         },
       });
-      
+
       toast({
         title: "File added",
         description: `"${fileData.name}" has been added as a preview cell.`,
@@ -385,19 +399,8 @@ export function MainContentArea() {
     const tab = notebookTabs.find((t) => t.id === renameTabId);
     if (!tab) return;
 
-    // Update local tab title
+    // Update local tab title (handles optimistic update + sync)
     renameNotebookTab(renameTabId, renameInput.trim());
-
-    // Also update file name in DB if synced (so sidebar updates too)
-    if (tab.syncInfo?.fileId) {
-      try {
-        const { renameFile } = useAppStore.getState();
-        await renameFile(tab.syncInfo.fileId, renameInput.trim());
-        toast({ title: "Tab renamed", description: `Renamed to "${renameInput.trim()}"` });
-      } catch (error) {
-        console.error("Failed to sync rename to DB:", error);
-      }
-    }
 
     setRenameDialogOpen(false);
     setRenameTabId(null);
@@ -693,7 +696,7 @@ export function MainContentArea() {
           if (sourceCell) {
             cellTitle = sourceCell.title || 'Untitled';
             cellFullContent = sourceCell.content || '';
-            
+
             // ✨ [Fix] Build structured context with full cell content and selected text
             context = `[CELL_TITLE]: ${cellTitle}\n[CELL_FULL_CONTENT]:\n${cellFullContent}\n[SELECTED_TEXT]: ${text.trim()}`;
           }
@@ -717,11 +720,11 @@ export function MainContentArea() {
         let diagram_description = "";
 
         // Check if content looks like an error message
-        const isErrorMessage = content.includes("Unable to answer") || 
-                               content.includes("try again") ||
-                               content.includes("error") ||
-                               content.includes("failed");
-        
+        const isErrorMessage = content.includes("Unable to answer") ||
+          content.includes("try again") ||
+          content.includes("error") ||
+          content.includes("failed");
+
         if (isErrorMessage) {
           // Try to generate a simple explanation using the text directly
           updateDeepCard(tempCardId, {
@@ -1032,8 +1035,8 @@ export function MainContentArea() {
       {/* --- Main Content Area --- */}
       <ContextMenu>
         <ContextMenuTrigger className="flex-1 min-w-0 flex flex-col overflow-hidden relative" disabled={!isTextSelected}>
-          <div 
-            ref={containerRef as React.RefObject<HTMLDivElement>} 
+          <div
+            ref={containerRef as React.RefObject<HTMLDivElement>}
             className={cn(
               "flex-1 min-w-0 flex flex-col h-full transition-colors",
               isDragOver && "bg-primary/5 ring-2 ring-primary/30 ring-inset"

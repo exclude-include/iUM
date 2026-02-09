@@ -146,7 +146,13 @@ export const activitiesApi = {
                 "Authorization": `Bearer ${token}`,
             },
         });
-        if (!response.ok) throw new Error("Failed to fetch stats");
+        if (!response.ok) {
+            if (response.status === 401) {
+                console.warn("[ActivityTracker] getStats: Session expired or unauthorized");
+                return null;
+            }
+            throw new Error("Failed to fetch stats");
+        }
         return response.json();
     },
 
@@ -156,7 +162,13 @@ export const activitiesApi = {
                 "Authorization": `Bearer ${token}`,
             },
         });
-        if (!response.ok) throw new Error("Failed to fetch streak");
+        if (!response.ok) {
+            if (response.status === 401) {
+                console.warn("[ActivityTracker] getStreak: Session expired or unauthorized");
+                return null;
+            }
+            throw new Error("Failed to fetch streak");
+        }
         return response.json();
     },
 };

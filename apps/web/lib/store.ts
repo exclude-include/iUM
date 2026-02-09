@@ -74,8 +74,8 @@ export interface Cell {
   quiz_data?: QuizQuestion[];
   flashcard_data?: { front: string; back: string }[];
   table_data?: { headers: string[]; rows: string[][] }; // ✨ For table type
-  file_preview?: { 
-    fileName: string; 
+  file_preview?: {
+    fileName: string;
     fileType: string; // MIME type like "application/pdf", "image/png", "video/mp4"
     fileUrl: string;  // Download/view URL
     fileId?: string;  // Supabase file ID for reference
@@ -134,10 +134,10 @@ export interface LearningUnitInput {
   quiz_data?: QuizQuestion[];
   flashcard_data?: { front: string; back: string }[]; // ✨ [Fix] Include flashcard data from backend
   table_data?: { headers: string[]; rows: string[][] }; // ✨ For table type
-  file_preview?: { 
-    fileName: string; 
-    fileType: string; 
-    fileUrl: string; 
+  file_preview?: {
+    fileName: string;
+    fileType: string;
+    fileUrl: string;
     fileId?: string;
   }; // ✨ For file-preview type
   /** When true, cell is marked as added from Deep (for bookmark tag) */
@@ -165,9 +165,9 @@ export interface IumFile {
     flashcard_data?: { front: string; back: string }[];
     table_data?: { headers: string[]; rows: string[][] }; // ✨ [Fix] Include table_data
     file_preview?: { // ✨ [Fix] Include file_preview
-      fileName: string; 
-      fileType: string; 
-      fileUrl: string; 
+      fileName: string;
+      fileType: string;
+      fileUrl: string;
       fileId?: string;
     };
     isBookmarked: boolean;
@@ -438,8 +438,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   deleteNotebookTab: (tabId) => {
+    // ✨ [Fix] Get tab info BEFORE deleting to properly mark file as closed
+    const stateBeforeDelete = get();
+    const tabToDelete = stateBeforeDelete.notebookTabs.find(t => t.id === tabId);
+    const fileIdToClose = tabToDelete?.syncInfo?.fileId;
+
     set((state) => {
-      const tabToDelete = state.notebookTabs.find(t => t.id === tabId);
       const folderId = tabToDelete?.folderId || state.activeFolderId || "folder-1";
 
       const newTabs = state.notebookTabs.filter((tab) => tab.id !== tabId);
@@ -470,11 +474,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       };
     });
 
-    // ✨ Mark file as closed in DB if it was synced
-    const state = get();
-    const closedTab = state.notebookTabs.find(t => t.id === tabId);
-    if (closedTab?.syncInfo?.fileId) {
-      get().toggleFileOpen(closedTab.syncInfo.fileId, false);
+    // ✨ [Fix] Mark file as closed in DB using pre-stored fileId
+    if (fileIdToClose) {
+      get().toggleFileOpen(fileIdToClose, false);
     }
   },
 
@@ -504,12 +506,31 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   renameNotebookTab: (tabId, newTitle) => {
+    const state = get();
     set((state) => ({
       notebookTabs: state.notebookTabs.map((tab) =>
         tab.id === tabId ? { ...tab, title: newTitle, updatedAt: Date.now() } : tab
       ),
     }));
+
+    // ✨ [Optimistic Sidebar Update] Update knowledgeFolders state immediately if synced
+    const tab = state.notebookTabs.find(t => t.id === tabId);
+    if (tab?.syncInfo?.fileId) {
+      const fileId = tab.syncInfo.fileId;
+      const finalName = newTitle.trim() + ".ium";
+
+      set((state) => ({
+        knowledgeFolders: state.knowledgeFolders.map((folder) => ({
+          ...folder,
+          files: folder.files.map((file) =>
+            file.id === fileId ? { ...file, name: finalName } : file
+          )
+        }))
+      }));
+    }
+
     // Immediate sync for rename (user expects file name to change right away)
+    // This will call saveTabToSupabase which handles the actual file content/name update
     get().queueTabSync(tabId, true);
   },
 
@@ -549,20 +570,37 @@ export const useAppStore = create<AppState>((set, get) => ({
     const state = get();
     let tabId = state.notebookActiveTabId;
 
-    console.log("[Store] appendCellToActiveTab called, activeTabId:", tabId, "tabs:", state.notebookTabs.length);
+    console.log("[Store] appendCellToActiveTab called");
+    console.log("[Store]   - activeTabId:", tabId);
+    console.log("[Store]   - tabs count:", state.notebookTabs.length);
+    console.log("[Store]   - activeFolderId:", state.activeFolderId);
+    console.log("[Store]   - knowledgeFolders count:", state.knowledgeFolders.length);
+    console.log("[Store]   - unit.title:", unit.title);
+    console.log("[Store]   - unit.type:", unit.type);
 
-    // If no active tab exists or can't find it, try to use first existing tab
-    if (!tabId || !state.notebookTabs.find((t) => t.id === tabId)) {
-      if (state.notebookTabs.length > 0) {
-        // Use existing first tab instead of creating new one
-        tabId = state.notebookTabs[0].id;
+    // ✨ [Improved] Enforce folder-strict tab reuse
+    const activeFolderId = state.activeFolderId || "folder-1";
+    const currentTab = tabId ? state.notebookTabs.find((t) => t.id === tabId) : null;
+    const isTabInFolder = currentTab && (currentTab.folderId || "folder-1") === activeFolderId;
+
+    console.log("[Store]   - currentTab found:", !!currentTab);
+    console.log("[Store]   - isTabInFolder:", isTabInFolder);
+
+    if (!tabId || !currentTab || !isTabInFolder) {
+      // Look for ANY tab already in this folder
+      const folderTabs = state.notebookTabs.filter(t => (t.folderId || "folder-1") === activeFolderId);
+      console.log("[Store]   - folderTabs count:", folderTabs.length);
+
+      if (folderTabs.length > 0) {
+        // Use most recent tab
+        const sortedTabs = [...folderTabs].sort((a, b) => b.updatedAt - a.updatedAt);
+        tabId = sortedTabs[0].id;
         set({ notebookActiveTabId: tabId });
-        console.log("[Store] Using existing first tab:", tabId);
+        console.log("[Store] Found folder tab to reuse:", tabId);
       } else {
-        // Only create new tab if no tabs exist
-        // ✨ [Fix] Pass activeFolderId to ensure tab is associated with current folder
-        tabId = get().createNotebookTab("Chat Session", state.activeFolderId);
-        console.log("[Store] Created new tab:", tabId, "in folder:", state.activeFolderId);
+        // Create new tab only if folder is empty
+        tabId = get().createNotebookTab("New Tab", activeFolderId);
+        console.log("[Store] Created new tab for empty folder:", tabId);
       }
     }
 
@@ -1317,11 +1355,17 @@ export const useAppStore = create<AppState>((set, get) => ({
         .maybeSingle();
       if (error || !data?.payload || typeof data.payload !== "object") return;
       const p = data.payload as { tabs?: unknown; activeTabId?: string | null; deepHistory?: unknown };
+
+      // ✨ [Fix] Only restore deepHistory here
+      // Tabs are restored via restoreOpenTabs() which respects is_open flag
       const payload: { tabs?: NotebookTab[]; activeTabId?: string | null; deepHistory?: Cell[] } = {};
-      if (Array.isArray(p.tabs) && p.tabs.length > 0) payload.tabs = p.tabs as NotebookTab[];
-      if (p.activeTabId !== undefined) payload.activeTabId = p.activeTabId ?? null;
+
+      // ✨ [Removed] Do NOT restore tabs from user_notebook_state
+      // This caused closed tabs to reappear. Tab restoration is now handled by restoreOpenTabs()
+      // which checks the is_open flag in the database.
+
       if (Array.isArray(p.deepHistory)) payload.deepHistory = p.deepHistory as Cell[];
-      if (payload.tabs || payload.deepHistory || payload.activeTabId !== undefined) {
+      if (payload.deepHistory) {
         get().hydrateNotebookBackup(payload);
       }
     } catch (e) {
@@ -1350,14 +1394,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
 
       // 백엔드에서 폴더 및 파일 목록을 가져옵니다.
-      const response = await fetch(`${apiUrl}/api/workspace/default/folders`, {
-        headers: {
-          "Authorization": `Bearer ${session.access_token}`
-        }
-      });
+      let response;
+      try {
+        response = await fetch(`${apiUrl}/api/workspace/default/folders`, {
+          headers: {
+            "Authorization": `Bearer ${session.access_token}`
+          }
+        });
+      } catch (networkError) {
+        console.warn("[Store] fetchFiles: Network error - backend may be unavailable:", networkError);
+        return;
+      }
 
       if (!response.ok) {
-        throw new Error('Failed to fetch files');
+        // 401 means token expired or invalid - don't throw, just log
+        if (response.status === 401) {
+          console.warn("[Store] fetchFiles: Session expired or unauthorized. Skipping file fetch.");
+          return;
+        }
+        throw new Error(`Failed to fetch files: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
@@ -1365,13 +1420,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       // Handle folders from DB
       if (data.folders && Array.isArray(data.folders)) {
         set((state) => {
+          // ✨ [Fix] Create a map of existing chat history to preserve
+          const existingChatHistoryMap = new Map<string, ChatMessage[]>();
+          state.knowledgeFolders.forEach(folder => {
+            existingChatHistoryMap.set(folder.id, folder.chatHistory || []);
+          });
+
           // Convert DB folders to KnowledgeFolder format
           const dbFolders = data.folders.map((f: any) => ({
             id: f.id,
             name: f.name,
             color: f.color || "#3B82F6",
             files: [],
-            chatHistory: []
+            // ✨ [Fix] Preserve existing chatHistory instead of resetting
+            chatHistory: existingChatHistoryMap.get(f.id) || []
           }));
 
           // If no folders from DB, don't create a default one
@@ -1401,9 +1463,34 @@ export const useAppStore = create<AppState>((set, get) => ({
             });
           }
 
+          // ✨ [Fix] Only change activeFolderId if current folder doesn't exist in fetched folders
+          const currentFolderExists = state.activeFolderId &&
+            allFolders.some((f: any) => f.id === state.activeFolderId);
+
+          const newActiveFolderId = currentFolderExists
+            ? state.activeFolderId
+            : (allFolders[0]?.id || null);
+
+          // ✨ [Fix] Sync notebookActiveTabId to match the active folder
+          let newActiveTabId = state.notebookActiveTabId;
+          if (newActiveFolderId) {
+            const currentActiveTab = state.notebookTabs.find(t => t.id === state.notebookActiveTabId);
+            const isTabInNewFolder = currentActiveTab &&
+              (currentActiveTab.folderId || "folder-1") === newActiveFolderId;
+
+            if (!isTabInNewFolder) {
+              // Current tab is not in the new folder - find one that is
+              const folderTabs = state.notebookTabs.filter(t =>
+                (t.folderId || "folder-1") === newActiveFolderId
+              );
+              newActiveTabId = folderTabs.length > 0 ? folderTabs[0].id : null;
+            }
+          }
+
           return {
             knowledgeFolders: allFolders,
-            activeFolderId: state.activeFolderId || allFolders[0]?.id
+            activeFolderId: newActiveFolderId,
+            notebookActiveTabId: newActiveTabId
           };
         });
       }
@@ -1500,23 +1587,19 @@ export const useAppStore = create<AppState>((set, get) => ({
         finalName = `${baseName}_${counter}.ium`;
       }
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${apiUrl}/api/workspace/default/files/${fileId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({ name: finalName })
-      });
-
-      if (!response.ok) throw new Error("Failed to rename file");
-
-      // Update local state
-      await get().fetchFiles();
-
-      // ✨ Update open tabs if any
+      // ✨ Update open tabs if any (Optimistic Update)
       const currentState = get();
+
+      // Update knowledgeFolders state immediately
+      set((state) => ({
+        knowledgeFolders: state.knowledgeFolders.map((folder) => ({
+          ...folder,
+          files: folder.files.map((file) =>
+            file.id === fileId ? { ...file, name: finalName } : file
+          )
+        }))
+      }));
+
       currentState.notebookTabs.forEach(tab => {
         if (tab.syncInfo?.fileId === fileId) {
           // Update tab title and syncInfo
@@ -1529,11 +1612,26 @@ export const useAppStore = create<AppState>((set, get) => ({
           // Update syncInfo specifically
           get().setSyncInfo(tab.id, {
             ...tab.syncInfo!,
-            fileName: newName,
+            fileName: finalName,
             folderId: folderId // Ensure folderId is preserved/set
           });
         }
       });
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(`${apiUrl}/api/workspace/default/files/${fileId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ name: finalName })
+      });
+
+      if (!response.ok) throw new Error("Failed to rename file");
+
+      // Update local state (fetch in background to be safe)
+      get().fetchFiles();
 
     } catch (error) {
       console.error("Error renaming file:", error);
@@ -1659,24 +1757,27 @@ export const useAppStore = create<AppState>((set, get) => ({
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       // ✨ [Improved] Duplicate Name Handling for NEW files
       let finalFileName = `${iumFile.metadata.title.replace(/[^a-zA-Z0-9가-힣]/g, "_")}.ium`;
-      
+
       // ✨ [Fixed] Check if file with same name already exists - if so, use its ID for update
       let effectiveFileId = existingFileId;
       const freshState = get();
       const folder = freshState.knowledgeFolders.find(f => f.id === folderId);
-      
+
       if (!effectiveFileId && folder) {
         // Look for existing file with same name (might be from a previous save that didn't complete syncInfo update)
+        // ✨ [Robustness] Check loosely for name match in this folder
         const existingFile = folder.files.find(f => f.name === finalFileName);
+
         if (existingFile) {
           console.log("[Store] Found existing file with same name, using for update:", existingFile.id);
           effectiveFileId = existingFile.id;
+
           // Also update tab's syncInfo immediately to prevent race conditions
           get().setSyncInfo(tabId, {
             fileId: existingFile.id,
             folderId,
             fileName: finalFileName,
-            lastSyncedAt: Date.now() - 1000, // Set slightly in past so it gets updated
+            lastSyncedAt: Date.now(),
           });
         }
       }
@@ -1740,7 +1841,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (targetFolder) {
         const existsByFileId = targetFolder.files.some((f) => f.id === fileId);
         const existsByName = targetFolder.files.some((f) => f.name === finalFileName);
-        
+
         if (!existsByFileId && !existsByName) {
           // Truly new file - add to folder
           const uploadedFile: UploadedFile = {
@@ -1755,11 +1856,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             knowledgeFolders: state.knowledgeFolders.map((f) =>
               f.id === folderId
                 ? {
-                    ...f,
-                    files: f.files.map((file) =>
-                      file.id === fileId ? { ...file, name: finalFileName, uploadedAt: Date.now() } : file
-                    ),
-                  }
+                  ...f,
+                  files: f.files.map((file) =>
+                    file.id === fileId ? { ...file, name: finalFileName, uploadedAt: Date.now() } : file
+                  ),
+                }
                 : f
             ),
           }));
@@ -1996,7 +2097,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           console.log("[Store] Tab became pending during debounce, skipping:", tabId);
           return;
         }
-        
+
         // ✨ Re-check if syncInfo was set by another call
         const freshTab = freshState.notebookTabs.find((t) => t.id === tabId);
         if (freshTab?.syncInfo) {
@@ -2005,10 +2106,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           await get().saveTabToSupabase(tabId, freshTab.syncInfo.folderId, true);
           return;
         }
-        
+
         // ✨ Mark as pending BEFORE async operation
         set((s) => ({ _pendingSyncs: new Set([...s._pendingSyncs, tabId]) }));
-        
+
         try {
           const folderId = freshTab?.folderId || freshState.activeFolderId || "folder-1";
           // ✨ Auto-save is always temp
@@ -2043,10 +2144,10 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.log("[Store] Tab became pending during debounce, skipping:", tabId);
         return;
       }
-      
+
       // ✨ Mark as pending BEFORE async operation
       set((s) => ({ _pendingSyncs: new Set([...s._pendingSyncs, tabId]) }));
-      
+
       try {
         const freshTab = freshState.notebookTabs.find((t) => t.id === tabId);
         const folderId = freshTab?.syncInfo?.folderId || freshTab?.folderId || freshState.activeFolderId || "folder-1";
