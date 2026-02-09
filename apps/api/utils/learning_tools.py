@@ -5,9 +5,14 @@ Learning platform-specific tool collection
 import os
 import json
 import re
+import asyncio
 from typing import Callable, Dict, Any, Optional, List
 from langchain_google_genai import ChatGoogleGenerativeAI
 from utils.supabase_client import get_supabase_client
+
+# ✨ [추가] 전역 세마포어: LLM 호출 동시성 제한 (react_agent와 공유)
+_llm_semaphore = asyncio.Semaphore(1)
+_MIN_REQUEST_DELAY = 0.5
 
 
 class Tool:
@@ -215,12 +220,29 @@ Write your response in markdown format."""
         try:
             print(f"[DEBUG] Executing {tool_name} with kwargs: {kwargs}")
             result = await tool.func(**kwargs)
+            
+            # ✨ Validate result is not empty
+            if not result or (isinstance(result, str) and len(result.strip()) < 10):
+                print(f"[WARNING] Tool {tool_name} returned empty or very short result")
+                return f"Tool {tool_name} completed but returned minimal content. The topic may need more context."
+            
             return result
         except Exception as e:
             import traceback
             traceback.print_exc()
-            # Return user-friendly error message, not raw error
-            return "요청을 처리하는 중 문제가 발생했습니다. 다시 시도해주세요."
+            error_msg = str(e)
+            print(f"[ERROR] Tool {tool_name} failed: {error_msg}")
+            
+            # ✨ Return more informative error messages based on error type
+            if "rate limit" in error_msg.lower() or "quota" in error_msg.lower():
+                return "API 사용량 제한에 도달했습니다. 잠시 후 다시 시도해주세요."
+            elif "timeout" in error_msg.lower():
+                return "요청 시간이 초과되었습니다. 다시 시도해주세요."
+            elif "connection" in error_msg.lower() or "network" in error_msg.lower():
+                return "네트워크 연결 문제가 발생했습니다. 인터넷 연결을 확인해주세요."
+            else:
+                # Generic but more helpful message
+                return f"'{tool_name}' 도구 실행 중 오류가 발생했습니다. 다시 시도해주세요."
     
     # ========== Tool Implementations ==========
     
@@ -385,11 +407,41 @@ Example for a topic that does NOT need a diagram (Korean history):
   "graph_data": null
 }}
 """
-
-        response = await self.llm.ainvoke(prompt)
-        # The tool should return the raw JSON string content. 
-        # The caller (Deep Dive API) is expected to parse this JSON.
-        return response.content
+        
+        # ✨ Retry logic for robustness
+        max_retries = 2
+        last_error = None
+        
+        for attempt in range(max_retries + 1):
+            try:
+                # ✨ [추가] 세마포어로 동시 LLM 호출 제한
+                async with _llm_semaphore:
+                    await asyncio.sleep(_MIN_REQUEST_DELAY)
+                    response = await self.llm.ainvoke(prompt)
+                content = response.content
+                
+                # ✨ Validate response is not empty
+                if content and len(content.strip()) > 50:
+                    return content
+                else:
+                    print(f"[WARNING] _generate_concept_cell got empty/short response on attempt {attempt + 1}")
+                    if attempt < max_retries:
+                        await asyncio.sleep(1)  # Wait before retry
+                        continue
+                        
+            except Exception as e:
+                last_error = str(e)
+                print(f"[ERROR] _generate_concept_cell attempt {attempt + 1} failed: {last_error}")
+                if attempt < max_retries:
+                    await asyncio.sleep(1)
+                    continue
+        
+        # ✨ Fallback: Return a basic explanation if all retries fail
+        fallback_content = f"""{{
+  "text_content": "# {topic}\\n\\n이 주제에 대한 설명을 생성하는 데 문제가 발생했습니다. 다시 시도해주세요.\\n\\n**주제**: {topic}",
+  "graph_data": null
+}}"""
+        return fallback_content
     
     async def _create_table_cell(self, topic: str, context: str = None) -> str:
         """Generate a structured table cell with organized information"""
@@ -417,7 +469,10 @@ Additional notes or explanations about the table content can follow.
 
 Now create the table:"""
 
-        response = await self.llm.ainvoke(prompt)
+        # ✨ [추가] 세마포어로 동시 LLM 호출 제한
+        async with _llm_semaphore:
+            await asyncio.sleep(_MIN_REQUEST_DELAY)
+            response = await self.llm.ainvoke(prompt)
         return response.content
     
     async def _create_diagram_cell(self, topic: str, diagram_type: str = "flowchart") -> str:
@@ -453,7 +508,10 @@ Response format (raw JSON, no code blocks):
 
 Create the diagram now:"""
 
-        response = await self.llm.ainvoke(prompt)
+        # ✨ [추가] 세마포어로 동시 LLM 호출 제한
+        async with _llm_semaphore:
+            await asyncio.sleep(_MIN_REQUEST_DELAY)
+            response = await self.llm.ainvoke(prompt)
         return response.content
     
     async def _create_quiz_cell(self, topic: str, num_questions: int = 3) -> str:
@@ -477,7 +535,10 @@ Please respond in the following JSON format:
 ]
 ```"""
 
-        response = await self.llm.ainvoke(prompt)
+        # ✨ [추가] 세마포어로 동시 LLM 호출 제한
+        async with _llm_semaphore:
+            await asyncio.sleep(_MIN_REQUEST_DELAY)
+            response = await self.llm.ainvoke(prompt)
         return response.content
     
     async def _create_flashcard_cell(self, topic: str, num_cards: int = 5, context: str = None) -> str:
@@ -512,7 +573,10 @@ Please respond in the following JSON format:
             ]
             ```"""
 
-        response = await self.llm.ainvoke(prompt)
+        # ✨ [추가] 세마포어로 동시 LLM 호출 제한
+        async with _llm_semaphore:
+            await asyncio.sleep(_MIN_REQUEST_DELAY)
+            response = await self.llm.ainvoke(prompt)
         return response.content
 
     async def _check_prerequisites(self, topic: str) -> str:
@@ -530,7 +594,10 @@ Please respond in the following format:
 3. **Suggested Learning Path**
    Prerequisites → {topic} learning roadmap"""
 
-        response = await self.llm.ainvoke(prompt)
+        # ✨ [추가] 세마포어로 동시 LLM 호출 제한
+        async with _llm_semaphore:
+            await asyncio.sleep(_MIN_REQUEST_DELAY)
+            response = await self.llm.ainvoke(prompt)
         return response.content
     
     async def _get_learning_history(self) -> str:

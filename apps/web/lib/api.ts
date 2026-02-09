@@ -207,42 +207,57 @@ export const chatApi = {
 
   /**
    * ✨ [추가] 딥 다이브 설명 생성 요청
+   * Simplified prompt that directly instructs the agent to generate a concept explanation
    */
   async generateDeepExplanation(
     text: string,
     context: string,
-    activeFolderId?: string
+    activeFolderId?: string,
+    retryCount: number = 0
   ): Promise<ChatResponse> {
-    const prompt = `
-[DEEP EXPLANATION REQUEST]
-Target Text: "${text}"
-Context: "${context}"
+    // ✨ [Fix] Build a structured prompt that includes full cell context
+    // Context format: [CELL_TITLE]: ...\n[CELL_FULL_CONTENT]: ...\n[SELECTED_TEXT]: ...
+    let prompt = '';
+    
+    if (context.includes('[CELL_FULL_CONTENT]')) {
+      // Structured context with full cell content
+      prompt = `You are explaining a concept from a learning material.
 
-Please provide a deep, detailed explanation of the "Target Text" considering the provided "Context". 
-Explain it as if you are teaching a student who wants to master this specific concept.
-IMPORTANT: Respond in the same language as the "Target Text" and "Context". If the text is Korean, the explanation MUST be in Korean.
+${context}
 
-Include:
-1. Definition and Core Concept
-2. Detailed Explanation (Why? How?)
-3. Examples or Analogies
-4. Related Concepts
-5. Flowchart Data for Reactflow. Provide strictly valid JSON:
-   "graph_data": {
-     "nodes": [{ "id": "1", "label": "Start", "type": "input" }, ...],
-     "edges": [{ "id": "e1-2", "source": "1", "target": "2", "label": "next" }, ...]
-   }
-   - Use short, clear labels.
-   - Node IDs must be strings.
-   - Edges connect source ID to target ID.
+---
+Based on the CELL_FULL_CONTENT above, provide a deep, detailed explanation focused specifically on the SELECTED_TEXT: "${text}"
 
- Output format should be the standard Learning Unit JSON.
-`;
+Requirements:
+1. Use the full cell content as context to understand the topic better
+2. Focus your explanation specifically on the selected text
+3. Generate a detailed concept explanation using the generate_concept_cell tool
+4. Respond in the same language as the content (Korean if the content is Korean)`;
+    } else {
+      // Fallback to simple prompt
+      prompt = `Explain "${text}" in detail. ${context ? `Context: ${context}` : ''}
 
-    return this.sendMessage(prompt, {
-      folderId: activeFolderId,
-      collectionName: "user_knowledge"
-    });
+Generate a detailed concept explanation about this topic. Use the generate_concept_cell tool.
+IMPORTANT: Respond in the same language as the text. If Korean, explain in Korean.`;
+    }
+
+    try {
+      const response = await this.sendMessage(prompt, {
+        folderId: activeFolderId,
+        collectionName: "user_knowledge",
+        skipEvaluation: true, // ✨ Skip evaluation for faster Deep Dive response
+      });
+      
+      return response;
+    } catch (error) {
+      // Retry logic: try up to 2 times
+      if (retryCount < 2) {
+        console.log(`[DeepDive] Retry attempt ${retryCount + 1}...`);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+        return this.generateDeepExplanation(text, context, activeFolderId, retryCount + 1);
+      }
+      throw error;
+    }
   },
 };
 

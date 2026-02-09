@@ -13,8 +13,6 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
-  PanelBottomClose,
-  PanelBottomOpen,
   Copy,
   Check,
   Paperclip,
@@ -68,10 +66,8 @@ export function ChatSidebar() {
     selectedDocumentIds,
     leftPanelMinimized,
     rightPanelMinimized,
-    bottomPanelMinimized,
     setLeftPanelMinimized,
     setRightPanelMinimized,
-    setBottomPanelMinimized,
     sidebarMode, // ✨
     setSidebarMode, // ✨
   } = useAppStore();
@@ -599,19 +595,6 @@ export function ChatSidebar() {
               <PanelRightOpen className="h-4 w-4 text-muted-foreground hover:text-primary" />
             ) : (
               <PanelRightClose className="h-4 w-4 text-muted-foreground hover:text-primary" />
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setBottomPanelMinimized(!bottomPanelMinimized)}
-            title={bottomPanelMinimized ? "하단 패널 펼치기" : "하단 패널 최소화"}
-          >
-            {bottomPanelMinimized ? (
-              <PanelBottomOpen className="h-4 w-4 text-muted-foreground hover:text-primary" />
-            ) : (
-              <PanelBottomClose className="h-4 w-4 text-muted-foreground hover:text-primary" />
             )}
           </Button>
         </div>

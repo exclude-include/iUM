@@ -560,8 +560,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.log("[Store] Using existing first tab:", tabId);
       } else {
         // Only create new tab if no tabs exist
-        tabId = get().createNotebookTab("Chat Session");
-        console.log("[Store] Created new tab:", tabId);
+        // ✨ [Fix] Pass activeFolderId to ensure tab is associated with current folder
+        tabId = get().createNotebookTab("Chat Session", state.activeFolderId);
+        console.log("[Store] Created new tab:", tabId, "in folder:", state.activeFolderId);
       }
     }
 
@@ -1774,6 +1775,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         lastSyncedAt: Date.now(),
       };
       get().setSyncInfo(tabId, syncInfo);
+
+      // ✨ [Fix] Refresh files from DB to ensure Saved Tabs shows the new file
+      // This is important because addFileToFolder may have race conditions
+      setTimeout(() => {
+        get().fetchFiles();
+      }, 500);
 
       return { success: true, fileId };
     } catch (error) {
