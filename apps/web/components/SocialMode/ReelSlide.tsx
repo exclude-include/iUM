@@ -15,16 +15,28 @@ import { cn } from "@/lib/utils";
 import { QuizOverlay } from "./QuizOverlay";
 import { useFeedStore } from "./useFeedStore";
 
-/** Dark color palette for reel backgrounds (darker, muted tones) */
+/** Dark color palette for reel backgrounds - diverse dark tones */
 const DARK_REEL_PALETTE = [
-  "#2D2D3A", // Dark slate blue-gray
-  "#2A2A35", // Dark navy-gray
-  "#2F2F3D", // Dark purple-gray
-  "#2B2B38", // Dark blue-gray
-  "#2E2E3B", // Dark indigo-gray
-  "#2C2C39", // Dark gray-blue
-  "#2A2A37", // Dark charcoal-blue
-  "#2D2D3A", // Dark slate
+  "#1A1B2E", // Deep navy blue
+  "#2D1B3D", // Dark purple
+  "#1B2D2D", // Dark teal
+  "#2D2A1B", // Dark olive
+  "#3D1B2D", // Dark burgundy
+  "#1B3D2D", // Dark forest green
+  "#2D1B2D", // Dark plum
+  "#1B2D3D", // Dark steel blue
+  "#3D2D1B", // Dark brown
+  "#2D3D1B", // Dark moss green
+  "#1B2D3D", // Dark cyan-blue
+  "#3D1B1B", // Dark maroon
+  "#2D1B1B", // Dark chocolate
+  "#1B1B3D", // Dark midnight blue
+  "#3D2D2D", // Dark charcoal
+  "#1B3D3D", // Dark turquoise
+  "#2D2D1B", // Dark khaki
+  "#3D1B3D", // Dark magenta
+  "#1B3D1B", // Dark emerald
+  "#2D3D2D", // Dark sage
 ];
 
 /**
