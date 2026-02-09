@@ -142,9 +142,9 @@ Write your response in markdown format."""
             ),
             "generate_concept_cell": Tool(
                 name="generate_concept_cell", 
-                description="Generate a concept explanation Learning Unit for the topic",
+                description="Generate a concept explanation Learning Unit for the topic. Use 'context' to pass specific text/content for enriched explanations.",
                 func=self._generate_concept_cell,
-                params=["topic"]
+                params=["topic", "context(optional)"]
             ),
             "create_table_cell": Tool(
                 name="create_table_cell",
@@ -224,7 +224,9 @@ Write your response in markdown format."""
             # ✨ Validate result is not empty
             if not result or (isinstance(result, str) and len(result.strip()) < 10):
                 print(f"[WARNING] Tool {tool_name} returned empty or very short result")
-                return f"Tool {tool_name} completed but returned minimal content. The topic may need more context."
+                # ✨ Return fallback content for content-generating tools
+                topic = kwargs.get('topic', 'the requested topic')
+                return self._get_fallback_content(tool_name, topic)
             
             return result
         except Exception as e:
@@ -233,7 +235,12 @@ Write your response in markdown format."""
             error_msg = str(e)
             print(f"[ERROR] Tool {tool_name} failed: {error_msg}")
             
-            # ✨ Return more informative error messages based on error type
+            # ✨ [Fix] For content-generating tools, return fallback content instead of error
+            topic = kwargs.get('topic', kwargs.get('query', 'the requested topic'))
+            if tool_name in ["generate_concept_cell", "create_summary_cell", "create_table_cell", "create_diagram_cell", "create_flashcard_cell"]:
+                return self._get_fallback_content(tool_name, topic, error_msg)
+            
+            # For other tools, return informative error messages
             if "rate limit" in error_msg.lower() or "quota" in error_msg.lower():
                 return "API rate limit reached. Please try again later."
             elif "timeout" in error_msg.lower():
@@ -241,8 +248,42 @@ Write your response in markdown format."""
             elif "connection" in error_msg.lower() or "network" in error_msg.lower():
                 return "Network connection error. Please check your internet connection."
             else:
-                # Generic but more helpful message
-                return f"An error occurred while running '{tool_name}'. Please try again."
+                return f"Tool execution encountered an issue. Topic: {topic}"
+    
+    def _get_fallback_content(self, tool_name: str, topic: str, error_msg: str = "") -> str:
+        """Generate fallback content when a tool fails"""
+        # Clean up topic for display
+        display_topic = topic[:100] if len(topic) > 100 else topic
+        
+        if tool_name == "generate_concept_cell":
+            return json.dumps({
+                "text_content": f"# {display_topic}\n\nWe encountered a temporary issue generating this explanation. Please try again in a moment.\n\n**Topic requested:** {display_topic}\n\n> Tip: Try rephrasing your question or selecting a smaller portion of text.",
+                "graph_data": None
+            })
+        elif tool_name == "create_table_cell":
+            return json.dumps({
+                "title": display_topic,
+                "table_data": [["Topic", "Status"], [display_topic, "Please try again"]],
+                "summary": "Table generation temporarily unavailable."
+            })
+        elif tool_name == "create_diagram_cell":
+            return json.dumps({
+                "text_content": f"# {display_topic}\n\nDiagram generation is temporarily unavailable. Please try again.",
+                "graph_data": {
+                    "nodes": [{"id": "1", "label": display_topic}],
+                    "edges": []
+                }
+            })
+        elif tool_name == "create_flashcard_cell":
+            return json.dumps({
+                "title": display_topic,
+                "flashcards": [{"front": display_topic, "back": "Please try generating again."}]
+            })
+        else:
+            return json.dumps({
+                "text_content": f"# {display_topic}\n\nContent generation temporarily unavailable. Please try again.",
+                "graph_data": None
+            })
     
     # ========== Tool Implementations ==========
     
@@ -368,13 +409,15 @@ Write your response in markdown format."""
             traceback.print_exc()
             return f"Error reading file: {str(e)}"
     
-    async def _generate_concept_cell(self, topic: str = "general concept") -> str:
+    async def _generate_concept_cell(self, topic: str = "general concept", context: str = None) -> str:
         """Generate concept explanation cell with optional graph data"""
-        prompt = f"""Explain '{topic}' in a way that is easy for learners to understand.
+        context_section = f"\n\nAdditional context to incorporate:\n{context}" if context else ""
+        
+        prompt = f"""Explain '{topic}' in a way that is easy for learners to understand.{context_section}
 
 Rules:
 1. **Free Format**: Structure your explanation naturally. Use headings, lists, bold text, etc. Write in a clear, educational style.
-2. **Math Expressions**: Include LaTeX formulas ($...$) ONLY if the topic is inherently mathematical or scientific (e.g., physics, calculus, chemistry equations). For history, humanities, social sciences, or non-quantitative topics, do NOT include any math formulas. **IMPORTANT**: When writing LaTeX inside the JSON string, escape backslashes (use `\\\\` instead of `\\`).
+2. **Math Expressions**: Include LaTeX formulas ($...$) ONLY if the topic is inherently mathematical or scientific (e.g., physics, calculus, chemistry equations). For history, humanities, social sciences, or non-quantitative topics, do NOT include any math formulas. **IMPORTANT**: When writing LaTeX inside the JSON string, escape backslashes (use `\\\\\\\\` instead of `\\\\`).
 3. **Diagrams**: Include `graph_data` ONLY when ALL of these conditions are met:
    - The topic explicitly involves a clear sequential process, cycle, or hierarchical structure (e.g., 'Calvin Cycle', 'Software Architecture', 'Food Chain')
    - You can define at least 3 meaningful, specific nodes with clear relationships
