@@ -19,7 +19,7 @@ export interface ChatMessage {
   // ✨ [추가] 사용자 피드백 상태
   feedback?: "like" | "dislike" | null;
   // ✨ [추가] 사용자 의도 (유형 선택 바)
-  intent?: "auto" | "concept" | "diagram" | "quiz" | "flashcard" | "report" | "table" | "file-preview" | "notes";
+  intent?: "auto" | "concept" | "diagram" | "quiz" | "flashcard" | "table" | "file-preview" | "notes";
   // ✨ [추가] Self-Reflection 평가 메트릭
   evaluation_metrics?: {
     confidence_score: number;
@@ -38,6 +38,8 @@ export interface ChatRequest {
   collection_name?: string;
   folder_id?: string; // Folder ID to filter RAG context
   attachments?: Array<any>; // Uploaded files info
+  skip_evaluation?: boolean; // ✨ [추가] 품질 평가 건너뛰기 (속도 향상)
+  enable_web_search?: boolean; // ✨ [추가] 웹 검색 활성화
 }
 
 export interface QuizOption {
@@ -88,7 +90,7 @@ export interface GraphData {
 
 export interface LearningUnitResponse {
   title: string;
-  type: "concept" | "math" | "code" | "summary" | "quiz" | "flashcard" | "report" | "table" | "file-preview" | "notes";
+  type: "concept" | "math" | "code" | "summary" | "quiz" | "flashcard" | "table" | "file-preview" | "notes";
   content: string; // Markdown text
   equations?: string[]; // LaTeX strings
   diagram_description?: string;

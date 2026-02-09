@@ -141,10 +141,10 @@ class LearningUnitResponse(BaseModel):
     type: Literal["concept", "math", "code", "summary", "quiz", "flashcard"] = Field(..., description="Type of learning unit")
     
     # ✨ 여기에 content 필드가 확실하게 존재합니다!
-    content: str = Field(..., description="Markdown content. For diagrams, use mermaid code blocks like ```mermaid ... ```")
+    content: str = Field(..., description="Markdown content for the learning unit")
     
     equations: Optional[List[str]] = Field(None, description="LaTeX equation strings for mathematical concepts")
-    diagram_description: Optional[str] = Field(None, description="Description for generating diagrams (deprecated - use mermaid in content)")
+    diagram_description: Optional[str] = Field(None, description="Description for generating diagrams (deprecated - use graph_data)")
     quiz_data: Optional[List[QuizQuestion]] = Field(None, description="Structured quiz questions (required when type is 'quiz')")
     flashcard_data: Optional[List[FlashcardItem]] = Field(None, description="Structured flashcards (required when type is 'flashcard')")
     graph_data: Optional[Dict] = Field(None, description="ReactFlow graph data")

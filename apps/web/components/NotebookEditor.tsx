@@ -20,7 +20,6 @@ import {
   ListChecks,
   Sparkles,
   Layers,
-  ClipboardList,
   Table2,
   Eye,
   StickyNote,
@@ -100,8 +99,6 @@ function CellTypeIcon({ type }: { type: NotebookCell["type"] }) {
       return <ListChecks {...iconProps} />;
     case "flashcard":
       return <Layers {...iconProps} />;
-    case "report":
-      return <ClipboardList {...iconProps} />;
     case "table":
       return <Table2 {...iconProps} />;
     case "file-preview":
@@ -328,7 +325,7 @@ export function NotebookEditor({
       <div className="border-t px-4 py-3 bg-muted/30">
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground mr-2">Add cell:</span>
-          {(["concept", "math", "code", "summary", "quiz", "flashcard", "report", "table", "file-preview", "notes"] as const).map((type) => (
+          {(["concept", "math", "code", "summary", "quiz", "flashcard", "table", "file-preview", "notes"] as const).map((type) => (
             <Button
               key={type}
               variant="outline"

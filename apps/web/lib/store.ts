@@ -60,7 +60,7 @@ export interface GraphData {
 }
 
 // Cell type for notebook cells
-export type CellType = "concept" | "math" | "code" | "summary" | "quiz" | "flashcard" | "report" | "table" | "file-preview" | "notes";
+export type CellType = "concept" | "math" | "code" | "summary" | "quiz" | "flashcard" | "table" | "file-preview" | "notes";
 
 // Cell interface - a single learning unit within a notebook tab
 export interface Cell {
@@ -74,7 +74,12 @@ export interface Cell {
   quiz_data?: QuizQuestion[];
   flashcard_data?: { front: string; back: string }[];
   table_data?: { headers: string[]; rows: string[][] }; // ✨ For table type
-  file_preview?: { fileName: string; fileType: string; fileUrl?: string; content?: string }; // ✨ For file-preview type
+  file_preview?: { 
+    fileName: string; 
+    fileType: string; // MIME type like "application/pdf", "image/png", "video/mp4"
+    fileUrl: string;  // Download/view URL
+    fileId?: string;  // Supabase file ID for reference
+  }; // ✨ For file-preview type
   isBookmarked: boolean;
   createdAt: number;
   updatedAt?: number;
@@ -128,6 +133,13 @@ export interface LearningUnitInput {
   graph_data?: GraphData;
   quiz_data?: QuizQuestion[];
   flashcard_data?: { front: string; back: string }[]; // ✨ [Fix] Include flashcard data from backend
+  table_data?: { headers: string[]; rows: string[][] }; // ✨ For table type
+  file_preview?: { 
+    fileName: string; 
+    fileType: string; 
+    fileUrl: string; 
+    fileId?: string;
+  }; // ✨ For file-preview type
   /** When true, cell is marked as added from Deep (for bookmark tag) */
   fromDeep?: boolean;
 }
@@ -151,6 +163,13 @@ export interface IumFile {
     graph_data?: GraphData;
     quiz_data?: QuizQuestion[];
     flashcard_data?: { front: string; back: string }[];
+    table_data?: { headers: string[]; rows: string[][] }; // ✨ [Fix] Include table_data
+    file_preview?: { // ✨ [Fix] Include file_preview
+      fileName: string; 
+      fileType: string; 
+      fileUrl: string; 
+      fileId?: string;
+    };
     isBookmarked: boolean;
     createdAt: number;
     updatedAt?: number;
@@ -565,6 +584,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       graph_data,
       quiz_data: unit.quiz_data,
       flashcard_data: unit.flashcard_data, // ✨ [Fix] Include flashcard data
+      table_data: unit.table_data, // ✨ Include table data
+      file_preview: unit.file_preview, // ✨ Include file preview data
       isBookmarked: false,
       createdAt: Date.now(),
       fromDeep: unit.fromDeep ?? false,
@@ -1609,6 +1630,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         graph_data: cell.graph_data, // ✨ [Fix] Include graph_data
         quiz_data: cell.quiz_data,
         flashcard_data: cell.flashcard_data, // ✨ [Fix] Include flashcard_data
+        table_data: cell.table_data, // ✨ [Fix] Include table_data
+        file_preview: cell.file_preview, // ✨ [Fix] Include file_preview
         isBookmarked: cell.isBookmarked,
         createdAt: cell.createdAt,
         updatedAt: cell.updatedAt,
@@ -1627,26 +1650,48 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { success: false, error: "Tab not found" };
     }
 
+    // ✨ Re-check syncInfo at call time (it may have been set by previous concurrent call)
+    const freshTab = get().notebookTabs.find((t) => t.id === tabId);
+    const existingFileId = freshTab?.syncInfo?.fileId;
+
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       // ✨ [Improved] Duplicate Name Handling for NEW files
       let finalFileName = `${iumFile.metadata.title.replace(/[^a-zA-Z0-9가-힣]/g, "_")}.ium`;
+      
+      // ✨ [Fixed] Check if file with same name already exists - if so, use its ID for update
+      let effectiveFileId = existingFileId;
+      const freshState = get();
+      const folder = freshState.knowledgeFolders.find(f => f.id === folderId);
+      
+      if (!effectiveFileId && folder) {
+        // Look for existing file with same name (might be from a previous save that didn't complete syncInfo update)
+        const existingFile = folder.files.find(f => f.name === finalFileName);
+        if (existingFile) {
+          console.log("[Store] Found existing file with same name, using for update:", existingFile.id);
+          effectiveFileId = existingFile.id;
+          // Also update tab's syncInfo immediately to prevent race conditions
+          get().setSyncInfo(tabId, {
+            fileId: existingFile.id,
+            folderId,
+            fileName: finalFileName,
+            lastSyncedAt: Date.now() - 1000, // Set slightly in past so it gets updated
+          });
+        }
+      }
 
-      // Only check for duplicates if this is a NEW save (no fileId)
-      if (!tab.syncInfo?.fileId) {
-        const folder = state.knowledgeFolders.find(f => f.id === folderId);
-        if (folder) {
-          const baseName = finalFileName.replace('.ium', '');
-          let counter = 1;
+      // Only check for duplicates if this is a NEW save (no fileId and no matching existing file)
+      if (!effectiveFileId && folder) {
+        const baseName = finalFileName.replace('.ium', '');
+        let counter = 1;
 
-          const checkNameExists = (name: string) => folder.files.some(f => f.name === name);
+        const checkNameExists = (name: string) => folder.files.some(f => f.name === name);
 
-          if (checkNameExists(finalFileName)) {
-            while (checkNameExists(`${baseName}_${counter}.ium`)) {
-              counter++;
-            }
-            finalFileName = `${baseName}_${counter}.ium`;
+        if (checkNameExists(finalFileName)) {
+          while (checkNameExists(`${baseName}_${counter}.ium`)) {
+            counter++;
           }
+          finalFileName = `${baseName}_${counter}.ium`;
         }
       }
 
@@ -1661,9 +1706,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       formData.append("file", blob, finalFileName);
       formData.append("collection_name", "user_knowledge");
       formData.append("folder_id", folderId);
-      // ✨ [Refined] Handle updates and is_temp
-      if (tab.syncInfo?.fileId) {
-        formData.append("file_id", tab.syncInfo.fileId);
+      // ✨ [Fixed] Use effectiveFileId for updates (includes matched existing files)
+      if (effectiveFileId) {
+        formData.append("file_id", effectiveFileId);
         formData.append("update_existing", "true");
       }
       formData.append("is_temp", isTemp.toString());
@@ -1687,15 +1732,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       const data = await response.json();
       const fileId = data.document_ids?.[0] || `ium-${Date.now()}`;
 
-      // Add to folder files (check if not already exists)
-      const folder = state.knowledgeFolders.find((f) => f.id === folderId);
-      if (folder && !folder.files.some((f) => f.id === fileId)) {
-        const uploadedFile: UploadedFile = {
-          id: fileId,
-          name: finalFileName,
-          uploadedAt: Date.now(),
-        };
-        get().addFileToFolder(folderId, uploadedFile);
+      // ✨ [Fixed] Only add to folder files for NEW files, not updates
+      // Check by BOTH fileId AND fileName to prevent duplicates
+      const currentState = get();
+      const targetFolder = currentState.knowledgeFolders.find((f) => f.id === folderId);
+      if (targetFolder) {
+        const existsByFileId = targetFolder.files.some((f) => f.id === fileId);
+        const existsByName = targetFolder.files.some((f) => f.name === finalFileName);
+        
+        if (!existsByFileId && !existsByName) {
+          // Truly new file - add to folder
+          const uploadedFile: UploadedFile = {
+            id: fileId,
+            name: finalFileName,
+            uploadedAt: Date.now(),
+          };
+          get().addFileToFolder(folderId, uploadedFile);
+        } else if (existsByFileId) {
+          // Existing file - update name if changed
+          set((state) => ({
+            knowledgeFolders: state.knowledgeFolders.map((f) =>
+              f.id === folderId
+                ? {
+                    ...f,
+                    files: f.files.map((file) =>
+                      file.id === fileId ? { ...file, name: finalFileName, uploadedAt: Date.now() } : file
+                    ),
+                  }
+                : f
+            ),
+          }));
+        }
+        // If existsByName but not existsByFileId, we might be updating - don't add duplicate
       }
 
       // Update tab with sync info
@@ -1752,6 +1820,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         graph_data: cell.graph_data, // ✨ [Fix] Correctly map graph_data
         quiz_data: cell.quiz_data,
         flashcard_data: cell.flashcard_data, // ✨ [Fix] Include flashcard_data for flashcard cells
+        table_data: cell.table_data, // ✨ [Fix] Include table_data for table cells
+        file_preview: cell.file_preview, // ✨ [Fix] Include file_preview for file-preview cells
         isBookmarked: cell.isBookmarked || false,
         createdAt: cell.createdAt || Date.now(),
         updatedAt: cell.updatedAt,
@@ -1898,50 +1968,98 @@ export const useAppStore = create<AppState>((set, get) => ({
     const state = get();
     const tab = state.notebookTabs.find((t) => t.id === tabId);
 
+    // ✨ Skip if tab is already being synced (prevent duplicate creation)
+    if (state._pendingSyncs.has(tabId)) {
+      console.log("[Store] Tab already syncing, skipping:", tabId);
+      return;
+    }
+
+    // ✨ Skip if already has a pending timer (debounce already scheduled)
+    if (state._syncDebounceTimers.has(tabId)) {
+      console.log("[Store] Tab already has pending timer, skipping:", tabId);
+      return;
+    }
+
     // ✨ Handle unsaved tabs (no syncInfo) -> Create new file
     if (!tab?.syncInfo) {
-      // Debounce creation too
-      const existingTimer = state._syncDebounceTimers.get(tabId);
-      if (existingTimer) clearTimeout(existingTimer);
-
-      const createAndSync = () => {
-        const folderId = tab?.folderId || state.activeFolderId || "folder-1";
-        // ✨ Auto-save is always temp
-        get().saveTabToSupabase(tabId, folderId, true);
+      const createAndSync = async () => {
+        // ✨ Re-check pending status with fresh state
+        const freshState = get();
+        if (freshState._pendingSyncs.has(tabId)) {
+          console.log("[Store] Tab became pending during debounce, skipping:", tabId);
+          return;
+        }
+        
+        // ✨ Re-check if syncInfo was set by another call
+        const freshTab = freshState.notebookTabs.find((t) => t.id === tabId);
+        if (freshTab?.syncInfo) {
+          console.log("[Store] Tab now has syncInfo, using update path:", tabId);
+          // Tab was already saved, do an update instead
+          await get().saveTabToSupabase(tabId, freshTab.syncInfo.folderId, true);
+          return;
+        }
+        
+        // ✨ Mark as pending BEFORE async operation
+        set((s) => ({ _pendingSyncs: new Set([...s._pendingSyncs, tabId]) }));
+        
+        try {
+          const folderId = freshTab?.folderId || freshState.activeFolderId || "folder-1";
+          // ✨ Auto-save is always temp
+          await get().saveTabToSupabase(tabId, folderId, true);
+        } finally {
+          // ✨ Remove from pending after completion
+          set((s) => {
+            const newPending = new Set(s._pendingSyncs);
+            newPending.delete(tabId);
+            return { _pendingSyncs: newPending };
+          });
+        }
       };
 
       if (immediate) {
         createAndSync();
       } else {
         const timer = setTimeout(() => {
-          createAndSync();
           state._syncDebounceTimers.delete(tabId);
+          createAndSync();
         }, 1000); // Slightly longer delay for creation
         state._syncDebounceTimers.set(tabId, timer);
       }
       return;
     }
 
-    // Existing sync logic (Debounce)
-    const existingTimer = state._syncDebounceTimers.get(tabId);
-    if (existingTimer) clearTimeout(existingTimer);
-
-    const performSync = () => {
-      // ✨ Use saveTabToSupabase for updates too (it handles update_existing now)
-      // Auto-sync preserves current temp status (or re-marks as temp if logic dictates, but usually valid save)
-      // Actually, auto-sync ON EXISTING file is better handled by syncTabToSupabase if we want separate logic,
-      // BUT to satisfy "save button makes permanent", auto-sync should probably keep it temp?
-      // Let's use saveTabToSupabase(..., true) for auto-syncs to keep them temp.
-      const folderId = tab.syncInfo?.folderId || tab.folderId || state.activeFolderId || "folder-1";
-      get().saveTabToSupabase(tabId, folderId, true);
+    // Existing sync logic (Debounce) - tab already has syncInfo
+    const performSync = async () => {
+      // ✨ Re-check pending status with fresh state
+      const freshState = get();
+      if (freshState._pendingSyncs.has(tabId)) {
+        console.log("[Store] Tab became pending during debounce, skipping:", tabId);
+        return;
+      }
+      
+      // ✨ Mark as pending BEFORE async operation
+      set((s) => ({ _pendingSyncs: new Set([...s._pendingSyncs, tabId]) }));
+      
+      try {
+        const freshTab = freshState.notebookTabs.find((t) => t.id === tabId);
+        const folderId = freshTab?.syncInfo?.folderId || freshTab?.folderId || freshState.activeFolderId || "folder-1";
+        await get().saveTabToSupabase(tabId, folderId, true);
+      } finally {
+        // ✨ Remove from pending after completion
+        set((s) => {
+          const newPending = new Set(s._pendingSyncs);
+          newPending.delete(tabId);
+          return { _pendingSyncs: newPending };
+        });
+      }
     };
 
     if (immediate) {
       performSync();
     } else {
       const timer = setTimeout(() => {
-        performSync();
         state._syncDebounceTimers.delete(tabId);
+        performSync();
       }, 500);
       state._syncDebounceTimers.set(tabId, timer);
     }

@@ -30,10 +30,7 @@ import {
   Bot, // Added
   MoreHorizontal, // Added
   ChevronDown, // Added
-  ClipboardList, // Report
   Table2, // Table
-  Eye, // File Preview
-  StickyNote, // Notes
 } from "lucide-react";
 
 import {
@@ -98,7 +95,9 @@ export function ChatSidebar() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  const [responseType, setResponseType] = useState<"auto" | "concept" | "diagram" | "quiz" | "flashcard" | "report" | "table" | "file-preview" | "notes">("auto");
+  const [responseType, setResponseType] = useState<"auto" | "concept" | "diagram" | "quiz" | "flashcard" | "table">("auto");
+  const [evaluateQuality, setEvaluateQuality] = useState(true); // ✨ 품질 평가 여부 (기본: 활성)
+  const [enableWebSearch, setEnableWebSearch] = useState(false); // ✨ 웹 검색 활성화 여부 (기본: 비활성)
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -319,6 +318,8 @@ export function ChatSidebar() {
           folderId: activeFolderId || undefined,
           documentIds: documentIdsForRag.length > 0 ? documentIdsForRag : undefined,
           attachments,
+          skipEvaluation: !evaluateQuality, // ✨ 품질 평가 건너뛰기
+          enableWebSearch: enableWebSearch, // ✨ 웹 검색 활성화
         },
         (statusMessage) => {
           setLoadingStatus(statusMessage);
@@ -335,38 +336,83 @@ export function ChatSidebar() {
         setActiveSources([]);
       }
 
-      // ✨ [핵심 수정] learning_unit이 없어도 항상 탭에 콘텐츠 추가
-      if (response.learning_unit) {
-        console.log("[ChatSidebar] Learning unit received:", response.learning_unit);
+      // ✨ [핵심 수정] table/diagram 선택 시 무조건 셀 생성 보장
+      const responseContent = response.chat_message || response.message || "";
+      
+      // Helper: Extract topic from user message (remove instruction prefix)
+      const extractTopicFromContent = (content: string): string => {
+        const cleaned = content.replace(/\[Instruction:.*?\]\s*/g, "").trim();
+        return cleaned.slice(0, 50) || "Generated Content";
+      };
 
-        // ✨ [추가] "diagram" 요청 시 다이아그램이 없으면 기본 다이아그램 추가
-        const unit = response.learning_unit;
-        if (responseType === "diagram" && !unit.graph_data) {
-          console.log("[ChatSidebar] Diagram requested but not found, adding fallback.");
-          unit.graph_data = {
-            nodes: [
-              { id: "1", label: unit.title || "Concept", type: "input" },
-              { id: "2", label: "Key Component", type: "default" },
-              { id: "3", label: "Detail 1", type: "output" },
-              { id: "4", label: "Detail 2", type: "output" },
-            ],
-            edges: [
-              { id: "e1-2", source: "1", target: "2" },
-              { id: "e2-3", source: "2", target: "3" },
-              { id: "e2-4", source: "2", target: "4" },
-            ],
-          };
-          if (!unit.diagram_description) {
-            unit.diagram_description = "A default diagram illustrating the concept.";
+      // ✨ [강화된 로직] responseType이 table 또는 diagram인 경우 반드시 셀 생성
+      if (responseType === "table" || responseType === "diagram") {
+        console.log(`[ChatSidebar] ${responseType.toUpperCase()} type selected - ensuring cell creation`);
+        
+        // Start with learning_unit if available, otherwise create from scratch
+        const unit = response.learning_unit ? { ...response.learning_unit } : {
+          type: responseType === "table" ? "table" : "concept",
+          title: extractTopicFromContent(content),
+          content: responseContent,
+          equations: [],
+          quiz_data: [],
+          flashcard_data: [],
+        };
+
+        // ✨ TABLE 유형: 무조건 table 타입으로 설정
+        if (responseType === "table") {
+          unit.type = "table";
+          // If no content, use response message
+          if (!unit.content || unit.content.trim() === "") {
+            unit.content = responseContent;
           }
+          console.log("[ChatSidebar] Table cell will be created with content:", unit.content?.slice(0, 100));
         }
 
+        // ✨ DIAGRAM 유형: graph_data가 없으면 기본 다이아그램 추가
+        if (responseType === "diagram") {
+          unit.type = "concept"; // diagram uses concept type with graph_data
+          if (!unit.graph_data) {
+            console.log("[ChatSidebar] Diagram requested but graph_data not found, adding fallback diagram");
+            unit.graph_data = {
+              nodes: [
+                { id: "1", label: unit.title || "Main Concept", type: "input" },
+                { id: "2", label: "Component A", type: "default" },
+                { id: "3", label: "Component B", type: "default" },
+                { id: "4", label: "Result", type: "output" },
+              ],
+              edges: [
+                { id: "e1-2", source: "1", target: "2" },
+                { id: "e1-3", source: "1", target: "3" },
+                { id: "e2-4", source: "2", target: "4" },
+                { id: "e3-4", source: "3", target: "4" },
+              ],
+            };
+          }
+          if (!unit.diagram_description) {
+            unit.diagram_description = `Diagram for: ${unit.title}`;
+          }
+          // If no content, use response message
+          if (!unit.content || unit.content.trim() === "") {
+            unit.content = responseContent;
+          }
+          console.log("[ChatSidebar] Diagram cell will be created with graph_data nodes:", unit.graph_data?.nodes?.length);
+        }
+
+        // ✨ 무조건 셀 추가 (table/diagram 선택 시)
         appendCellToActiveTab(unit);
-        // ✨ Activity tracking - track cell creation
+        trackCellCreated(unit.type || responseType, unit.title);
+        console.log(`[ChatSidebar] ✅ ${responseType.toUpperCase()} cell successfully added to tab`);
+
+      } else if (response.learning_unit) {
+        // ✨ 기존 로직: 다른 유형(concept, quiz, flashcard 등)은 learning_unit이 있을 때만 처리
+        console.log("[ChatSidebar] Learning unit received:", response.learning_unit);
+        const unit = response.learning_unit;
+        appendCellToActiveTab(unit);
         trackCellCreated(unit.type || "concept", unit.title);
       }
 
-      // ✨ [Removed] Fallback cell creation to prevent "AI Response" cells with generic text
+      // ✨ [Note] auto 타입이거나 learning_unit 없는 경우는 채팅 메시지만 표시
 
 
       const assistantMessage: ChatMessage = {
@@ -447,19 +493,13 @@ export function ChatSidebar() {
       if (responseType === "concept") {
         contentToSend = `[Instruction: Provide a detailed conceptual explanation] ${contentToSend}`;
       } else if (responseType === "diagram") {
-        contentToSend = `[Instruction: Provide a clear, visual diagram using Mermaid syntax (graph TD, etc.) or Flowchart JSON. Keep text explanations concise but meaningful.] ${contentToSend}`;
+        contentToSend = `[Instruction: Provide a clear, visual diagram using graph_data (nodes and edges for React Flow). Do NOT use Mermaid syntax.] ${contentToSend}`;
       } else if (responseType === "quiz") {
         contentToSend = `[Instruction: Provide a quiz on this topic] ${contentToSend}`;
       } else if (responseType === "flashcard") {
         contentToSend = `[Instruction: Create flashcards for this topic] ${contentToSend}`;
-      } else if (responseType === "report") {
-        contentToSend = `[Instruction: Create a comprehensive report with clear sections, headings, and organized content] ${contentToSend}`;
       } else if (responseType === "table") {
         contentToSend = `[Instruction: Organize information into a structured table format with clear headers and rows] ${contentToSend}`;
-      } else if (responseType === "file-preview") {
-        contentToSend = `[Instruction: Provide a file preview summary with key content highlights] ${contentToSend}`;
-      } else if (responseType === "notes") {
-        contentToSend = `[Instruction: Create concise study notes with key points and essential takeaways] ${contentToSend}`;
       }
     }
 
@@ -848,10 +888,7 @@ export function ChatSidebar() {
                           { id: "flashcard", label: "Flashcard", icon: Layers },
                           { id: "diagram", label: "Diagram", icon: GitGraph },
                           { id: "quiz", label: "Quiz", icon: HelpCircle },
-                          { id: "report", label: "Report", icon: ClipboardList },
                           { id: "table", label: "Table", icon: Table2 },
-                          { id: "file-preview", label: "Preview", icon: Eye },
-                          { id: "notes", label: "Notes", icon: StickyNote },
                         ].find(t => t.id === responseType) || { id: "auto", label: "Auto", icon: Sparkles };
                         const Icon = activeType.icon;
                         return (
@@ -873,10 +910,7 @@ export function ChatSidebar() {
                       { id: "flashcard", label: "Flashcard", icon: Layers, desc: "Flip cards for memorization" },
                       { id: "diagram", label: "Diagram", icon: GitGraph, desc: "Visual flowcharts & graphs" },
                       { id: "quiz", label: "Quiz", icon: HelpCircle, desc: "Test your knowledge" },
-                      { id: "report", label: "Report", icon: ClipboardList, desc: "Comprehensive document with sections" },
                       { id: "table", label: "Table", icon: Table2, desc: "Structured data in table format" },
-                      { id: "file-preview", label: "File Preview", icon: Eye, desc: "Preview uploaded file content" },
-                      { id: "notes", label: "Notes", icon: StickyNote, desc: "Concise key points & takeaways" },
                     ].map((type) => {
                       const isActive = responseType === type.id;
                       const Icon = type.icon;
@@ -907,6 +941,89 @@ export function ChatSidebar() {
                   </div>
                 </PopoverContent>
               </Popover>
+            </div>
+
+            {/* ✨ Options Row: Evaluate Quality & Web Search */}
+            <div className="mb-3 px-1 flex gap-2">
+              {/* Evaluate Quality Checkbox */}
+              <label
+                htmlFor="evaluate-quality"
+                className={cn(
+                  "flex-1 flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer select-none transition-all",
+                  "border border-transparent",
+                  evaluateQuality 
+                    ? "bg-primary/10 border-primary/30" 
+                    : "bg-muted/40 hover:bg-muted/60"
+                )}
+              >
+                <div className={cn(
+                  "relative flex items-center justify-center h-4 w-4 rounded border-2 transition-all shrink-0",
+                  evaluateQuality 
+                    ? "bg-primary border-primary" 
+                    : "bg-background border-muted-foreground/30"
+                )}>
+                  <input
+                    type="checkbox"
+                    id="evaluate-quality"
+                    checked={evaluateQuality}
+                    onChange={(e) => setEvaluateQuality(e.target.checked)}
+                    className="sr-only"
+                  />
+                  {evaluateQuality && (
+                    <svg className="h-2.5 w-2.5 text-primary-foreground" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6L5 9L10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className={cn(
+                    "text-[11px] font-medium transition-colors truncate",
+                    evaluateQuality ? "text-primary" : "text-foreground"
+                  )}>
+                    Quality Check
+                  </span>
+                </div>
+              </label>
+
+              {/* Web Search Checkbox */}
+              <label
+                htmlFor="enable-web-search"
+                className={cn(
+                  "flex-1 flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer select-none transition-all",
+                  "border border-transparent",
+                  enableWebSearch 
+                    ? "bg-blue-500/10 border-blue-500/30" 
+                    : "bg-muted/40 hover:bg-muted/60"
+                )}
+              >
+                <div className={cn(
+                  "relative flex items-center justify-center h-4 w-4 rounded border-2 transition-all shrink-0",
+                  enableWebSearch 
+                    ? "bg-blue-500 border-blue-500" 
+                    : "bg-background border-muted-foreground/30"
+                )}>
+                  <input
+                    type="checkbox"
+                    id="enable-web-search"
+                    checked={enableWebSearch}
+                    onChange={(e) => setEnableWebSearch(e.target.checked)}
+                    className="sr-only"
+                  />
+                  {enableWebSearch && (
+                    <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none">
+                      <path d="M2 6L5 9L10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <span className={cn(
+                    "text-[11px] font-medium transition-colors truncate",
+                    enableWebSearch ? "text-blue-600 dark:text-blue-400" : "text-foreground"
+                  )}>
+                    Web Search
+                  </span>
+                </div>
+              </label>
             </div>
 
             <div data-tutorial="tutorial-chat" className="flex gap-2">

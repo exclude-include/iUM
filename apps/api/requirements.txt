@@ -31,3 +31,6 @@ supabase>=2.3.0
 postgrest>=0.13.0
 storage3>=0.7.0
 PyJWT>=2.8.0
+
+# Web Search
+duckduckgo-search>=6.0.0

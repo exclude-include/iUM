@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, Loader2, Pencil, FileCode, FileImage, File, Download, Star, Paperclip, RefreshCw, Keyboard } from "lucide-react";
+import { Plus, Trash2, FileText, UploadCloud, X, Folder, Flame, Network, CheckSquare, Square, Sparkles, HardDrive, Bookmark, Loader2, Pencil, FileCode, FileImage, File, Download, Star, Paperclip, RefreshCw, Keyboard, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
@@ -92,6 +92,11 @@ export function FolderSidebar() {
       case 'svg': return <FileImage className="h-3 w-3 shrink-0 opacity-70 text-blue-500" />;
       case 'txt':
       case 'md': return <FileText className="h-3 w-3 shrink-0 opacity-70 text-gray-500" />;
+      case 'xlsx':
+      case 'xls':
+      case 'csv':
+      case 'xlsm':
+      case 'ods': return <FileSpreadsheet className="h-3 w-3 shrink-0 opacity-70 text-emerald-500" />;
       case 'ts':
       case 'tsx':
       case 'js':
@@ -704,10 +709,20 @@ export function FolderSidebar() {
                     <div className="space-y-1 ml-1">
                       {regularFiles.map((file, index) => {
                         const isSelected = selectedDocumentIds.includes(file.id);
+                        const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
                         return (
                           <div
                             key={`${file.id}-${index}`}
-                            className="group flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-muted/50 p-1 rounded relative pr-16"
+                            draggable
+                            onDragStart={(e) => {
+                              e.dataTransfer.setData("application/x-ium-file", JSON.stringify({
+                                id: file.id,
+                                name: file.name,
+                                url: `${apiUrl}/api/workspace/file/${file.id}/download`,
+                              }));
+                              e.dataTransfer.effectAllowed = "copy";
+                            }}
+                            className="group flex items-center gap-2 text-[10px] text-muted-foreground hover:bg-muted/50 p-1 rounded relative pr-16 cursor-grab active:cursor-grabbing"
                           >
                             <div
                               className="shrink-0 cursor-pointer flex items-center justify-center h-4 w-4"

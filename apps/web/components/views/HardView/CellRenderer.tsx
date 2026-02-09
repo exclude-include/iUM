@@ -1,11 +1,12 @@
 "use client";
 
-import React, { forwardRef, useRef, useMemo, useState } from "react";
+import React, { forwardRef, useRef, useMemo, useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { QuizView } from "@/components/QuizView";
 import { FlowChart } from "@/components/FlowChart";
 import { FlashcardView } from "@/components/FlashcardView"; // ✨
 import { CellToolbar } from "./CellToolbar";
+import { SpreadsheetPreview } from "./SpreadsheetPreview";
 import { cn } from "@/lib/utils";
 import { useAppStore, type Cell } from "@/lib/store";
 import { supabase } from "@/lib/supabase/client";
@@ -18,6 +19,130 @@ import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
 import { BlockMath, InlineMath } from "react-katex";
 import "katex/dist/katex.min.css";
+import { Loader2, Copy, Check, FileCode } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
+// ✨ Text/Code File Preview Component
+function TextFilePreview({ fileUrl, fileName, language }: { fileUrl: string; fileName: string; language: string }) {
+  const [content, setContent] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [lineNumbers, setLineNumbers] = useState(true);
+
+  useEffect(() => {
+    const fetchContent = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Add inline=true to get content without triggering download
+        const urlWithInline = fileUrl.includes('?') ? `${fileUrl}&inline=true` : `${fileUrl}?inline=true`;
+        const response = await fetch(urlWithInline);
+        if (!response.ok) throw new Error(`Failed to fetch: ${response.status}`);
+        const text = await response.text();
+        setContent(text);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load file');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchContent();
+  }, [fileUrl]);
+
+  const handleCopy = async () => {
+    if (!content) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  const lines = content?.split('\n') || [];
+  const lineCount = lines.length;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center p-8 bg-muted/20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-sm text-muted-foreground">Loading file...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6 text-center bg-destructive/10">
+        <p className="text-sm text-destructive">{error}</p>
+        <a 
+          href={fileUrl}
+          download={fileName}
+          className="inline-block mt-2 text-xs text-primary hover:underline"
+        >
+          Download instead
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative group">
+      {/* Toolbar */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => setLineNumbers(!lineNumbers)}
+        >
+          {lineNumbers ? 'Hide' : 'Show'} Lines
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          className="h-7 text-xs gap-1"
+          onClick={handleCopy}
+        >
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+          {copied ? 'Copied!' : 'Copy'}
+        </Button>
+      </div>
+      
+      {/* Code Display */}
+      <div className="max-h-[500px] overflow-auto bg-[#1e1e1e] dark:bg-[#0d1117]">
+        <div className="flex">
+          {/* Line Numbers */}
+          {lineNumbers && (
+            <div className="shrink-0 select-none py-4 pl-4 pr-3 text-right text-xs font-mono text-gray-500 border-r border-gray-700">
+              {lines.map((_, idx) => (
+                <div key={idx} className="leading-6">{idx + 1}</div>
+              ))}
+            </div>
+          )}
+          
+          {/* Code Content */}
+          <pre className="flex-1 py-4 px-4 overflow-x-auto">
+            <code className="text-sm font-mono text-gray-200 leading-6 whitespace-pre">
+              {content}
+            </code>
+          </pre>
+        </div>
+      </div>
+      
+      {/* Footer */}
+      <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-t text-xs text-muted-foreground">
+        <div className="flex items-center gap-2">
+          <FileCode className="h-3.5 w-3.5" />
+          <span>{language.toUpperCase()}</span>
+        </div>
+        <span>{lineCount} lines</span>
+      </div>
+    </div>
+  );
+}
 
 // Custom Markdown Renderer Component to reuse logic (no block wrapper)
 const MARKDOWN_COMPONENTS_BASE = {
@@ -33,6 +158,45 @@ const MARKDOWN_COMPONENTS_BASE = {
       <code className={cn("rounded bg-muted/50 px-1.5 py-0.5 text-sm font-mono", className)} {...rest}>{children}</code>
     );
   },
+  // ✨ Beautiful Table Styling for Markdown Tables
+  table: ({ children }: any) => (
+    <div className="my-6 overflow-x-auto rounded-xl border border-border/60 shadow-sm">
+      <table className="w-full text-sm border-collapse">{children}</table>
+    </div>
+  ),
+  thead: ({ children }: any) => (
+    <thead className="bg-gradient-to-r from-muted/80 to-muted/60">{children}</thead>
+  ),
+  tbody: ({ children }: any) => (
+    <tbody className="divide-y divide-border/40">{children}</tbody>
+  ),
+  tr: ({ children, ...props }: any) => {
+    // Check if this is a header row (inside thead) by looking at children
+    const isHeaderRow = React.Children.toArray(children).some(
+      (child: any) => child?.type === 'th' || child?.props?.node?.tagName === 'th'
+    );
+    return (
+      <tr 
+        className={cn(
+          "transition-colors",
+          !isHeaderRow && "hover:bg-primary/5 even:bg-muted/20"
+        )} 
+        {...props}
+      >
+        {children}
+      </tr>
+    );
+  },
+  th: ({ children }: any) => (
+    <th className="px-4 py-3.5 text-left font-semibold text-foreground border-b-2 border-border/70 whitespace-nowrap">
+      {children}
+    </th>
+  ),
+  td: ({ children }: any) => (
+    <td className="px-4 py-3 text-muted-foreground whitespace-pre-wrap break-words">
+      {children}
+    </td>
+  ),
 };
 
 /** Recursively get plain text from React children (for partial highlight matching) */
@@ -284,7 +448,8 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
         "overflow-x-auto overflow-y-visible w-full",
         "[&_.katex-display]:max-w-full [&_.katex-display]:overflow-x-auto [&_.katex-display]:overflow-y-hidden",
         "[&_pre]:max-w-full [&_pre]:overflow-x-auto",
-        "[&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto",
+        // Remove default prose table styles - we handle it with custom components
+        "prose-table:my-0",
         "prose-p:my-4 prose-p:leading-relaxed",
         "prose-headings:mt-8 prose-headings:mb-4",
         "prose-ul:my-4 prose-ol:my-4",
@@ -588,29 +753,56 @@ function CellContent({ cell, hideTitle, tabId }: { cell: Cell; hideTitle?: boole
     );
   }
 
-  // 4. Table (표) - Structured table view
+  // 4. Table (표) - Structured table view with beautiful styling
   if (cell.type === "table") {
     return (
       <div className="w-full">
         {!hideTitle && <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>}
         {cell.table_data && cell.table_data.headers && cell.table_data.rows ? (
-          <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50">
-                <tr>
+          <div className="overflow-x-auto rounded-xl border border-border/60 shadow-sm">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-gradient-to-r from-muted/80 to-muted/60">
                   {cell.table_data.headers.map((header, idx) => (
-                    <th key={idx} className="px-4 py-3 text-left font-semibold text-foreground border-b">
+                    <th 
+                      key={idx} 
+                      className={cn(
+                        "px-4 py-3.5 text-left font-semibold text-foreground",
+                        "border-b-2 border-border/70",
+                        "whitespace-nowrap",
+                        idx === 0 && "rounded-tl-xl",
+                        idx === cell.table_data!.headers.length - 1 && "rounded-tr-xl"
+                      )}
+                    >
                       {header}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-border/40">
                 {cell.table_data.rows.map((row, rowIdx) => (
-                  <tr key={rowIdx} className="hover:bg-muted/30 transition-colors">
-                    {row.map((cell, cellIdx) => (
-                      <td key={cellIdx} className="px-4 py-3 border-b border-border/50">
-                        {cell}
+                  <tr 
+                    key={rowIdx} 
+                    className={cn(
+                      "transition-colors",
+                      rowIdx % 2 === 0 ? "bg-background" : "bg-muted/20",
+                      "hover:bg-primary/5"
+                    )}
+                  >
+                    {row.map((cellValue, cellIdx) => (
+                      <td 
+                        key={cellIdx} 
+                        className={cn(
+                          "px-4 py-3 text-muted-foreground",
+                          "whitespace-pre-wrap break-words",
+                          // First column styling (often labels/headers)
+                          cellIdx === 0 && "font-medium text-foreground",
+                          // Last row styling
+                          rowIdx === cell.table_data!.rows.length - 1 && cellIdx === 0 && "rounded-bl-xl",
+                          rowIdx === cell.table_data!.rows.length - 1 && cellIdx === row.length - 1 && "rounded-br-xl"
+                        )}
+                      >
+                        {cellValue}
                       </td>
                     ))}
                   </tr>
@@ -626,42 +818,182 @@ function CellContent({ cell, hideTitle, tabId }: { cell: Cell; hideTitle?: boole
     );
   }
 
-  // 5. File Preview (파일 미리보기)
+  // 5. File Preview (파일 미리보기) - PDF, Image, Video, Audio, Text/Code support
   if (cell.type === "file-preview") {
+    const fp = cell.file_preview;
+    const fileType = fp?.fileType || '';
+    const fileName = fp?.fileName || '';
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    
+    const isImage = fileType.startsWith('image/');
+    const isVideo = fileType.startsWith('video/');
+    const isAudio = fileType.startsWith('audio/');
+    const isPdf = fileType === 'application/pdf';
+    
+    // Spreadsheet detection (Excel, CSV)
+    const spreadsheetExtensions = ['xlsx', 'xls', 'csv', 'xlsm', 'xlsb', 'ods'];
+    const spreadsheetMimeTypes = [
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/csv',
+      'application/csv'
+    ];
+    const isSpreadsheet = spreadsheetExtensions.includes(ext) || 
+                          spreadsheetMimeTypes.some(t => fileType.includes(t));
+    
+    // Text/Code file detection (exclude CSV as it's handled as spreadsheet)
+    const textMimeTypes = ['text/', 'application/json', 'application/xml', 'application/javascript'];
+    const codeExtensions = ['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'hpp', 'cs', 'go', 'rs', 'rb', 'php', 'swift', 'kt', 'scala', 'sh', 'bash', 'zsh', 'ps1', 'sql', 'r', 'lua', 'perl', 'pl'];
+    const textExtensions = ['txt', 'md', 'markdown', 'log', 'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'cfg', 'conf', 'env', 'gitignore', 'dockerignore', 'editorconfig', 'html', 'htm', 'css', 'scss', 'sass', 'less'];
+    
+    const isTextOrCode = !isSpreadsheet && (textMimeTypes.some(t => fileType.startsWith(t)) || 
+                         codeExtensions.includes(ext) || 
+                         textExtensions.includes(ext));
+    
+    // Get file extension for display
+    const getExtBadge = () => {
+      const extUpper = ext.toUpperCase() || 'FILE';
+      return extUpper.slice(0, 4);
+    };
+    
+    // Get language for syntax hint
+    const getLanguageHint = () => {
+      const langMap: Record<string, string> = {
+        'js': 'JavaScript', 'ts': 'TypeScript', 'jsx': 'React JSX', 'tsx': 'React TSX',
+        'py': 'Python', 'java': 'Java', 'c': 'C', 'cpp': 'C++', 'cs': 'C#',
+        'go': 'Go', 'rs': 'Rust', 'rb': 'Ruby', 'php': 'PHP', 'swift': 'Swift',
+        'kt': 'Kotlin', 'sql': 'SQL', 'sh': 'Shell', 'bash': 'Bash',
+        'json': 'JSON', 'xml': 'XML', 'yaml': 'YAML', 'yml': 'YAML',
+        'md': 'Markdown', 'html': 'HTML', 'css': 'CSS', 'scss': 'SCSS',
+      };
+      return langMap[ext] || ext.toUpperCase();
+    };
+
     return (
       <div className="w-full">
         {!hideTitle && <h2 className="text-xl font-bold mb-3 text-foreground">{cell.title}</h2>}
-        {cell.file_preview ? (
-          <div className="rounded-lg border overflow-hidden">
+        {fp && fp.fileUrl ? (
+          <div className="rounded-lg border overflow-hidden bg-background">
+            {/* File Header */}
             <div className="flex items-center gap-3 px-4 py-3 bg-muted/50 border-b">
-              <div className="h-8 w-8 rounded flex items-center justify-center bg-primary/10">
-                <span className="text-xs font-bold text-primary uppercase">
-                  {cell.file_preview.fileType.split('/').pop()?.slice(0, 3) || 'FILE'}
-                </span>
+              <div className={cn(
+                "h-9 w-9 rounded-lg flex items-center justify-center text-xs font-bold uppercase",
+                isImage && "bg-green-500/10 text-green-600",
+                isVideo && "bg-purple-500/10 text-purple-600",
+                isAudio && "bg-orange-500/10 text-orange-600",
+                isPdf && "bg-red-500/10 text-red-600",
+                isSpreadsheet && "bg-emerald-500/10 text-emerald-600",
+                isTextOrCode && "bg-blue-500/10 text-blue-600",
+                !isImage && !isVideo && !isAudio && !isPdf && !isSpreadsheet && !isTextOrCode && "bg-primary/10 text-primary"
+              )}>
+                {getExtBadge()}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm truncate">{cell.file_preview.fileName}</p>
-                <p className="text-xs text-muted-foreground">{cell.file_preview.fileType}</p>
+                <p className="font-medium text-sm truncate">{fp.fileName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {isSpreadsheet ? 'Spreadsheet' : isTextOrCode ? getLanguageHint() : fp.fileType}
+                </p>
               </div>
-              {cell.file_preview.fileUrl && (
-                <a 
-                  href={cell.file_preview.fileUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="text-xs text-primary hover:underline"
-                >
-                  Open
-                </a>
+              <a 
+                href={fp.fileUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                download={fp.fileName}
+                className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors"
+              >
+                Download
+              </a>
+            </div>
+            
+            {/* Content Preview */}
+            <div className="relative">
+              {/* Image Preview */}
+              {isImage && (
+                <div className="flex items-center justify-center p-4 bg-muted/20 min-h-[200px] max-h-[600px]">
+                  <img 
+                    src={`${fp.fileUrl}?inline=true`} 
+                    alt={fp.fileName}
+                    className="max-w-full max-h-[560px] object-contain rounded shadow-sm"
+                    loading="lazy"
+                  />
+                </div>
+              )}
+              
+              {/* Video Preview */}
+              {isVideo && (
+                <div className="p-4 bg-black/5">
+                  <video 
+                    src={`${fp.fileUrl}?inline=true`}
+                    controls
+                    className="w-full max-h-[500px] rounded"
+                    preload="metadata"
+                  >
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+              )}
+              
+              {/* Audio Preview */}
+              {isAudio && (
+                <div className="p-4">
+                  <audio 
+                    src={`${fp.fileUrl}?inline=true`}
+                    controls
+                    className="w-full"
+                    preload="metadata"
+                  >
+                    Your browser does not support the audio tag.
+                  </audio>
+                </div>
+              )}
+              
+              {/* PDF Preview */}
+              {isPdf && (
+                <div className="h-[600px] bg-muted/20">
+                  <iframe
+                    src={`${fp.fileUrl}?inline=true#toolbar=1&navpanes=0&scrollbar=1`}
+                    className="w-full h-full border-0"
+                    title={fp.fileName}
+                  />
+                </div>
+              )}
+              
+              {/* Spreadsheet Preview (Excel, CSV) */}
+              {isSpreadsheet && (
+                <SpreadsheetPreview fileUrl={fp.fileUrl} fileName={fp.fileName} />
+              )}
+              
+              {/* Text/Code Preview */}
+              {isTextOrCode && (
+                <TextFilePreview fileUrl={fp.fileUrl} fileName={fp.fileName} language={ext} />
+              )}
+              
+              {/* Other files - show download prompt */}
+              {!isImage && !isVideo && !isAudio && !isPdf && !isSpreadsheet && !isTextOrCode && (
+                <div className="p-8 text-center">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
+                    <span className="text-2xl font-bold text-muted-foreground">{getExtBadge()}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Preview not available for this file type.
+                  </p>
+                  <a 
+                    href={fp.fileUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    download={fp.fileName}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary/90 rounded-md transition-colors"
+                  >
+                    Download File
+                  </a>
+                </div>
               )}
             </div>
-            {cell.file_preview.content && (
-              <div className="p-4 max-h-[400px] overflow-auto">
-                <pre className="text-xs font-mono whitespace-pre-wrap">{cell.file_preview.content}</pre>
-              </div>
-            )}
           </div>
         ) : (
-          <CellMarkdownContent content={cell.content || ""} cellId={cell.id} tabId={tabId} />
+          <div className="p-6 text-center border rounded-lg bg-muted/20">
+            <p className="text-sm text-muted-foreground">No file preview available</p>
+          </div>
         )}
       </div>
     );

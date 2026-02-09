@@ -4,7 +4,7 @@
  */
 
 // Cell types matching the existing store.ts definitions
-export type CellType = "concept" | "math" | "code" | "summary" | "quiz" | "flashcard" | "report" | "table" | "file-preview" | "notes";
+export type CellType = "concept" | "math" | "code" | "summary" | "quiz" | "flashcard" | "table" | "file-preview" | "notes";
 
 export interface QuizOption {
   id: string;
@@ -28,7 +28,22 @@ export interface NotebookCell {
   equations?: string[]; // LaTeX strings
   diagram_description?: string;
   mermaid_code?: string;
+  graph_data?: { // ✨ [Fix] Include graph_data for diagram cells
+    nodes: Array<{ id: string; label: string; type?: string }>;
+    edges: Array<{ source: string; target: string; label?: string }>;
+  };
   quiz_data?: QuizQuestion[];
+  flashcard_data?: Array<{ front: string; back: string }>; // ✨ [Fix] Include flashcard_data
+  table_data?: { // ✨ [Fix] Include table_data for table cells
+    headers: string[];
+    rows: string[][];
+  };
+  file_preview?: { // ✨ [Fix] Include file_preview for file-preview cells
+    fileName: string;
+    fileType: string;
+    fileUrl: string;
+    fileId?: string;
+  };
   isBookmarked: boolean;
   createdAt: number;
   updatedAt?: number;

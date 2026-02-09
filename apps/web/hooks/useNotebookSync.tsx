@@ -36,7 +36,11 @@ function cellToNotebookCell(cell: Cell): NotebookCell {
     equations: cell.equations,
     diagram_description: cell.diagram_description,
     mermaid_code: cell.mermaid_code,
+    graph_data: cell.graph_data, // ✨ [Fix] Include graph_data
     quiz_data: cell.quiz_data,
+    flashcard_data: cell.flashcard_data, // ✨ [Fix] Include flashcard_data
+    table_data: cell.table_data, // ✨ [Fix] Include table_data
+    file_preview: cell.file_preview, // ✨ [Fix] Include file_preview
     isBookmarked: cell.isBookmarked,
     createdAt: cell.createdAt,
     updatedAt: cell.updatedAt,
@@ -55,7 +59,11 @@ function notebookCellToCell(cell: NotebookCell): Cell {
     equations: cell.equations,
     diagram_description: cell.diagram_description,
     mermaid_code: cell.mermaid_code,
+    graph_data: cell.graph_data, // ✨ [Fix] Include graph_data
     quiz_data: cell.quiz_data,
+    flashcard_data: cell.flashcard_data, // ✨ [Fix] Include flashcard_data
+    table_data: cell.table_data, // ✨ [Fix] Include table_data
+    file_preview: cell.file_preview, // ✨ [Fix] Include file_preview
     isBookmarked: cell.isBookmarked,
     createdAt: cell.createdAt,
     updatedAt: cell.updatedAt,
