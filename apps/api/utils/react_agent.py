@@ -331,7 +331,12 @@ class ReactLearningAgent:
                 async with _llm_semaphore:
                     await asyncio.sleep(_MIN_REQUEST_DELAY)  # 요청 간 최소 지연
                     response = await self.llm.ainvoke(prompt)
+                # ✨ Handle potential list content (multimodal model response)
                 response_text = response.content
+                if isinstance(response_text, list):
+                    response_text = " ".join([str(item) for item in response_text])
+                elif not isinstance(response_text, str):
+                    response_text = str(response_text)
             except Exception as e:
                 yield {
                     "status": "error",

@@ -5,7 +5,7 @@ Activities Router - Learning activity tracking and statistics
 from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from utils.supabase_client import get_supabase_client, get_user_id_from_token
 
 router = APIRouter()
@@ -82,7 +82,7 @@ async def get_activity_stats(
         activities = response.data or []
 
         # Calculate time boundaries
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today_start - timedelta(days=7)
 
@@ -107,8 +107,11 @@ async def get_activity_stats(
 
             # Parse timestamp
             try:
-                # Handle ISO format with timezone
-                created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00").replace("+00:00", ""))
+                # Handle ISO format with timezone - keep timezone awareness
+                created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+                # Ensure timezone-aware for comparison with UTC times
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
             except:
                 continue
 
@@ -185,7 +188,7 @@ async def get_streak(
 
     try:
         # Get activities ordered by date, limited to recent 90 days
-        ninety_days_ago = (datetime.utcnow() - timedelta(days=90)).isoformat()
+        ninety_days_ago = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
         response = supabase.table("activities")\
             .select("created_at")\
             .eq("user_id", user_id)\
@@ -208,8 +211,10 @@ async def get_streak(
         for activity in activities:
             try:
                 created_at = datetime.fromisoformat(
-                    activity["created_at"].replace("Z", "+00:00").replace("+00:00", "")
+                    activity["created_at"].replace("Z", "+00:00")
                 )
+                if created_at.tzinfo is None:
+                    created_at = created_at.replace(tzinfo=timezone.utc)
                 activity_dates.add(created_at.strftime("%Y-%m-%d"))
             except:
                 continue
@@ -227,8 +232,8 @@ async def get_streak(
         last_study_date = sorted_dates[0]
 
         # Calculate current streak
-        today = datetime.utcnow().strftime("%Y-%m-%d")
-        yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
         
         current_streak = 0
         # Start counting if there's activity today or yesterday

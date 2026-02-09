@@ -301,10 +301,9 @@ class EvaluationRunner:
             if metrics is None:
                 metrics = get_evaluation_metrics()
             
-            # Generate experiment name if not provided
             if experiment_name is None:
-                import datetime
-                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                from datetime import datetime, timezone
+                timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
                 experiment_name = f"iUM_eval_{timestamp}"
             
             # Run evaluation

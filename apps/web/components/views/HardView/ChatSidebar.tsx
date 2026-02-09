@@ -402,15 +402,54 @@ export function ChatSidebar() {
         trackCellCreated(unit.type || responseType, unit.title);
         console.log(`[ChatSidebar] ✅ ${responseType.toUpperCase()} cell successfully added to tab`);
 
-      } else if (response.learning_unit) {
-        // ✨ 기존 로직: 다른 유형(concept, quiz, flashcard 등)은 learning_unit이 있을 때만 처리
-        console.log("[ChatSidebar] Learning unit received:", response.learning_unit);
-        const unit = response.learning_unit;
+      } else {
+        // ✨ [강제화] 모든 응답을 cell로 추가 (learning_unit 유무와 관계없이)
+        console.log("[ChatSidebar] Creating cell for response (forced cell mode)");
+
+        // ✨ [Auto 타입 감지] 응답 내용에서 테이블 패턴 감지
+        const hasMarkdownTable = /\|.+\|[\r\n]+\|[-:| ]+\|/m.test(responseContent);
+
+        let detectedType: "concept" | "quiz" | "flashcard" | "table" = "concept";
+        if (responseType === "quiz") {
+          detectedType = "quiz";
+        } else if (responseType === "flashcard") {
+          detectedType = "flashcard";
+        } else if (responseType === "auto" && hasMarkdownTable) {
+          // Auto 모드에서 테이블 감지 시 table 타입으로
+          detectedType = "table";
+          console.log("[ChatSidebar] Auto mode: Detected markdown table in response, using table type");
+        } else if (responseType === "concept") {
+          detectedType = "concept";
+        }
+
+        const unit = response.learning_unit ? { ...response.learning_unit } : {
+          type: detectedType as any,
+          title: extractTopicFromContent(content),
+          content: responseContent,
+          equations: [],
+          quiz_data: responseType === "quiz" ? [] : undefined,
+          flashcard_data: responseType === "flashcard" ? [] : undefined,
+          graph_data: undefined,
+          diagram_description: undefined,
+        };
+
+        // learning_unit이 있어도 auto 모드에서 테이블 감지 시 타입 오버라이드
+        if (responseType === "auto" && hasMarkdownTable && unit.type !== "table") {
+          unit.type = "table";
+          console.log("[ChatSidebar] Overriding unit type to 'table' due to detected markdown table");
+        }
+
+        // Ensure content is set
+        if (!unit.content || unit.content.trim() === "") {
+          unit.content = responseContent;
+        }
+
         appendCellToActiveTab(unit);
         trackCellCreated(unit.type || "concept", unit.title);
+        console.log(`[ChatSidebar] ✅ Cell (type: ${unit.type}) successfully added to tab (forced mode)`);
       }
 
-      // ✨ [Note] auto 타입이거나 learning_unit 없는 경우는 채팅 메시지만 표시
+      // ✨ [Note] 모든 응답은 cell로 추가됨 (chat 메시지만 표시하는 경우 없음)
 
 
       const assistantMessage: ChatMessage = {
