@@ -235,14 +235,14 @@ Write your response in markdown format."""
             
             # ✨ Return more informative error messages based on error type
             if "rate limit" in error_msg.lower() or "quota" in error_msg.lower():
-                return "API 사용량 제한에 도달했습니다. 잠시 후 다시 시도해주세요."
+                return "API rate limit reached. Please try again later."
             elif "timeout" in error_msg.lower():
-                return "요청 시간이 초과되었습니다. 다시 시도해주세요."
+                return "Request timed out. Please try again."
             elif "connection" in error_msg.lower() or "network" in error_msg.lower():
-                return "네트워크 연결 문제가 발생했습니다. 인터넷 연결을 확인해주세요."
+                return "Network connection error. Please check your internet connection."
             else:
                 # Generic but more helpful message
-                return f"'{tool_name}' 도구 실행 중 오류가 발생했습니다. 다시 시도해주세요."
+                return f"An error occurred while running '{tool_name}'. Please try again."
     
     # ========== Tool Implementations ==========
     
@@ -438,7 +438,7 @@ Example for a topic that does NOT need a diagram (Korean history):
         
         # ✨ Fallback: Return a basic explanation if all retries fail
         fallback_content = f"""{{
-  "text_content": "# {topic}\\n\\n이 주제에 대한 설명을 생성하는 데 문제가 발생했습니다. 다시 시도해주세요.\\n\\n**주제**: {topic}",
+  "text_content": "# {topic}\\n\\nFailed to generate explanation for this topic. Please try again.\\n\\n**Topic**: {topic}",
   "graph_data": null
 }}"""
         return fallback_content

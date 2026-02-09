@@ -93,7 +93,7 @@ export function ChatSidebar() {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [responseType, setResponseType] = useState<"auto" | "concept" | "diagram" | "quiz" | "flashcard" | "table">("auto");
   const [evaluateQuality, setEvaluateQuality] = useState(true); // ✨ 품질 평가 여부 (기본: 활성)
-  const [enableWebSearch, setEnableWebSearch] = useState(false); // ✨ 웹 검색 활성화 여부 (기본: 비활성)
+  const [enableWebSearch, setEnableWebSearch] = useState(true); // ✨ 웹 검색 활성화 여부 (기본: 활성)
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -334,7 +334,7 @@ export function ChatSidebar() {
 
       // ✨ [핵심 수정] table/diagram 선택 시 무조건 셀 생성 보장
       const responseContent = response.chat_message || response.message || "";
-      
+
       // Helper: Extract topic from user message (remove instruction prefix)
       const extractTopicFromContent = (content: string): string => {
         const cleaned = content.replace(/\[Instruction:.*?\]\s*/g, "").trim();
@@ -344,15 +344,17 @@ export function ChatSidebar() {
       // ✨ [강화된 로직] responseType이 table 또는 diagram인 경우 반드시 셀 생성
       if (responseType === "table" || responseType === "diagram") {
         console.log(`[ChatSidebar] ${responseType.toUpperCase()} type selected - ensuring cell creation`);
-        
+
         // Start with learning_unit if available, otherwise create from scratch
         const unit = response.learning_unit ? { ...response.learning_unit } : {
-          type: responseType === "table" ? "table" : "concept",
+          type: (responseType === "table" ? "table" : "concept") as any,
           title: extractTopicFromContent(content),
           content: responseContent,
           equations: [],
           quiz_data: [],
           flashcard_data: [],
+          graph_data: undefined,
+          diagram_description: undefined,
         };
 
         // ✨ TABLE 유형: 무조건 table 타입으로 설정
@@ -934,15 +936,15 @@ export function ChatSidebar() {
                 className={cn(
                   "flex-1 flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer select-none transition-all",
                   "border border-transparent",
-                  evaluateQuality 
-                    ? "bg-primary/10 border-primary/30" 
+                  evaluateQuality
+                    ? "bg-primary/10 border-primary/30"
                     : "bg-muted/40 hover:bg-muted/60"
                 )}
               >
                 <div className={cn(
                   "relative flex items-center justify-center h-4 w-4 rounded border-2 transition-all shrink-0",
-                  evaluateQuality 
-                    ? "bg-primary border-primary" 
+                  evaluateQuality
+                    ? "bg-primary border-primary"
                     : "bg-background border-muted-foreground/30"
                 )}>
                   <input
@@ -954,7 +956,7 @@ export function ChatSidebar() {
                   />
                   {evaluateQuality && (
                     <svg className="h-2.5 w-2.5 text-primary-foreground" viewBox="0 0 12 12" fill="none">
-                      <path d="M2 6L5 9L10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M2 6L5 9L10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   )}
                 </div>
@@ -974,15 +976,15 @@ export function ChatSidebar() {
                 className={cn(
                   "flex-1 flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer select-none transition-all",
                   "border border-transparent",
-                  enableWebSearch 
-                    ? "bg-blue-500/10 border-blue-500/30" 
+                  enableWebSearch
+                    ? "bg-blue-500/10 border-blue-500/30"
                     : "bg-muted/40 hover:bg-muted/60"
                 )}
               >
                 <div className={cn(
                   "relative flex items-center justify-center h-4 w-4 rounded border-2 transition-all shrink-0",
-                  enableWebSearch 
-                    ? "bg-blue-500 border-blue-500" 
+                  enableWebSearch
+                    ? "bg-blue-500 border-blue-500"
                     : "bg-background border-muted-foreground/30"
                 )}>
                   <input
@@ -994,7 +996,7 @@ export function ChatSidebar() {
                   />
                   {enableWebSearch && (
                     <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 12 12" fill="none">
-                      <path d="M2 6L5 9L10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      <path d="M2 6L5 9L10 3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                   )}
                 </div>
