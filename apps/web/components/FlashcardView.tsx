@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, RotateCcw, Layers } from "lucide-react";
@@ -17,6 +17,8 @@ interface FlashcardViewProps {
 export function FlashcardView({ cards }: FlashcardViewProps) {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [isFlipped, setIsFlipped] = useState(false);
+    const [isFocused, setIsFocused] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     const currentCard = cards[currentIndex];
 
@@ -34,9 +36,18 @@ export function FlashcardView({ cards }: FlashcardViewProps) {
         setIsFlipped((prev) => !prev);
     }, []);
 
-    // Keyboard navigation
+    // Keyboard navigation - only when focused
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            // ✨ Only handle keys when flashcard component is focused
+            if (!isFocused) return;
+            
+            // ✨ Don't interfere with input fields
+            const target = e.target as HTMLElement;
+            if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
+                return;
+            }
+            
             if (e.key === " " || e.key === "Enter") {
                 e.preventDefault();
                 handleFlip();
@@ -51,7 +62,7 @@ export function FlashcardView({ cards }: FlashcardViewProps) {
 
         window.addEventListener("keydown", handleKeyDown);
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [handleFlip, handleNext, handlePrev]);
+    }, [handleFlip, handleNext, handlePrev, isFocused]);
 
     if (!cards || cards.length === 0) {
         return (
@@ -63,7 +74,16 @@ export function FlashcardView({ cards }: FlashcardViewProps) {
     }
 
     return (
-        <div className="flex flex-col items-center w-full max-w-lg mx-auto py-4">
+        <div 
+            ref={containerRef}
+            tabIndex={0}
+            onFocus={() => setIsFocused(true)}
+            onBlur={() => setIsFocused(false)}
+            className={cn(
+                "flex flex-col items-center w-full max-w-lg mx-auto py-4 outline-none",
+                isFocused && "ring-2 ring-primary/30 rounded-lg"
+            )}
+        >
             {/* Card Container with 3D Perspective */}
             <div 
                 className="relative w-full aspect-[16/10] cursor-pointer perspective-1000"

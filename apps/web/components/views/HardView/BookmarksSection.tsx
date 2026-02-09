@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useCallback } from "react";
-import { BookOpen, Code, Calculator, FileText, HelpCircle, BookmarkPlus, Layers, FileSpreadsheet, Eye, ClipboardList, StickyNote } from "lucide-react";
+import { BookOpen, Code, Calculator, FileText, HelpCircle, BookmarkPlus, Layers, FileSpreadsheet, Eye, StickyNote } from "lucide-react";
 import { useAppStore, type CellType, type BookmarkRef } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -22,8 +22,6 @@ function CellTypeIcon({ type, className }: { type: CellType; className?: string 
       return <HelpCircle className={iconClass} />;
     case "flashcard":
       return <Layers className={iconClass} />;
-    case "report":
-      return <ClipboardList className={iconClass} />;
     case "table":
       return <FileSpreadsheet className={iconClass} />;
     case "file-preview":

@@ -20,6 +20,9 @@ You think step-by-step about the user's learning questions and use tools to prov
 ## Available Tools
 {tools}
 
+## Available Files Context
+{folder_files_context}
+
 ## Response Format
 
 ### When you need to use a tool:
@@ -35,33 +38,91 @@ Thought: I have gathered sufficient information. Here is my final answer.
 Final Answer: [Final response to the user]
 ```
 
-## Rules
-1. For complex questions, use multiple tools sequentially.
-2. **CRITICAL**: If the user asks for an explanation, proof, concept definition, or detailed information, **YOU MUST USE `generate_concept_cell`**. Do NOT write the explanation in the Final Answer.
-3. For quiz requests, use the create_quiz_cell tool.
-4. For topics requiring prior knowledge, run check_prerequisites first.
-5. For file/document summarization, use the create_summary_cell tool.
-6. For flashcard requests, use the create_flashcard_cell tool. If the user provides text/JSON, pass it as 'context'.
-7. Always start each step with Thought.
-8. Your Final Answer should be a short confirmation like "I have generated the content in the workspace." followed by the actual content generation via tools.
+## ⚠️ CRITICAL: Knowledge Search Strategy (MUST FOLLOW)
 
-## Example
-User: "Explain calculus and also create a quiz"
+**For ANY question that is NOT a trivial calculation or simple task (like "1+1", "create a simple table with 1,2,3"), you MUST search for knowledge FIRST before generating content.**
 
-Thought: The user wants an explanation of calculus and a quiz. I'll first generate a concept explanation, then create a quiz.
+### Search Priority Order (ALWAYS follow this sequence):
+
+**Step 1: Check Attached Files (Highest Priority)**
+- If the user has uploaded/attached files in THIS chat message, their content is provided in the context
+- Use this content FIRST to answer the question
+
+**Step 2: Search Folder Documents**
+- If Step 1 doesn't provide sufficient information, use `search_knowledge` to search through ALL documents in the current folder
+- Also check "Available Files Context" above for file summaries
+- If you need full content of a specific file, use `read_file_content` with the file_id
+
+**Step 3: Web Search (Required when local info is insufficient)**
+- If Steps 1-2 don't provide confident, authoritative answers, you MUST use `web_search`
+- **MANDATORY web search scenarios:**
+  - Topic requires current/recent information (news, trends, recent events)
+  - Search results from Steps 1-2 are empty or low-confidence
+  - Question asks about something not likely in personal documents
+  - Need external sources or citations
+
+### Example Flow for a Complex Question:
+```
+User: "Explain quantum computing"
+
+Thought: This is a complex topic. I must search for knowledge first. Let me check folder documents.
+Action: search_knowledge
+Action Input: {{"query": "quantum computing"}}
+
+(If results are insufficient or empty)
+
+Thought: Local documents don't have enough information. I must search the web.
+Action: web_search
+Action Input: {{"query": "quantum computing explained basics"}}
+
+(After getting good context)
+
+Thought: Now I have sufficient context. I'll create an explanation.
 Action: generate_concept_cell
-Action Input: {{"topic": "calculus"}}
+Action Input: {{"topic": "quantum computing"}}
+```
 
-(After Observation)
+### Simple Tasks (NO search needed):
+- Basic math: "1+1", "5*3"
+- Simple formatting: "make a table with numbers 1,2,3"
+- Direct instructions with all info provided
 
-Thought: I've created the concept explanation. Now I'll generate a quiz.
-Action: create_quiz_cell
-Action Input: {{"topic": "calculus", "num_questions": 3}}
+## Rules
+1. **ALWAYS search first** for non-trivial questions (use the 3-step priority above)
+2. For explanations, proofs, or detailed information, use `generate_concept_cell` AFTER gathering context
+3. For quiz requests, use `create_quiz_cell`
+4. For file/document summarization, use `create_summary_cell`
+5. For flashcard requests, use `create_flashcard_cell`
+6. **For TABLE requests**: Use `create_table_cell`
+7. **For DIAGRAM requests**: Use `create_diagram_cell`
+8. Always cite sources when using web search results
+9. Your Final Answer should be a short confirmation like "I have generated the content in the workspace."
 
-(After Observation)
+## Example for Table
+User: "Create a table showing 1, 2, 3"
 
-Thought: I have both the concept explanation and quiz ready. Here is my final answer.
-Final Answer: I've prepared an explanation and quiz about calculus! ...
+Thought: This is a simple formatting task with all information provided. No search needed.
+Action: create_table_cell
+Action Input: {{"topic": "numbers 1,2,3"}}
+
+## Example for Complex Topic
+User: "Explain the French Revolution"
+
+Thought: This is a complex historical topic. I need to search for context first.
+Action: search_knowledge
+Action Input: {{"query": "French Revolution history"}}
+
+(If no relevant local results)
+
+Thought: No relevant documents found locally. I must search the web for reliable information.
+Action: web_search  
+Action Input: {{"query": "French Revolution causes events outcomes"}}
+
+(After getting context)
+
+Thought: I now have sufficient context. Creating the explanation.
+Action: generate_concept_cell
+Action Input: {{"topic": "French Revolution"}}
 """
 
 
@@ -84,29 +145,43 @@ class ReactLearningAgent:
         document_ids: Optional[List[str]] = None,
         attachments: Optional[List[Dict[str, Any]]] = None,
         initial_document_context: Optional[str] = None,
-        max_iterations: int = 5
+        folder_files_context: Optional[str] = None,  # ✨ 폴더 내 파일 요약 컨텍스트
+        max_iterations: int = 5,
+        skip_evaluation: bool = False,  # ✨ [추가] 품질 평가 건너뛰기
+        enable_web_search: bool = False  # ✨ [추가] 웹 검색 활성화
     ):
         self.llm = ChatGoogleGenerativeAI(
             model="models/gemini-2.5-flash",
             temperature=0,
             google_api_key=os.getenv("GOOGLE_API_KEY")
         )
+        self.folder_files_context = (folder_files_context or "").strip()
+        self.enable_web_search = enable_web_search  # ✨ [추가]
         self.toolkit = get_learning_toolkit(
             folder_id=folder_id,
             session_id=session_id,
             document_ids=document_ids,
-            attachments=attachments
+            attachments=attachments,
+            folder_files_context=self.folder_files_context,
+            enable_web_search=enable_web_search  # ✨ [추가] 웹 검색 설정 전달
         )
         self.initial_document_context = (initial_document_context or "").strip()
         self.max_iterations = max_iterations
         self.scratchpad = ""
+        self.skip_evaluation = skip_evaluation  # ✨ [추가]
         self.reflection = get_self_reflection(self.llm)
         self.evaluation_metrics = {}
 
     def _build_prompt(self, question: str) -> str:
         """Combine system prompt + user question + scratchpad; inject document context when present."""
         tools_description = self.toolkit.get_tools_prompt()
-        system_prompt = REACT_SYSTEM_PROMPT.format(tools=tools_description)
+        
+        # Include folder files context if available
+        files_context = self.folder_files_context if self.folder_files_context else "No files available in current folder."
+        system_prompt = REACT_SYSTEM_PROMPT.format(
+            tools=tools_description,
+            folder_files_context=files_context
+        )
 
         user_block = f"User Question: {question}"
         if self.initial_document_context:
@@ -165,6 +240,10 @@ class ReactLearningAgent:
                          action_input = {"topic": raw_input}
                     elif action_name == "search_knowledge":
                          action_input = {"query": raw_input}
+                    elif action_name == "web_search":
+                         action_input = {"query": raw_input}
+                    elif action_name == "read_file_content":
+                         action_input = {"file_id": raw_input}  # ✨ Handle file reading
                     else:
                          action_input = {"topic": raw_input} # Default fallback
             else:
@@ -202,8 +281,17 @@ class ReactLearningAgent:
             return f"Checking what you need to know before learning '{topic}'... 🔍" if topic else "Checking prerequisites... 🔍"
         elif action_name == "create_summary_cell":
             return "Summarizing the content... 📋"
-        elif action_name == "vector_search":
-            return f"Searching knowledge base for '{query}'... 🔎" if query else "Searching knowledge base... 🔎"
+        elif action_name == "create_table_cell":
+            return f"Creating a structured table for '{topic}'... 📊" if topic else "Creating a table... 📊"
+        elif action_name == "create_diagram_cell":
+            return f"Creating a visual diagram for '{topic}'... 📈" if topic else "Creating a diagram... 📈"
+        elif action_name == "search_knowledge":
+            return f"Searching your documents for '{query}'... 🔎" if query else "Searching your documents... 🔎"
+        elif action_name == "web_search":
+            return f"Searching the web for '{query}'... 🌐" if query else "Searching the internet... 🌐"
+        elif action_name == "read_file_content":
+            file_id = action_input.get("file_id", "")
+            return f"Reading file content ({file_id[:8]}...)... 📄" if file_id else "Reading file content... 📄"
         elif action_name == "get_learning_history":
             return "Reviewing your learning history... 🕒"
         else:
@@ -245,18 +333,22 @@ class ReactLearningAgent:
             # 2. Check for Final Answer
             final_answer = self._parse_final_answer(response_text)
             if final_answer:
-                # ✨ Self-Reflection: Evaluate and improve response quality
-                yield {
-                    "status": "progress",
-                    "step": "self_reflection",
-                    "message": "Evaluating response quality... 🔍"
-                }
-                
-                final_answer, self.evaluation_metrics = await self.reflection.evaluate_and_improve(
-                    response=final_answer,
-                    query=question,
-                    context=self.initial_document_context
-                )
+                # ✨ Self-Reflection: Evaluate and improve response quality (if not skipped)
+                if not self.skip_evaluation:
+                    yield {
+                        "status": "progress",
+                        "step": "self_reflection",
+                        "message": "Evaluating response quality... 🔍"
+                    }
+                    
+                    final_answer, self.evaluation_metrics = await self.reflection.evaluate_and_improve(
+                        response=final_answer,
+                        query=question,
+                        context=self.initial_document_context
+                    )
+                else:
+                    # Skip evaluation - use response as-is
+                    self.evaluation_metrics = {"skipped": True}
                 
                 # Generate appropriate chat message based on actions taken
                 chat_msg = self._generate_chat_message(final_text=final_answer)
@@ -313,7 +405,7 @@ class ReactLearningAgent:
             
             # 6. Collect Learning Units and extract topic
             print(f"[DEBUG] Action: {action_name}")
-            if action_name in ["create_quiz_cell", "generate_concept_cell", "check_prerequisites", "create_summary_cell", "create_flashcard_cell"]:
+            if action_name in ["create_quiz_cell", "generate_concept_cell", "check_prerequisites", "create_summary_cell", "create_flashcard_cell", "create_table_cell", "create_diagram_cell"]:
                 # Determine unit type based on action name
                 print(f"[DEBUG] Collecting Unit: {action_name}")
                 if "quiz" in action_name:
@@ -322,14 +414,18 @@ class ReactLearningAgent:
                     unit_type = "summary"
                 elif "flashcard" in action_name:
                     unit_type = "flashcard"
+                elif "table" in action_name:
+                    unit_type = "table"
+                elif "diagram" in action_name:
+                    unit_type = "concept"  # diagram uses concept type with graph_data
                 else:
                     unit_type = "concept"
                 
                 content = observation
                 graph_data = None
                 
-                # ✨ [Fix] Parse JSON output from generate_concept_cell
-                if action_name == "generate_concept_cell":
+                # ✨ [Fix] Parse JSON output from generate_concept_cell or create_diagram_cell
+                if action_name in ["generate_concept_cell", "create_diagram_cell"]:
                     try:
                         # Try to find JSON object boundaries
                         json_match = re.search(r'\{.*\}', observation, re.DOTALL)
@@ -363,6 +459,21 @@ class ReactLearningAgent:
                             pass
                         # If all fails, content remains as observation (raw JSON) -> better than crash, but user will complain
                         # But at least we tried harder.
+                
+                # ✨ [New] For diagram without graph_data, create a fallback
+                if action_name == "create_diagram_cell" and not graph_data:
+                    topic = action_input.get("topic", "Concept")
+                    graph_data = {
+                        "nodes": [
+                            {"id": "1", "label": topic, "type": "input"},
+                            {"id": "2", "label": "Process", "type": "default"},
+                            {"id": "3", "label": "Result", "type": "output"},
+                        ],
+                        "edges": [
+                            {"id": "e1-2", "source": "1", "target": "2"},
+                            {"id": "e2-3", "source": "2", "target": "3"},
+                        ],
+                    }
 
                 self.accumulated_learning_units.append({
                     "type": unit_type,
@@ -423,12 +534,18 @@ class ReactLearningAgent:
         has_quiz = any(u["type"] == "quiz" for u in self.accumulated_learning_units)
         has_summary = any(u["type"] == "summary" for u in self.accumulated_learning_units)
         has_flashcard = any(u["type"] == "flashcard" for u in self.accumulated_learning_units)
+        has_table = any(u["type"] == "table" for u in self.accumulated_learning_units)
+        has_diagram = any(u.get("graph_data") for u in self.accumulated_learning_units)
         
-        print(f"[DEBUG] has_flashcard: {has_flashcard}, units: {len(self.accumulated_learning_units)}")
+        print(f"[DEBUG] has_flashcard: {has_flashcard}, has_table: {has_table}, has_diagram: {has_diagram}, units: {len(self.accumulated_learning_units)}")
         
         topic = self.detected_topic or "your topic"
         
-        if has_summary:
+        if has_table:
+            return f"📊 I've created a table about **{topic}**. Check the workspace!"
+        elif has_diagram:
+            return f"📈 I've created a diagram for **{topic}**. Check the workspace!"
+        elif has_summary:
             return f"📋 I've created a summary of **{topic}**. Check the workspace!"
         elif has_flashcard:
             return f"🎴 I've created flashcards for **{topic}**. Check the workspace!"
@@ -540,7 +657,9 @@ async def query_with_react_agent(
     folder_id: Optional[str] = None,
     session_id: Optional[str] = None,
     document_ids: Optional[List[str]] = None,
-    attachments: Optional[List[Dict[str, Any]]] = None
+    attachments: Optional[List[Dict[str, Any]]] = None,
+    skip_evaluation: bool = False,  # ✨ [추가] 품질 평가 건너뛰기
+    enable_web_search: bool = False  # ✨ [추가] 웹 검색 활성화
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Process question with ReAct agent (convenience function)
@@ -551,10 +670,26 @@ async def query_with_react_agent(
         session_id: Session ID (history integration)
         document_ids: Specific document ID list
         attachments: Attached files content
+        skip_evaluation: Skip quality evaluation for faster response
+        enable_web_search: Enable web search (prioritized when checked)
     
     Yields:
         Streaming events
     """
+    # ✨ [NEW] Get folder files with summaries for RAG context
+    folder_files_context = ""
+    if folder_id:
+        try:
+            from utils.learning_tools import get_folder_files_with_summaries
+            folder_files_context = await get_folder_files_with_summaries(
+                folder_id=folder_id,
+                exclude_extensions=[".ium"]
+            )
+            if folder_files_context:
+                print(f"[DEBUG] Loaded folder files context: {len(folder_files_context)} chars")
+        except Exception as e:
+            print(f"Error loading folder files context: {e}")
+    
     initial_document_context = ""
     if document_ids or attachments:
         loop = asyncio.get_event_loop()
@@ -585,6 +720,9 @@ async def query_with_react_agent(
         document_ids=document_ids,
         attachments=attachments,
         initial_document_context=initial_document_context or None,
+        folder_files_context=folder_files_context or None,  # ✨ [NEW] Pass folder files context
+        skip_evaluation=skip_evaluation,  # ✨ [추가] 품질 평가 건너뛰기 옵션 전달
+        enable_web_search=enable_web_search,  # ✨ [추가] 웹 검색 활성화 옵션 전달
     )
     async for event in agent.run(question):
         yield event

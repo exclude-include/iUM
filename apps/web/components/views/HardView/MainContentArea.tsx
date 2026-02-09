@@ -66,6 +66,7 @@ export function MainContentArea() {
     saveUserNotebookStateToSupabase,
     loadUserNotebookStateFromSupabase,
     reorderNotebookTabs, // ✨ Added for drag-and-drop
+    appendCellToActiveTab, // ✨ Added for file drop
   } = useAppStore();
 
   const { user } = useAuth();
@@ -81,6 +82,9 @@ export function MainContentArea() {
   const [renameInput, setRenameInput] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteTabId, setDeleteTabId] = useState<string | null>(null);
+  
+  // ✨ File drop state
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // Ref map for scroll-to-cell functionality
   const cellRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -216,6 +220,87 @@ export function MainContentArea() {
   const handleCreateNewTab = () => {
     createNotebookTab(); // Auto-generates unique name like "Tab 1", "Tab 2", etc.
   };
+
+  // ✨ File drop handlers for file-preview cells
+  const getMimeType = (fileName: string): string => {
+    const ext = fileName.split('.').pop()?.toLowerCase() || '';
+    const mimeTypes: Record<string, string> = {
+      // Images
+      'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png',
+      'gif': 'image/gif', 'webp': 'image/webp', 'svg': 'image/svg+xml', 'bmp': 'image/bmp',
+      // Videos
+      'mp4': 'video/mp4', 'webm': 'video/webm', 'mov': 'video/quicktime',
+      'avi': 'video/x-msvideo', 'mkv': 'video/x-matroska',
+      // Audio
+      'mp3': 'audio/mpeg', 'wav': 'audio/wav', 'ogg': 'audio/ogg',
+      // Documents
+      'pdf': 'application/pdf', 'doc': 'application/msword',
+      'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'xls': 'application/vnd.ms-excel', 
+      'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'ppt': 'application/vnd.ms-powerpoint',
+      'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      // Text
+      'txt': 'text/plain', 'md': 'text/markdown', 'csv': 'text/csv',
+      'json': 'application/json', 'xml': 'application/xml',
+      // Code
+      'js': 'text/javascript', 'ts': 'text/typescript', 'py': 'text/x-python',
+      'html': 'text/html', 'css': 'text/css',
+    };
+    return mimeTypes[ext] || 'application/octet-stream';
+  };
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('application/x-ium-file')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      setIsDragOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    // Only set false if we're leaving the container, not just moving to a child
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    
+    const data = e.dataTransfer.getData('application/x-ium-file');
+    if (!data) return;
+    
+    try {
+      const fileData = JSON.parse(data);
+      const mimeType = getMimeType(fileData.name);
+      
+      appendCellToActiveTab({
+        type: 'file-preview',
+        title: fileData.name,
+        content: '', // File preview doesn't need markdown content
+        file_preview: {
+          fileName: fileData.name,
+          fileType: mimeType,
+          fileUrl: fileData.url,
+          fileId: fileData.id,
+        },
+      });
+      
+      toast({
+        title: "File added",
+        description: `"${fileData.name}" has been added as a preview cell.`,
+      });
+    } catch (error) {
+      console.error('Failed to parse dropped file data:', error);
+      toast({
+        title: "Drop failed",
+        description: "Could not add the file to the tab.",
+        variant: "destructive",
+      });
+    }
+  }, [appendCellToActiveTab, toast]);
 
   // Save tab as .ium file to Supabase
   const handleSaveTab = async (tabId: string) => {
@@ -419,8 +504,9 @@ export function MainContentArea() {
           const isInDeep = anchorNode.parentElement?.closest('.deep-mode-view');
 
           // ✨ [Updated] Restrict to content areas (ignore titles, badges, etc.)
+          // Allow text selection menu for ALL cell types, not just concept cells
           const anchorElement = anchorNode.nodeType === Node.TEXT_NODE ? anchorNode.parentElement : anchorNode;
-          const isInContent = anchorElement?.closest('.cell-content, .document-content');
+          const isInContent = anchorElement?.closest('.cell-content, .document-content, [data-cell-id]');
 
           if ((isInMain && isInContent) || isInDeep) {
             setSelectionMenu({
@@ -927,7 +1013,26 @@ export function MainContentArea() {
       {/* --- Main Content Area --- */}
       <ContextMenu>
         <ContextMenuTrigger className="flex-1 min-w-0 flex flex-col overflow-hidden relative" disabled={!isTextSelected}>
-          <div ref={containerRef as React.RefObject<HTMLDivElement>} className="flex-1 min-w-0 flex flex-col h-full">
+          <div 
+            ref={containerRef as React.RefObject<HTMLDivElement>} 
+            className={cn(
+              "flex-1 min-w-0 flex flex-col h-full transition-colors",
+              isDragOver && "bg-primary/5 ring-2 ring-primary/30 ring-inset"
+            )}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+          >
+            {/* Drop overlay */}
+            {isDragOver && (
+              <div className="absolute inset-0 z-50 flex items-center justify-center bg-primary/10 backdrop-blur-sm pointer-events-none">
+                <div className="bg-background border-2 border-dashed border-primary rounded-lg px-8 py-6 text-center">
+                  <FileText className="h-10 w-10 text-primary mx-auto mb-2" />
+                  <p className="text-lg font-medium text-primary">Drop file to preview</p>
+                  <p className="text-sm text-muted-foreground">File will be added as a preview cell</p>
+                </div>
+              </div>
+            )}
             <ScrollArea className="flex-1 min-w-0">
               <div className="p-4 w-full max-w-full overflow-hidden">
                 {/* Float Elements */}

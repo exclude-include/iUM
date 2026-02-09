@@ -74,6 +74,10 @@ export const chatApi = {
       /** 선택/첨부한 파일 ID 목록 — 백엔드가 이 파일들만 RAG에 사용 */
       documentIds?: string[];
       attachments?: { type?: string; url?: string; file_id?: string; storage_path?: string; name?: string }[];
+      /** ✨ [추가] 품질 평가 건너뛰기 (속도 향상) */
+      skipEvaluation?: boolean;
+      /** ✨ [추가] 웹 검색 활성화 */
+      enableWebSearch?: boolean;
     },
     onStatusUpdate?: (status: string) => void
   ): Promise<ChatResponse> {
@@ -97,6 +101,8 @@ export const chatApi = {
     if (options?.folderId != null && options.folderId !== "") body.folder_id = options.folderId;
     if (documentIds.length > 0) body.document_ids = documentIds;
     if (attachments.length > 0) body.attachments = attachments;
+    if (options?.skipEvaluation) body.skip_evaluation = true;
+    if (options?.enableWebSearch) body.enable_web_search = true;
 
     try {
       const response = await fetch(url, {

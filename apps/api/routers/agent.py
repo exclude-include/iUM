@@ -136,6 +136,8 @@ class ChatRequest(BaseModel):
     attachments: Optional[List[dict]] = None # ✨ [추가]
     use_react: bool = True  # ✨ [추가] ReAct 에이전트 사용 여부 (기본값: True)
     document_ids: Optional[List[str]] = None  # ✨ [추가] 선택된 문서 ID 목록
+    skip_evaluation: bool = False  # ✨ [추가] 품질 평가 건너뛰기 (속도 향상)
+    enable_web_search: bool = False  # ✨ [추가] 웹 검색 활성화 (체크 시 우선 검색)
 
 # ✨ [핵심 수정] 일반 JSON 반환 대신 StreamingResponse 사용
 # 프론트엔드 api.ts에서 "/api/agent/message"로 요청하므로 경로를 "/message"로 변경했습니다.
@@ -197,7 +199,9 @@ async def chat_with_agent_stream(request: ChatRequest):
                     folder_id=request.folder_id,
                     session_id=session_id,
                     document_ids=request.document_ids,
-                    attachments=request.attachments
+                    attachments=request.attachments,
+                    skip_evaluation=request.skip_evaluation,  # ✨ [추가] 품질 평가 건너뛰기
+                    enable_web_search=request.enable_web_search  # ✨ [추가] 웹 검색 활성화
                 ):
                     # 데이터 처리 및 응답 수정
                     if update.get("status") == "complete":

@@ -307,12 +307,19 @@ async def get_file_content(file_id: str):
 
 
 @router.get("/file/{file_id}/download")
-async def download_file(file_id: str):
+async def download_file(file_id: str, inline: bool = False):
     """
     Download a file from Supabase Storage as a binary stream.
-    Returns the file with Content-Disposition header for browser download.
+    
+    Args:
+        file_id: The ID of the file to download
+        inline: If True, return with Content-Disposition: inline (for preview in browser)
+                If False (default), return with Content-Disposition: attachment (download)
+    
+    Returns the file with appropriate Content-Disposition header.
     """
     from fastapi.responses import StreamingResponse
+    from urllib.parse import quote
     import io
     
     supabase = get_supabase_client()
@@ -347,15 +354,33 @@ async def download_file(file_id: str):
             'jpeg': 'image/jpeg',
             'gif': 'image/gif',
             'webp': 'image/webp',
+            'mp4': 'video/mp4',
+            'webm': 'video/webm',
+            'mp3': 'audio/mpeg',
+            'wav': 'audio/wav',
+            'ogg': 'audio/ogg',
         }
         content_type = content_types.get(ext, 'application/octet-stream')
 
-        # Return as streaming response with download header
+        # ✨ [Fix] Handle Content-Disposition based on inline parameter
+        disposition_type = "inline" if inline else "attachment"
+        
+        # Handle non-ASCII filenames using RFC 5987 encoding
+        try:
+            file_name.encode('ascii')
+            # ASCII-safe filename - use simple format
+            content_disposition = f'{disposition_type}; filename="{file_name}"'
+        except UnicodeEncodeError:
+            # Non-ASCII filename - use RFC 5987 encoding (filename*)
+            encoded_filename = quote(file_name, safe='')
+            content_disposition = f"{disposition_type}; filename*=UTF-8''{encoded_filename}"
+
+        # Return as streaming response
         return StreamingResponse(
             io.BytesIO(file_bytes),
             media_type=content_type,
             headers={
-                "Content-Disposition": f'attachment; filename="{file_name}"',
+                "Content-Disposition": content_disposition,
                 "Content-Length": str(len(file_bytes))
             }
         )

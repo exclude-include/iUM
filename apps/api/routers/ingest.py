@@ -1,12 +1,14 @@
 """
 Document ingestion endpoint with Supabase Storage integration
 Updated: Persists files to Supabase Storage & DB before VectorDB ingestion
+Includes summary generation for RAG context
 """
 from fastapi import APIRouter, UploadFile, File, HTTPException, Form, Header
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from langchain_google_genai import ChatGoogleGenerativeAI
 from utils.vector_store import add_documents_to_vector_store
 from utils.opik_config import trace
 from utils.supabase_client import get_supabase_client
@@ -14,6 +16,42 @@ import os
 import tempfile
 
 router = APIRouter()
+
+
+async def generate_file_summary(content: str, filename: str, max_content_length: int = 10000) -> str:
+    """
+    Generate AI summary for uploaded file content.
+    Used for RAG context in agent system prompts.
+    """
+    try:
+        # Truncate if content is too long
+        truncated_content = content[:max_content_length]
+        if len(content) > max_content_length:
+            truncated_content += f"\n\n[... Content truncated. Total length: {len(content)} characters]"
+        
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-2.0-flash",
+            temperature=0.3,
+            max_output_tokens=500
+        )
+        
+        prompt = f"""Summarize the following document concisely in 2-4 sentences.
+Focus on: main topic, key concepts, and what information can be found in this document.
+This summary will be used to help an AI agent decide whether to read this file for answering user questions.
+
+Filename: {filename}
+
+Content:
+{truncated_content}
+
+Summary (2-4 sentences, be specific about what information this file contains):"""
+
+        response = await llm.ainvoke(prompt)
+        return response.content.strip()
+    except Exception as e:
+        print(f"Error generating summary: {e}")
+        return f"File: {filename} (summary generation failed)"
+
 
 @trace
 async def process_pdf_file(file_path: str, original_filename: str) -> List[Document]:
@@ -160,6 +198,24 @@ async def ingest_document(
             print(f"Error processing document: {e}")
             # 에러가 나도 파일 업로드는 성공으로 처리 (Vector DB만 스킵)
             pass
+        
+        # ✨ 4. Summary 생성 및 DB 업데이트
+        file_summary = None
+        if documents:
+            try:
+                # Combine all document contents for summary
+                full_content = "\n".join([doc.page_content for doc in documents if doc.page_content])
+                if full_content.strip():
+                    print(f"DTO [3.5/5] Generating AI summary for file...")
+                    file_summary = await generate_file_summary(full_content, file.filename)
+                    print(f"DTO [3.5/5] Summary generated: {file_summary[:100]}...")
+                    
+                    # Update DB with summary
+                    supabase.table("files").update({"summary": file_summary}).eq("id", new_file_id).execute()
+                    print(f"DTO [3.5/5] Summary saved to DB")
+            except Exception as e:
+                print(f"Error generating/saving summary: {e}")
+                # Summary 실패해도 업로드는 성공 처리
             
         # ✨ 내용이 있는 경우에만 Vector DB 저장
         if documents:

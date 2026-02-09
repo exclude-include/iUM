@@ -1,6 +1,6 @@
 """
 RAG Chain implementation with Feynman Technique prompt
-Refactored: STRICT JSON Escaping & SAFE MERMAID Rules
+Refactored: STRICT JSON Escaping & React Flow graph_data only (NO Mermaid)
 """
 import os
 import json
@@ -16,12 +16,12 @@ from utils.opik_config import trace
 from utils.supabase_client import get_supabase_client
 import base64
 
-# ✨ [프롬프트 강화] Mermaid 대신 Reactflow(graph_data) 사용 강제
+# ✨ [프롬프트 강화] React Flow(graph_data) 전용 - Mermaid 사용 금지
 FEYNMAN_TUTOR_PROMPT = """You are an expert AI tutor named iUM, designed to explain concepts clearly and intuitively in the style of Richard Feynman.
 
 **Teaching Philosophy:**
 1. **Explain Simply:** Break down complex concepts into simple terms.
-2. **Visualize:** Always visualize concepts using interactive diagrams.
+2. **Visualize:** Always visualize concepts using interactive diagrams (React Flow graph_data format).
 3. **Interactive:** Provide quizzes when asked.
 
 **Answering Rules:**
@@ -39,12 +39,12 @@ Used when the user asks "What is...", "Explain...", or creates code/math content
 
 * **"message":** Keep it clean and engaging.
 * **"content":** The FULL detailed explanation in Markdown.
-* **DIAGRAMS (REQUIRED):** You MUST provide a Reactflow JSON data structure in `graph_data`. 
+* **DIAGRAMS (REQUIRED):** You MUST provide a React Flow JSON data structure in `graph_data`. 
     * **STRICT RULES:** 
         1. `graph_data` must be strictly valid JSON.
         2. `nodes`: List of { "id": "1", "label": "Short Name", "type": "input"|"default"|"output" }.
         3. `edges`: List of { "id": "e1-2", "source": "1", "target": "2", "label": "connection" }.
-        4. **NEVER use Mermaid syntax (graph TD, etc.) in the content.** Only use Reactflow `graph_data`.
+        4. **NEVER use Mermaid syntax (graph TD, flowchart, etc.).** Only use React Flow `graph_data`.
 * **MATH/LATEX FORMATTING (CRITICAL):**
     1. **INLINE MATH** (use `$...$`): For variables mentioned within text. Keep on the same line.
     2. **BLOCK MATH** (use `$$...$$`): ONLY for key formulas.
