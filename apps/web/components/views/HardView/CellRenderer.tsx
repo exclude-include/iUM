@@ -473,10 +473,11 @@ function CellMarkdownContent({ content, cellId, tabId }: { content: string; cell
 interface CellRendererProps {
   cell: Cell;
   tabId: string;
+  onDeepDive?: (text: string) => void; // ✨ [Added] Deep Dive callback for diagrams
 }
 
 export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
-  ({ cell, tabId }, ref) => {
+  ({ cell, tabId, onDeepDive }, ref) => {
     const { toast } = useToast();
     const [isCreatingReel, setIsCreatingReel] = useState(false);
 
@@ -588,7 +589,7 @@ export const CellRenderer = forwardRef<HTMLDivElement, CellRendererProps>(
             {cell.type === "quiz" && cell.quiz_data ? (
               <QuizView questions={cell.quiz_data} />
             ) : (
-              <CellContent cell={cell} hideTitle tabId={tabId} />
+              <CellContent cell={cell} hideTitle tabId={tabId} onDeepDive={onDeepDive} />
             )}
           </div>
         </Card>
@@ -692,7 +693,7 @@ function preprocessContent(content: string): string {
 // Custom Markdown Renderer Component to reuse logic
 
 
-function CellContent({ cell, hideTitle, tabId }: { cell: Cell; hideTitle?: boolean; tabId: string }) {
+function CellContent({ cell, hideTitle, tabId, onDeepDive }: { cell: Cell; hideTitle?: boolean; tabId: string; onDeepDive?: (text: string) => void }) {
   // 1. GraphData (New Reactflow)
   if (cell.graph_data) {
     return (
@@ -701,7 +702,7 @@ function CellContent({ cell, hideTitle, tabId }: { cell: Cell; hideTitle?: boole
         {cell.diagram_description && (
           <p className="text-sm text-muted-foreground mb-4">{cell.diagram_description}</p>
         )}
-        <FlowChart data={cell.graph_data!} />
+        <FlowChart data={cell.graph_data!} onDeepDive={onDeepDive} />
         {cell.content && <div className="mt-8"><CellMarkdownContent content={cell.content} cellId={cell.id} tabId={tabId} /></div>}
       </div>
     );

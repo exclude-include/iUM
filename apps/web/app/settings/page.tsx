@@ -184,8 +184,8 @@ export default function SettingsPage() {
         description: "You have been successfully signed out.",
       });
 
-      router.push("/");
-      router.refresh();
+      // 하드 리다이렉트로 인증 상태 완전 초기화
+      window.location.href = "/";
     } catch (error: any) {
       toast({
         title: "Error",
@@ -222,8 +222,8 @@ export default function SettingsPage() {
         title: "Account deleted",
         description: "Your account has been permanently deleted.",
       });
-      router.push("/");
-      router.refresh();
+      // 하드 리다이렉트로 인증 상태 완전 초기화
+      window.location.href = "/";
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "";
       const is404 = message.includes("404") || message.toLowerCase().includes("not found");

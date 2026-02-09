@@ -717,8 +717,8 @@ export function MainContentArea() {
         let diagram_description = "";
 
         // Check if content looks like an error message
-        const isErrorMessage = content.includes("문제가 발생") || 
-                               content.includes("다시 시도") ||
+        const isErrorMessage = content.includes("Unable to answer") || 
+                               content.includes("try again") ||
                                content.includes("error") ||
                                content.includes("failed");
         
@@ -727,7 +727,7 @@ export function MainContentArea() {
           updateDeepCard(tempCardId, {
             type: "concept",
             title: `Deep Dive: ${text.slice(0, 40)}...`,
-            content: `## ${text}\n\n*설명을 생성하는 중 문제가 발생했습니다. 다시 시도해주세요.*\n\n선택한 텍스트: "${text}"`,
+            content: `## ${text}\n\n*Failed to generate explanation. Please try again.*\n\nSelected text: "${text}"`,
             equations: [],
             quiz_data: [],
             status: 'error'
@@ -788,7 +788,7 @@ export function MainContentArea() {
         updateDeepCard(tempCardId, {
           type: "concept",
           title: `Deep Dive: ${text.slice(0, 40)}${text.length > 40 ? '...' : ''}`,
-          content: content || `## ${text}\n\n설명을 생성할 수 없습니다. 다시 시도해주세요.`,
+          content: content || `## ${text}\n\nUnable to generate explanation. Please try again.`,
           equations: [],
           quiz_data: [],
           diagram_description: diagram_description,
@@ -800,7 +800,7 @@ export function MainContentArea() {
         updateDeepCard(tempCardId, {
           type: "concept",
           title: `Deep Dive: ${text.slice(0, 40)}...`,
-          content: `## ${text}\n\n응답을 받지 못했습니다. 다시 시도해주세요.`,
+          content: `## ${text}\n\nNo response received. Please try again.`,
           equations: [],
           quiz_data: [],
           status: 'error'
@@ -1085,6 +1085,7 @@ export function MainContentArea() {
                             cell={cell}
                             tabId={activeTab.id}
                             ref={(el) => setCellRef(cell.id, el)}
+                            onDeepDive={handleDeepDive}
                           />
                         </SingleCellErrorBoundary>
                       ))}

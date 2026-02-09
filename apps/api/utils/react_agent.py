@@ -539,7 +539,7 @@ class ReactLearningAgent:
             # ✨ [Fix] If no units but we have a final text answer, show that!
             if final_text:
                 return final_text
-            return "답변하기 어렵거나 에러가 발생한 것 같습니다!"
+            return "Unable to answer or an error occurred."
         
         # Count what was created
         has_concept = any(u["type"] == "concept" for u in self.accumulated_learning_units)
